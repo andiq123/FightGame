@@ -1,0 +1,7 @@
+{
+  "name": "stickman-fight-game",
+  "scripts": {
+    "start": "npx live-server --port=3000 --watch=.",
+    "dev": "npx live-server --port=3000 --watch=."
+  }
+}

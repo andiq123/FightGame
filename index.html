@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stick-Man AI Battle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="game-container">
+    <canvas id="canvas"></canvas>
+    <header class="hud-top">
+      <div class="fighter-hud f1">
+        <span class="hud-label">P1</span>
+        <div class="bar-wrap">
+          <div class="hp-track"><div class="hp-fill" id="hp1"></div></div>
+          <div class="stamina-track"><div class="stamina-fill" id="stam1"></div></div>
+        </div>
+        <span class="combo-badge" id="combo1" aria-hidden="true"></span>
+      </div>
+      <div class="vs-center">
+        <div class="rounds" id="rounds">0 - 0 | R1/3</div>
+        <div class="vs">VS</div>
+      </div>
+      <div class="fighter-hud f2">
+        <span class="hud-label">P2</span>
+        <div class="bar-wrap">
+          <div class="hp-track"><div class="hp-fill" id="hp2"></div></div>
+          <div class="stamina-track"><div class="stamina-fill" id="stam2"></div></div>
+        </div>
+        <span class="combo-badge" id="combo2" aria-hidden="true"></span>
+      </div>
+    </header>
+    <div class="arena-hud">
+      <div class="jutsu-hud jutsu-f1">
+        <div class="jutsu-slots" id="jutsuSlots1"></div>
+      </div>
+      <div class="jutsu-feed" id="jutsuFeed"></div>
+      <div class="jutsu-hud jutsu-f2">
+        <div class="jutsu-slots" id="jutsuSlots2"></div>
+      </div>
+    </div>
+    <div class="match-over" id="matchOver"></div>
+    <div class="countdown" id="countdown"></div>
+    <div class="quick-controls" id="quickControls">
+      <div class="quick-row">
+        <button type="button" class="quick-btn primary" id="quickStartBtn">Start</button>
+        <button type="button" class="quick-btn" id="quickResetBtn">Reset</button>
+      </div>
+      <div class="quick-row">
+        <span class="quick-label">Speed</span>
+        <div class="quick-speed">
+          <button type="button" class="quick-speed-btn" data-speed="0.5">0.5x</button>
+          <button type="button" class="quick-speed-btn active" data-speed="1">1x</button>
+          <button type="button" class="quick-speed-btn" data-speed="2">2x</button>
+        </div>
+      </div>
+      <div class="quick-hint">Space: Start · Esc: Reset</div>
+    </div>
+    <button type="button" class="controls-toggle controls-toggle-left" id="controlsToggle1" title="P1 settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button type="button" class="controls-toggle controls-toggle-right" id="controlsToggle2" title="P2 settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <aside class="controls-panel controls-panel-left" id="controlsPanel1">
+      <div class="controls-inner">
+        <div class="fighter-panel" data-fighter="0">
+          <h3>P1</h3>
+          <div class="form-row">
+            <label>HP</label>
+            <input type="number" id="hpSet1" min="100" max="5000" value="400">
+          </div>
+          <div class="form-row">
+            <label>AI</label>
+            <select id="intelligence1">
+              <option value="12">Novice</option>
+              <option value="28">Amateur</option>
+              <option value="48" selected>Competent</option>
+              <option value="68">Skilled</option>
+              <option value="88">Expert</option>
+              <option value="98">Nightmare</option>
+            </select>
+          </div>
+          <div class="powers">
+            <label>Jutsu <span class="power-count">(0/4)</span></label>
+            <div class="power-btns" id="powers1"></div>
+          </div>
+        </div>
+        <div class="game-actions">
+          <button type="button" id="startBtn">Start</button>
+          <button type="button" id="resetBtn">Reset</button>
+          <div class="speed-control">
+            <button data-speed="0.5">0.5x</button>
+            <button data-speed="1" class="active">1x</button>
+            <button data-speed="2">2x</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <aside class="controls-panel controls-panel-right" id="controlsPanel2">
+      <div class="controls-inner">
+        <div class="fighter-panel" data-fighter="1">
+          <h3>P2</h3>
+          <div class="form-row">
+            <label>HP</label>
+            <input type="number" id="hpSet2" min="100" max="5000" value="400">
+          </div>
+          <div class="form-row">
+            <label>AI</label>
+            <select id="intelligence2">
+              <option value="12">Novice</option>
+              <option value="28">Amateur</option>
+              <option value="48" selected>Competent</option>
+              <option value="68">Skilled</option>
+              <option value="88">Expert</option>
+              <option value="98">Nightmare</option>
+            </select>
+          </div>
+          <div class="powers">
+            <label>Jutsu <span class="power-count">(0/4)</span></label>
+            <div class="power-btns" id="powers2"></div>
+          </div>
+        </div>
+        <div class="game-actions">
+          <button type="button" id="startBtn2">Start</button>
+          <button type="button" id="resetBtn2">Reset</button>
+          <div class="speed-control">
+            <button data-speed="0.5">0.5x</button>
+            <button data-speed="1" class="active">1x</button>
+            <button data-speed="2">2x</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

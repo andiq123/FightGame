@@ -22,14 +22,25 @@ export const Transitions = {
         return ctx.inboundThreat && ctx.cannotEvade && ctx.fighter.canUsePower('shinraTensei');
     },
     regroup(ctx) {
-        const { fighter, tired, justGotUp, hitALot, dist, cornered, evasiveTimeOver, inRecovery } = ctx;
+        const { fighter, tired, justGotUp, hitALot, dist, cornered, evasiveTimeOver, inRecovery, staminaRatio, isSafe, staminaHigh } = ctx;
         if (evasiveTimeOver) return false;
-        if (!fighter.canAct(ctx.now) || (cornered && dist < 90)) return false;
-        const needsRegroup = tired || justGotUp || inRecovery || (hitALot && fighter.stamina < 70);
-        // Allow regroup if blocked by wall and not fully ready to engage
-        if (ctx.blockedByWall && ctx.staminaRatio < 0.8 && dist < 450) return true;
 
-        if (!needsRegroup || (dist > AI.COMBAT_EXIT + 80 && fighter.stamina > 90 && !inRecovery)) return false;
+        // Regroup Hysteresis: Stay until highly recovered
+        const isRegrouping = fighter.aiState === AI_STATE.REGROUPING;
+        if (isRegrouping) {
+            const recovered = !tired && !inRecovery && staminaHigh;
+            if (recovered) return false;
+            return true;
+        }
+
+        // Safety Awareness: If safe behind wall, regroup even if not strictly tired
+        if (isSafe && !staminaHigh) return true;
+
+        if (!fighter.canAct(ctx.now) || (cornered && dist < 90)) return false;
+
+        const needsRegroup = tired || justGotUp || inRecovery || (hitALot && staminaRatio < 0.7);
+        if (!needsRegroup) return false;
+
         const chance = AI.TRANSITION?.REGROUP_CHANCE ?? 0.52;
         return ctx.rng() < chance;
     },
@@ -88,12 +99,17 @@ export const Transitions = {
         return rng() < chance;
     },
     recharge(ctx) {
-        const { fighter, staminaRatio, dist, inboundThreat, oppAttacking } = ctx;
+        const { fighter, dist, inboundThreat, oppAttacking, staminaLow, staminaHigh, isSafe } = ctx;
         if (inboundThreat || oppAttacking) return false;
-        // Enter recharge if low stamina and opponent is not close
-        if (staminaRatio < 0.3 && dist > AI.COMBAT_EXIT) return true;
+
+        const isRecharging = fighter.aiState === AI_STATE.RECHARGING;
+
+        // Enter recharge if very low stamina or safe
+        if (!isRecharging && (staminaLow || (isSafe && !staminaHigh)) && dist > AI.COMBAT_EXIT) return true;
+
         // Continue recharging until high stamina
-        if (fighter.aiState === AI_STATE.RECHARGING && staminaRatio < 0.8) return true;
+        if (isRecharging && !staminaHigh) return true;
+
         return false;
     }
 };
@@ -114,6 +130,24 @@ export const TRANSITION_CHECKS = [
     [() => true, (ctx) => Transitions.bait(ctx), AI_STATE.BAITING],
     [() => true, (ctx) => Transitions.pressure(ctx), AI_STATE.PRESSURING],
     [() => true, (ctx) => Transitions.recharge(ctx), AI_STATE.RECHARGING],
-    [(ctx) => ctx.canTransition, (ctx) => ctx.inCombatZone && !ctx.tired, AI_STATE.COMBAT],
-    [(ctx) => ctx.canTransition, (ctx) => ctx.outOfCombatZone || ctx.far, AI_STATE.APPROACHING],
+
+    // COMBAT Transition with Hysteresis
+    [(ctx) => ctx.canTransition, (ctx) => {
+        const isCombat = ctx.fighter.aiState === AI_STATE.COMBAT;
+        const lowBound = AI.COMBAT_ENTER; // 185
+        const highBound = AI.COMBAT_EXIT;  // 260
+        // Sticky logic: stay in combat until we hit the exit threshold
+        if (isCombat) return ctx.dist < highBound;
+        // Enter combat only when hitting the entry threshold
+        if (ctx.dist < lowBound && !ctx.tired) return true;
+        return false;
+    }, AI_STATE.COMBAT],
+
+    // APPROACHING Transition with Hysteresis
+    [(ctx) => ctx.canTransition, (ctx) => {
+        const isApproaching = ctx.fighter.aiState === AI_STATE.APPROACHING;
+        const exitBound = AI.COMBAT_ENTER - 40; // Hard boundary for approach
+        if (isApproaching) return ctx.dist > exitBound;
+        return ctx.dist > AI.COMBAT_EXIT || ctx.far;
+    }, AI_STATE.APPROACHING],
 ];

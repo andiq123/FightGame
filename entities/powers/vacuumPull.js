@@ -6,24 +6,33 @@ registerPower('vacuumPull', {
     cooldown: 14000,
     tip: 'Pulls the opponent towards you'
 }, {
-    score: ({ dist, stats, rng, opponent, fighter }) => {
-        if (dist < 150 || dist > 550) return 0;
+    score: ({ dist, stats, rng, opponent, fighter, oppCornered, oppBlocking, oppHpCritical, hpCritical }) => {
+        if (dist < 130 || dist > 580) return 0;
 
-        let s = 40;
+        let s = 35;
 
-        // 1. Pressure: Pull them back into melee range
-        if (fighter.aiState === 'PRESSURING') s += 40;
+        // 1. Pressure: Pull them into melee when chasing
+        if (fighter.aiState === 'pressuring') s += 45;
 
-        // 2. Anti-Air: Catch them while jumping
-        if (opponent.y < -40) s += 50;
+        // 2. Corner trap: pull them deeper into the corner they're stuck in
+        if (oppCornered && dist > 150) s += 60;
+
+        // 3. Block-breaker: yank them out of their guard and follow up
+        if (oppBlocking && dist > 150) s += 50;
+
+        // 4. Finisher pull: drag them in range for a killing blow
+        if (oppHpCritical && dist > 150) s += 55;
+
+        // 5. Anti-Air: Catch them while airborne
+        if (opponent.y < -40) s += 55;
+
+        // 6. Don't waste it if AI is critically hurt (need to escape not engage)
+        if (hpCritical) s -= 40;
 
         const aggression = stats.aggression / 100;
         let finalScore = (s + rng() * 20) * (aggression + 0.5);
 
-        // Archetype Bonus
-        if (fighter.archetype === 'assassin' || fighter.archetype === 'oracle') {
-            finalScore += 40;
-        }
+        if (fighter.archetype === 'assassin' || fighter.archetype === 'oracle') finalScore += 40;
 
         return finalScore;
     },
@@ -37,7 +46,9 @@ registerPower('vacuumPull', {
         }
 
         opponent.vx += dir * 800; // Strong pull
-        opponent.status.set('stagger', performance.now() + 400); // Small stun
+        if (!opponent.status.active('stagger', performance.now())) {
+            opponent.status.set('stagger', performance.now() + 400); // Small stun
+        }
 
         if (dist < 150) {
             opponent.status.set('anchored', performance.now() + 1500);

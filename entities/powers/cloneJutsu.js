@@ -6,13 +6,18 @@ registerPower('cloneJutsu', {
   cooldown: 16000,
   tip: 'Spectral clone chases & combos for 5s'
 }, {
-  score: ({ dist, oppAttacking, opponent, stats, rng, fighter, clones }) => {
+  score: ({ dist, oppAttacking, opponent, stats, rng, fighter, clones, hpLow }) => {
     // Prevent clone spam
     const myClones = (clones || []).filter(c => c.ownerId === fighter.id);
     if (myClones.length >= 2) return 0;
 
     // Anti-heal interrupt: opponent is healing, send a clone!
     if (opponent.status?.active('healEffect', performance.now())) return 95 + rng() * 15;
+
+    // Low-HP distraction: create pressure cover while trying to escape/heal
+    if (hpLow && myClones.length === 0 && dist > 80) {
+      return 65 + rng() * 20;
+    }
 
     const inRange = dist <= 115;
     if ((inRange || (dist < 140 && dist > 50)) && oppAttacking) {

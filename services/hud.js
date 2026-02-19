@@ -91,6 +91,47 @@ export function updateStatusIcons(f1, f2, s1, s2, now) {
   });
 }
 
+
+// ─── AI State Tag ────────────────────────────────────────────────────────────
+const AI_STATE_META = {
+  combat: { label: 'Engaged', emoji: '⚔️', cls: 'state-combat' },
+  approaching: { label: 'Approaching', emoji: '→', cls: 'state-approach' },
+  pressuring: { label: 'Pressuring', emoji: '🔥', cls: 'state-pressure' },
+  punishing: { label: 'Punishing', emoji: '💥', cls: 'state-punish' },
+  baiting: { label: 'Baiting', emoji: '🎣', cls: 'state-bait' },
+  defending: { label: 'Defending', emoji: '🛡️', cls: 'state-defend' },
+  evadingProjectile: { label: 'Evading', emoji: '💨', cls: 'state-evade' },
+  shinraDefense: { label: 'Counter!', emoji: '🌀', cls: 'state-shinra' },
+  regrouping: { label: 'Regrouping', emoji: '⏸', cls: 'state-regroup' },
+  retreating: { label: 'Retreating', emoji: '🏃', cls: 'state-retreat' },
+  preparing: { label: 'Preparing', emoji: '🎯', cls: 'state-prepare' },
+  recharging: { label: 'Exhausted', emoji: '😮‍💨', cls: 'state-recharge' },
+};
+
+export function updateAIStateTag(fighter, el) {
+  if (!el) return;
+  // If no AI property or human controlled, hide the tag
+  if (!fighter || !fighter.aiState) {
+    el.style.display = 'none';
+    return;
+  }
+
+  el.style.display = 'flex';
+  const state = fighter.aiState;
+  if (el.dataset.state === state) return;
+  el.dataset.state = state;
+
+  const meta = AI_STATE_META[state] ?? { label: state, emoji: '•', cls: '' };
+
+  // Clear all state classes
+  Array.from(el.classList).forEach(c => {
+    if (c.startsWith('state-')) el.classList.remove(c);
+  });
+  if (meta.cls) el.classList.add(meta.cls);
+
+  el.innerHTML = `<span class="ai-state-emoji">${meta.emoji}</span><span class="ai-state-label">${meta.label}</span>`;
+}
+
 export function updateHUD(f1, f2, els, maxRounds, skillFeed, selectedMonster) {
   const now = performance.now();
   updateBars(f1, f2, els.hp1, els.hp2, els.stam1, els.stam2);
@@ -98,4 +139,7 @@ export function updateHUD(f1, f2, els, maxRounds, skillFeed, selectedMonster) {
   updatePowerCooldownUI(f1, f2, now);
   updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster);
   updateStatusIcons(f1, f2, els.statusIcons1, els.statusIcons2, now);
+
+  updateAIStateTag(f1, els.aiState1);
+  updateAIStateTag(f2, els.aiState2);
 }

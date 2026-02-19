@@ -1,14 +1,15 @@
 import { GROUND_Y } from './physics.js';
 import { ARENA, COMBAT } from '../config/constants.js';
 
-const GRAVITY = 1680;
-const AIR_DAMPING = 0.998;
-const GROUND_FRICTION = 0.82;
-const GROUND_RESTITUTION = 0.22;
-const WALL_RESTITUTION = 0.35;
-const CONSTRAINT_ITERATIONS = 8;
-const CONSTRAINT_STIFFNESS = 0.55;
-const SETTLE_THRESHOLD = 1.15;
+const GRAVITY = 1820;
+const AIR_DAMPING = 0.995;
+const GROUND_FRICTION = 0.84;
+const GROUND_RESTITUTION = 0.15;
+const WALL_RESTITUTION = 0.25;
+const CONSTRAINT_ITERATIONS = 10;
+const CONSTRAINT_STIFFNESS = 0.58;
+const SETTLE_THRESHOLD = 0.95;
+const MAX_POINT_VEL = 3500;
 const WALL_MARGIN = 18;
 
 function makePoint(x, y, vx = 0, vy = 0, mass = 1) {
@@ -26,7 +27,7 @@ function spreadVelocity(vx, vy, hitDir, upward, side, isImpactSide) {
   return { vx: dx, vy: dy };
 }
 
-export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit = false, startTime = 0) {
+export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit = false, startTime = 0, dt = 0.016) {
   const dir = facing || 1;
   const hitDir = hitFromX != null ? (x > hitFromX ? 1 : -1) : 0;
   const headR = 14;
@@ -39,26 +40,27 @@ export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit =
   const hvR = hitDir === -1 ? 1.1 : 0.75;
   const hh = spreadVelocity(hv, vv, hitDir, upwardHit, -1, hitDir === 1);
   const hr = spreadVelocity(hv, vv, hitDir, upwardHit, 1, hitDir === -1);
-  const head = makePoint(x, y - headR - torsoH, hh.vx * 0.7, (upwardHit ? vv * 1.2 : hh.vy) * 0.8, 0.5);
-  const chest = makePoint(x, y - torsoH * 0.6, hv * 0.9, vv * 0.95, 1);
-  const pelvis = makePoint(x, y, vx, vy, 1.3);
-  const lShoulder = makePoint(x - 12, y - torsoH * 0.7, hv * hvL * 0.75, vv * 0.85, 0.5);
-  const rShoulder = makePoint(x + 12, y - torsoH * 0.7, hv * hvR * 0.75, vv * 0.85, 0.5);
-  const lElbow = makePoint(x - 12 - armLen * dir, y - torsoH * 0.4, hv * hvL * 0.5, vv * 0.7, 0.4);
-  const rElbow = makePoint(x + 12 + armLen * dir, y - torsoH * 0.4, hv * hvR * 0.5, vv * 0.7, 0.4);
-  const lHip = makePoint(x - 10, y, vx * 0.95, vy, 0.9);
-  const rHip = makePoint(x + 10, y, vx * 0.95, vy, 0.9);
-  const lKnee = makePoint(x - 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.65);
-  const rKnee = makePoint(x + 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.65);
-  const lFoot = makePoint(x - 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.45);
-  const rFoot = makePoint(x + 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.45);
+  const head = makePoint(x, y - headR - torsoH, hh.vx * 0.7, (upwardHit ? vv * 1.2 : hh.vy) * 0.8, 0.35); // Lighter head
+  const chest = makePoint(x, y - torsoH * 0.6, hv * 0.9, vv * 0.95, 1.2);
+  const pelvis = makePoint(x, y, vx, vy, 1.8); // Heavier pelvis for stability
+  const lShoulder = makePoint(x - 12, y - torsoH * 0.7, hv * hvL * 0.75, vv * 0.85, 0.4);
+  const rShoulder = makePoint(x + 12, y - torsoH * 0.7, hv * hvR * 0.75, vv * 0.85, 0.4);
+  const lElbow = makePoint(x - 12 - armLen * dir, y - torsoH * 0.4, hv * hvL * 0.5, vv * 0.7, 0.3);
+  const rElbow = makePoint(x + 12 + armLen * dir, y - torsoH * 0.4, hv * hvR * 0.5, vv * 0.7, 0.3);
+  const lHip = makePoint(x - 10, y, vx * 0.95, vy, 0.8);
+  const rHip = makePoint(x + 10, y, vx * 0.95, vy, 0.8);
+  const lKnee = makePoint(x - 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5);
+  const rKnee = makePoint(x + 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5);
+  const lFoot = makePoint(x - 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4);
+  const rFoot = makePoint(x + 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4);
   return {
     points: [head, chest, pelvis, lShoulder, rShoulder, lElbow, rElbow, lHip, rHip, lKnee, rKnee, lFoot, rFoot],
     groundY: GROUND_Y + 6,
     leftBound: -ARENA.BOUNDS + WALL_MARGIN,
     rightBound: ARENA.BOUNDS - WALL_MARGIN,
     startTime,
-    facing: dir
+    facing: dir,
+    lastDt: dt // Track dt for stable variable-time-step Verlet
   };
 }
 
@@ -74,8 +76,46 @@ function applyAngularTension(p1, p2, p3, targetAng, strength) {
   const cos = Math.cos(ang2 + move);
   const sin = Math.sin(ang2 + move);
   const len = Math.hypot(p3.x - p2.x, p3.y - p2.y);
-  p3.x = p2.x + cos * len;
-  p3.y = p2.y + sin * len;
+  const nextX = p2.x + cos * len;
+  const nextY = p2.y + sin * len;
+
+  // Maintain velocity while shifting position
+  const dx = nextX - p3.x;
+  const dy = nextY - p3.y;
+  p3.x = nextX;
+  p3.y = nextY;
+  p3.prevX += dx;
+  p3.prevY += dy;
+}
+
+function applyAngleLimit(p1, p2, p3, minAng, maxAng, strength = 0.5) {
+  const ang1 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  const ang2 = Math.atan2(p3.y - p2.y, p3.x - p2.x);
+  let rel = ang2 - ang1;
+  while (rel > Math.PI) rel -= Math.PI * 2;
+  while (rel < -Math.PI) rel += Math.PI * 2;
+
+  if (rel < minAng || rel > maxAng) {
+    const target = rel < minAng ? minAng : maxAng;
+    let diff = target - rel;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    const move = diff * strength;
+    const cos = Math.cos(ang2 + move);
+    const sin = Math.sin(ang2 + move);
+    const len = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+    const nextX = p2.x + cos * len;
+    const nextY = p2.y + sin * len;
+
+    // Energy Neutral Shift: maintain existing velocity
+    const dx = nextX - p3.x;
+    const dy = nextY - p3.y;
+    p3.x = nextX;
+    p3.y = nextY;
+    p3.prevX += dx;
+    p3.prevY += dy;
+  }
 }
 
 function constrainSegment(p1, p2, restLen, stiffness = CONSTRAINT_STIFFNESS) {
@@ -94,6 +134,14 @@ function constrainSegment(p1, p2, restLen, stiffness = CONSTRAINT_STIFFNESS) {
   p2.y += dy * diff * (1 - t);
 }
 
+function applyWall(p, leftBound, rightBound) {
+  if (p.x < leftBound || p.x > rightBound) {
+    const vx = p.x - p.prevX;
+    p.x = p.x < leftBound ? leftBound : rightBound;
+    p.prevX = p.x + vx * WALL_RESTITUTION;
+  }
+}
+
 function applyGround(p, groundY) {
   if (p.y >= groundY) {
     const velY = p.y - p.prevY;
@@ -109,30 +157,36 @@ function applyGround(p, groundY) {
   }
 }
 
-function applyWall(p, leftBound, rightBound) {
-  if (leftBound == null || rightBound == null) return;
-  if (p.x < leftBound) {
-    const disp = p.x - p.prevX;
-    p.x = leftBound;
-    p.prevX = leftBound + disp * WALL_RESTITUTION;
-  }
-  if (p.x > rightBound) {
-    const disp = p.x - p.prevX;
-    p.x = rightBound;
-    p.prevX = rightBound + disp * WALL_RESTITUTION;
-  }
+function applyObstacles(p, obstacles) {
+  if (!obstacles || obstacles.length === 0) return;
+  obstacles.forEach(o => {
+    const dx = p.x - o.x;
+    const halfW = o.width / 2;
+    const margin = 18;
+    if (Math.abs(dx) < halfW + margin) {
+      const disp = p.x - p.prevX;
+      if (p.x < o.x) {
+        p.x = o.x - halfW - margin;
+        p.prevX = p.x + disp * WALL_RESTITUTION;
+      } else {
+        p.x = o.x + halfW + margin;
+        p.prevX = p.x + disp * WALL_RESTITUTION;
+      }
+    }
+  });
 }
 
-export function updateRagdoll(ragdoll, dt, now) {
+export function updateRagdoll(ragdoll, dt, now, obstacles = []) {
   if (dt <= 0) return;
-  const { points, groundY, leftBound, rightBound, startTime, facing } = ragdoll;
+  const { points, groundY, leftBound, rightBound, startTime, facing, lastDt } = ragdoll;
+  const physicsDt = lastDt || dt; // Use previous dt for velocity derivation
   const elapsed = startTime ? now - startTime : 0;
   const activeT = Math.max(0, 1 - elapsed / (COMBAT.STAGGER_ACTIVE_MS || 850));
   const tension = activeT * (COMBAT.STAGGER_TENSION_STRENGTH || 0.12);
 
   points.forEach(p => {
-    let velX = (p.x - p.prevX) / dt;
-    let velY = (p.y - p.prevY) / dt;
+    let velX = (p.x - p.prevX) / physicsDt;
+    let velY = (p.y - p.prevY) / physicsDt;
     const inAir = p.y < groundY - 2;
     if (inAir) {
       velY += GRAVITY * dt;
@@ -141,11 +195,23 @@ export function updateRagdoll(ragdoll, dt, now) {
     }
     p.prevX = p.x;
     p.prevY = p.y;
+
+    // Velocity Clamp to prevent explosion
+    const speed = Math.hypot(velX, velY);
+    if (speed > MAX_POINT_VEL) {
+      const mult = MAX_POINT_VEL / speed;
+      velX *= mult;
+      velY *= mult;
+    }
+
     p.x += velX * dt;
     p.y += velY * dt;
     applyWall(p, leftBound, rightBound);
     applyGround(p, groundY);
+    applyObstacles(p, obstacles);
   });
+
+  ragdoll.lastDt = dt; // Save dt for next frame
 
   const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
 
@@ -164,30 +230,52 @@ export function updateRagdoll(ragdoll, dt, now) {
     constrainSegment(lKn, lFt, 24);
     constrainSegment(rKn, rFt, 24);
 
+    // Joint Angle Limits (The Euphoria Skeleton Feel)
+    const f = facing || 1;
+    // Knees: Only bend backward, never forward
+    applyAngleLimit(lHip, lKn, lFt, 0.1, 1.8, 0.4);
+    applyAngleLimit(rHip, rKn, rFt, 0.1, 1.8, 0.4);
+    // Elbows: Use Chest, Shoulder, Elbow chain
+    applyAngleLimit(chest, lSh, lEl, -2.1, 0.4, 0.3);
+    applyAngleLimit(chest, rSh, rEl, -2.1, 0.4, 0.3);
+    // Neck: Don't let head rotate 180 degrees
+    applyAngleLimit(pelvis, chest, head, -0.6 * f, 0.6 * f, 0.2);
+
     // Active Muscle Tension (Euphoria Feel)
     if (tension > 0) {
-      const f = facing || 1;
       // Head/Neck tension (keep upright-ish)
-      applyAngularTension(pelvis, chest, head, 0.1 * f, tension * 1.5);
-      // Fetal position/tensed limbs on impact
-      applyAngularTension(chest, rSh, rEl, -0.6 * f, tension);
-      applyAngularTension(chest, lSh, lEl, -0.6 * f, tension);
-      applyAngularTension(pelvis, rHip, rKn, 0.5 * f, tension);
-      applyAngularTension(pelvis, lHip, lKn, 0.5 * f, tension);
-      applyAngularTension(rHip, rKn, rFt, 1.2 * f, tension);
-      applyAngularTension(lHip, lKn, lFt, 1.2 * f, tension);
+      applyAngularTension(pelvis, chest, head, 0.05 * f, tension * 2.0);
+
+      // Active Fall Protection: Reaching arms toward the ground
+      const chestVy = (chest.y - chest.prevY);
+      if (chestVy > 5 && (groundY - chest.y) < 120) {
+        // Falling fast and close to ground: reach out
+        applyAngularTension(chest, lSh, lEl, -0.8 * f, tension * 1.5);
+        applyAngularTension(chest, rSh, rEl, -0.8 * f, tension * 1.5);
+        applyAngularTension(chest, lHip, lKn, 0.4 * f, tension);
+        applyAngularTension(chest, rHip, rKn, 0.4 * f, tension);
+      } else {
+        // Fetal position/tensed limbs on impact
+        applyAngularTension(chest, rSh, rEl, -0.4 * f, tension);
+        applyAngularTension(chest, lSh, lEl, -0.4 * f, tension);
+        applyAngularTension(pelvis, rHip, rKn, 0.5 * f, tension);
+        applyAngularTension(pelvis, lHip, lKn, 0.5 * f, tension);
+        applyAngularTension(rHip, rKn, rFt, 1.2 * f, tension);
+        applyAngularTension(lHip, lKn, lFt, 1.2 * f, tension);
+      }
     }
 
     points.forEach(p => {
       applyWall(p, leftBound, rightBound);
       applyGround(p, groundY);
+      applyObstacles(p, obstacles);
     });
   }
 }
 
 
 export function drawRagdoll(ctx, ragdoll, color) {
-  const { points, facing } = ragdoll;
+  const { points, facing, groundY } = ragdoll;
   const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
   const strokeColor = darken(color, 0.35);
   const baseColor = color;
@@ -195,6 +283,15 @@ export function drawRagdoll(ctx, ragdoll, color) {
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+
+  // Shadow
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(pelvis.x, groundY - 6, 40, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 
   // Legs
   drawAdvancedLimb(ctx, pelvis.x, pelvis.y, lHip.x, lHip.y, 6, 5, baseColor, strokeColor);

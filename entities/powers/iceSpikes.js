@@ -6,22 +6,32 @@ registerPower('iceSpikes', {
     cooldown: 10000,
     tip: 'Trail of ice pillars that hits low'
 }, {
-    score: ({ dist, stats, rng, opponent, fighter }) => {
-        if (dist < 100 || dist > 400) return 0;
+    score: ({ eyeDist, dist, stats, rng, opponent, fighter, oppHpCritical, hpLow }) => {
+        if (eyeDist < 85 || eyeDist > 420) return 0;
 
-        let s = 50;
+        let s = 45;
 
-        // 1. Low Check: Punish grounded opponents
-        if (opponent.y >= -20) s += 40;
+        // 1. Grounded opponent = full hit potential
+        if (opponent.y >= -20) s += 45;
 
-        // 2. Intelligence check
+        // 2. Freeze-to-finish: set up a combo when opponent is near death
+        if (oppHpCritical) s += 55;
+
+        // 3. Opponent charging in fast — freeze them mid-rush
+        const rushingIn = (fighter.x < opponent.x && opponent.vx < -90) ||
+            (fighter.x > opponent.x && opponent.vx > 90);
+        if (rushingIn && eyeDist < 300) s += 50;
+
+        // 4. AI is defensive/low: buy distance with a freeze
+        if (hpLow && eyeDist > 130) s += 30;
+
+        // 5. Don't double-freeze an already frozen opponent
+        if (opponent.status.active('frozen', performance.now())) return 0;
+
         const reaction = stats.reaction / 100;
         let finalScore = (s + rng() * 30) * (reaction + 0.4);
 
-        // Archetype Bonus
-        if (fighter.archetype === 'vanguard') {
-            finalScore += 50;
-        }
+        if (fighter.archetype === 'vanguard') finalScore += 50;
 
         return finalScore;
     },

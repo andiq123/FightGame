@@ -7,9 +7,9 @@ registerPower('heal', {
   cooldown: 20000,
   tip: 'Restore 20% HP, green aura'
 }, {
-  score: ({ fighter, rng, dist, oppAttacking, clones }) => {
+  score: ({ fighter, rng, dist, oppAttacking, clones, hpLow }) => {
     const hpRatio = fighter.hp / fighter.maxHp;
-    if (hpRatio >= 0.6) return 0;
+    if (hpRatio >= 0.65) return 0;
     // Don't heal under direct pressure
     if (oppAttacking && dist < 100) return 5;
     // Penalize if enemy clones are nearby
@@ -21,7 +21,9 @@ registerPower('heal', {
     else if (hpRatio < 0.45) s = 75;
     else s = 45;
     // Safety bonus: heal is smarter at range
-    if (dist > 250) s += 20;
+    if (dist > 200) s += 20;
+    // Extra bonus: when hpLow and safe from afar, commit to the heal
+    if (hpLow && dist > 220) s += 25;
     return s + rng() * 12;
   },
   execute: ({ fighter, hitEffects }) => {

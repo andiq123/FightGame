@@ -6,33 +6,35 @@ registerPower('earthWall', {
     cooldown: 18000,
     tip: 'Creates a physical barrier that blocks movement'
 }, {
-    score: ({ dist, fighter, stats, rng, opponent, inboundThreat }) => {
-        if (dist < 120) return 0; // Too risky very close
+    score: ({ dist, fighter, stats, rng, opponent, inboundThreat, hpLow, hpCritical, oppCornered, staminaRatio }) => {
+        if (dist < 90) return 0; // Not useful in melee
 
-        let s = 30;
-
-        // 1. Defensive: Low health needs cover
         const hpRatio = fighter.hp / fighter.maxHp;
-        if (hpRatio < 0.3) s += 60;
+        let s = 25;
 
-        // 2. Tactical: Opponent is aggressive and at distance
-        if (opponent.vx !== 0 && dist > 300) s += 40;
+        // 1. Emergency cover when critically hurt
+        if (hpCritical) s += 80;
+        else if (hpLow) s += 50;
+        else if (hpRatio < 0.5) s += 30;
 
-        // 3. Stamina Management: Gather stamina behind cover
-        const staminaRatio = fighter.stamina / fighter.maxStamina;
-        if (staminaRatio < 0.4) s += 50;
+        // 2. Counter ranged attacks: block incoming projectiles
+        if (inboundThreat) s += 65;
 
-        // 4. Counter ranged attacks
-        if (inboundThreat) s += 55;
+        // 3. Stamina recovery: sit behind a wall to regen
+        if ((staminaRatio ?? fighter.stamina / fighter.maxStamina) < 0.35) s += 45;
 
-        // 5. Intelligence scaling
+        // 4. Trap: wall behind cornered opponent to deny escape
+        if (oppCornered && dist > 120 && dist < 350) s += 50;
+
+        // 5. Opponent approaching fast: cut them off
+        const isRushing = (fighter.x < opponent.x && opponent.vx < -80) ||
+            (fighter.x > opponent.x && opponent.vx > 80);
+        if (isRushing && dist > 100) s += 40;
+
         const defense = stats.defense / 100;
         let finalScore = (s + rng() * 25) * (defense + 0.5);
 
-        // Archetype Bonus
-        if (fighter.archetype === 'golem' || fighter.archetype === 'vanguard') {
-            finalScore += 40;
-        }
+        if (fighter.archetype === 'golem' || fighter.archetype === 'vanguard') finalScore += 40;
 
         return finalScore;
     },

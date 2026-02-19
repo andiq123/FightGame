@@ -59,23 +59,27 @@ function darken(c, pct) {
   return '#' + m.map(x => Math.max(0, Math.min(255, parseInt(x, 16) * (1 - pct))).toString(16).padStart(2, '0')).join('');
 }
 
-function drawAdvancedLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor, stretch = 1) {
+function drawAdvancedLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor, bulge = 0, stretch = 0) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 0.001;
   const ux = dx / len;
   const uy = dy / len;
 
+  // Apply stretch along the bone axis
+  const sx2 = x2 + ux * stretch;
+  const sy2 = y2 + uy * stretch;
+
   // Tapering and muscular "bulge"
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2;
-  const midR = Math.max(r1, r2) * 1.15;
+  const midX = (x1 + sx2) / 2;
+  const midY = (y1 + sy2) / 2;
+  const midR = Math.max(r1, r2) * (1.15 + bulge * 0.4); // Bulge effect
 
   ctx.fillStyle = fillColor;
   ctx.beginPath();
   ctx.moveTo(x1 - uy * r1, y1 + ux * r1);
-  ctx.quadraticCurveTo(midX - uy * midR, midY + ux * midR, x2 - uy * r2, y2 + ux * r2);
-  ctx.arc(x2, y2, r2, Math.atan2(uy, ux) - Math.PI / 2, Math.atan2(uy, ux) + Math.PI / 2);
+  ctx.quadraticCurveTo(midX - uy * midR, midY + ux * midR, sx2 - uy * r2, sy2 + ux * r2);
+  ctx.arc(sx2, sy2, r2, Math.atan2(uy, ux) - Math.PI / 2, Math.atan2(uy, ux) + Math.PI / 2);
   ctx.quadraticCurveTo(midX + uy * midR, midY - ux * midR, x1 + uy * r1, y1 - ux * r1);
   ctx.arc(x1, y1, r1, Math.atan2(uy, ux) + Math.PI / 2, Math.atan2(uy, ux) - Math.PI / 2);
   ctx.closePath();
@@ -86,7 +90,7 @@ function drawAdvancedLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor, s
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(x1 - uy * (r1 * 0.4), y1 + ux * (r1 * 0.4));
-  ctx.quadraticCurveTo(midX - uy * (midR * 0.4), midY + ux * (midR * 0.4), x2 - uy * (r2 * 0.4), y2 + ux * (r2 * 0.4));
+  ctx.quadraticCurveTo(midX - uy * (midR * 0.4), midY + ux * (midR * 0.4), sx2 - uy * (r2 * 0.4), sy2 + ux * (r2 * 0.4));
   ctx.stroke();
 
   ctx.strokeStyle = strokeColor;
@@ -324,6 +328,23 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rForeArmAng = 0.65;
   }
 
+  // Calculate Limb Bulge & Stretch
+  let limbBulge = 0;
+  let limbStretch = 0;
+  if (fighter.currentAttack) {
+    const isPunch = pose === POSE.punch;
+    const isKick = pose === POSE.kick;
+    const a = fighter.currentAttack;
+    const { phase, localT } = isPunch ? getPunchPhase(poseT, a.data.duration, a.type) : getKickPhase(poseT, a.data.duration, a.type);
+
+    const STRIKE = 1;
+    if (phase === STRIKE) {
+      const snap = Math.sin(localT * Math.PI);
+      limbBulge = 0.45 * snap;
+      limbStretch = 10 * snap;
+    }
+  }
+
   // Combat Override
   if (pose === POSE.punch && fighter.currentAttack) {
     const a = fighter.currentAttack;
@@ -357,17 +378,52 @@ export function drawStickman(ctx, fighter, groundY, now) {
 
   // SQUASH & STRETCH
   const landingT = (fighter.landingSquashUntil || 0) > now ? 1 - (fighter.landingSquashUntil - now) / 180 : 0;
-  let squashY = 1;
+  let squashY = 1.0;
+  let stretchX = 1.0;
+
+  // 1. Landing Squash
   if (landingT > 0 && pose !== POSE.hit) {
-    squashY = 1 - 0.28 * (1 - (1 - landingT) * (1 - landingT));
+    squashY = 1 - 0.28 * Math.sin(landingT * Math.PI);
+    stretchX = 1 + 0.15 * Math.sin(landingT * Math.PI);
+  }
+
+  // 2. Combat Elasticity
+  if (fighter.currentAttack) {
+    const isPunch = pose === POSE.punch;
+    const isKick = pose === POSE.kick;
+    if (isPunch || isKick) {
+      const a = fighter.currentAttack;
+      const { phase, localT } = isPunch ? getPunchPhase(poseT, a.data.duration, a.type) : getKickPhase(poseT, a.data.duration, a.type);
+
+      const WINDUP = 0, STRIKE = 1;
+      if (phase === WINDUP) {
+        // Coil/Squash before strike
+        const coil = Math.sin(localT * Math.PI * 0.5);
+        squashY -= 0.12 * coil;
+        stretchX += 0.08 * coil;
+      } else if (phase === STRIKE) {
+        // Stretch out during hit
+        const snap = Math.sin(localT * Math.PI);
+        squashY += 0.05 * snap;
+        stretchX += 0.15 * snap;
+        pelvisX += face * snap * 8; // Extra reach/lean
+      }
+    }
+  }
+
+  // 3. Impact Reaction
+  if (pose === POSE.hit) {
+    const impact = Math.min(1.5, ((fighter.hitLastDmg || 5) / 15));
+    squashY += 0.15 * impact * Math.sin(hitT * Math.PI);
+    stretchX -= 0.1 * impact * Math.sin(hitT * Math.PI);
   }
 
   // Dual Bone Positioning
   const spineLen = 42 * squashY;
-  const ribsX = pelvisX + lean * 24 + torsoTwist * 10;
+  const ribsX = pelvisX + (lean * 24 + torsoTwist * 10) * stretchX;
   const ribsY = pelvisY - spineLen - bob;
-  const headX = ribsX + lean * 12 + headTilt * 6;
-  const headY = ribsY - 18;
+  const headX = ribsX + (lean * 12 + headTilt * 6) * stretchX;
+  const headY = ribsY - 18 * squashY;
 
   // 2. Render Motion Effects (Smeared Shadows & Trails)
   if (Math.abs(fighter.vx) > 400) {
@@ -428,10 +484,10 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rAnkleX = rKneeX + Math.sin(rLegAng + rKneeOff) * calfLen * face;
   const rAnkleY = rKneeY + Math.cos(rLegAng + rKneeOff);
 
-  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6, 5, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5, 4, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6, 5, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5, 4, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
+  drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+  drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
 
   // Feet
   const footLen = 14;
@@ -463,10 +519,10 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rWristX = rElbowX + Math.cos(rArmAng + rForeArmAng) * forearmLen * face;
   const rWristY = rElbowY + Math.sin(rArmAng + rForeArmAng) * forearmLen;
 
-  drawAdvancedLimb(ctx, lShX, lShY, lElbowX, lElbowY, 5, 4.2, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, lElbowX, lElbowY, lWristX, lWristY, 4.2, 3.5, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, rShX, rShY, rElbowX, rElbowY, 5, 4.2, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, rElbowX, rElbowY, rWristX, rWristY, 4.2, 3.5, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, lShX, lShY, lElbowX, lElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
+  drawAdvancedLimb(ctx, lElbowX, lElbowY, lWristX, lWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
+  drawAdvancedLimb(ctx, rShX, rShY, rElbowX, rElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
+  drawAdvancedLimb(ctx, rElbowX, rElbowY, rWristX, rWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
 
   // Head
   ctx.fillStyle = baseColor;

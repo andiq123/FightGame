@@ -156,6 +156,134 @@ body {
   flex-direction: row-reverse;
 }
 
+.hud-bottom-row {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  min-height: 28px;
+  width: 100%;
+}
+
+.f1-row {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.f2-row {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.ai-state-tag {
+  display: none;
+  /* Hidden by default, shown by JS when AI is active */
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #12141a;
+  /* Solid background for compatibility */
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+}
+
+.ai-state-emoji {
+  font-size: 14px;
+}
+
+/* State-specific color themes */
+.state-combat {
+  border-color: rgba(93, 212, 237, 0.6);
+  box-shadow: 0 0 10px rgba(93, 212, 237, 0.2);
+}
+
+.state-approach {
+  border-color: rgba(169, 169, 169, 0.4);
+}
+
+.state-pressure {
+  border-color: rgba(255, 65, 108, 0.8);
+  box-shadow: 0 0 15px rgba(255, 65, 108, 0.3);
+  animation: state-pulse 1.5s infinite;
+}
+
+.state-punish {
+  border-color: rgba(255, 140, 0, 0.8);
+  box-shadow: 0 0 15px rgba(255, 140, 0, 0.3);
+}
+
+.state-bait {
+  border-color: rgba(239, 187, 255, 0.6);
+}
+
+.state-defend {
+  border-color: rgba(100, 149, 237, 0.7);
+}
+
+.state-evade {
+  border-color: rgba(147, 112, 219, 0.7);
+}
+
+.state-shinra {
+  border-color: rgba(255, 215, 0, 0.8);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+}
+
+.state-regroup {
+  border-color: rgba(128, 128, 128, 0.5);
+  opacity: 0.8;
+}
+
+.state-retreat {
+  border-color: rgba(255, 99, 71, 0.7);
+}
+
+.state-prepare {
+  border-color: rgba(0, 255, 127, 0.7);
+}
+
+.state-recharge {
+  border-color: rgba(100, 100, 100, 0.5);
+  opacity: 0.7;
+}
+
+@keyframes state-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 5px rgba(255, 140, 0, 0.2);
+  }
+
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 0 15px rgba(255, 140, 0, 0.4);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 5px rgba(255, 140, 0, 0.2);
+  }
+}
+
+@keyframes state-pop {
+  0% {
+    transform: translateX(10px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 .status-icon {
   width: 24px;
   height: 24px;

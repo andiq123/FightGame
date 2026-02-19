@@ -16,7 +16,7 @@ registerPower('lightningCutter', {
   cooldown: 10000,
   tip: 'Short-range piercing thrust, 48 dmg'
 }, {
-  score: ({ dist, oppStaggered, oppRecovering, fighter, stats, rng, canSeeOpponent }) => {
+  score: ({ dist, oppStaggered, oppRecovering, fighter, stats, rng, canSeeOpponent, hpCritical, oppBlocking }) => {
     const intelligence = stats.reaction / 100;
     if (dist > 95) return 0;
     if (!canSeeOpponent) return 0; // Cannot dash through walls
@@ -26,8 +26,15 @@ registerPower('lightningCutter', {
     if (dist <= 85) s += 55;
     if (dist <= 60) s += 40;
 
-    if (oppStaggered) s += 60 + (intelligence * 30);
-    if (oppRecovering) s += 45 + (intelligence * 20);
+    // Perfect punish windows
+    if (oppStaggered) s += 60 + intelligence * 30;
+    if (oppRecovering) s += 45 + intelligence * 20;
+
+    // Lightning pierces block — great against turtles
+    if (oppBlocking) s += 45;
+
+    // Desperation: commit to damage when near death
+    if (hpCritical) s += 40;
 
     s += (stats.aggression / 100) * 45 + rng() * 25;
     return s;

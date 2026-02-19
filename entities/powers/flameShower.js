@@ -6,24 +6,35 @@ registerPower('flameShower', {
     cooldown: 25000,
     tip: 'Ultimate: Rain fire from the heavens. High knockback force.'
 }, {
-    score: ({ dist, fighter, opponent, stats, rng }) => {
-        // Only use if healthy and has stamina
-        if (fighter.stamina < 60) return 0;
+    score: ({ dist, fighter, opponent, stats, rng, oppBlockingALot, oppCornered, oppHpCritical, hpLow }) => {
+        // Relaxed stamina gate — this is a strategic ultimate, not a stamina burner
+        if (fighter.stamina < 30) return 0;
 
-        // High intelligence bosses use this more strategically
+        // Don't waste it if opponent is already near-dead and we can melee-finish
+        if (oppHpCritical && dist < 120) return 5;
+
         const intelligence = stats.reaction / 100;
         const aggression = stats.aggression / 100;
 
-        // Good for pressure at any range, but favor mid-long
-        let s = 40 + aggression * 30 + (intelligence * 20);
+        let s = 35 + aggression * 30 + intelligence * 25;
 
-        if (dist > 300) s += 40;
-        if (opponent.status.active('stagger', performance.now())) s += 30; // Punish recovery
+        // Zone control at range
+        if (dist > 250) s += 45;
+        if (dist > 150 && dist <= 250) s += 25;
 
-        // Cooldown is long, so don't waste it if opponent is already low and we can finish with melee
-        if (opponent.hp < 50 && dist < 100) s -= 40;
+        // Break turtles: shower bypasses blocks
+        if (oppBlockingALot) s += 50;
 
-        return s;
+        // Corner zone denial: rain fire over a cornered opponent
+        if (oppCornered) s += 40;
+
+        // Punish recovery
+        if (opponent.status.active('stagger', performance.now())) s += 35;
+
+        // AI is losing but has range — use ultimate to reset momentum
+        if (hpLow && dist > 200) s += 35;
+
+        return s + rng() * 20;
     },
     execute: ({ fighter, opponent, projectiles, world }) => {
         const now = performance.now();

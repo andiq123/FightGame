@@ -36,7 +36,9 @@ const hudEls = {
   rounds: document.getElementById('rounds'),
   combo1: document.getElementById('combo1'),
   statusIcons1: document.getElementById('statusIcons1'),
-  statusIcons2: document.getElementById('statusIcons2')
+  statusIcons2: document.getElementById('statusIcons2'),
+  aiState1: document.getElementById('aiState1'),
+  aiState2: document.getElementById('aiState2'),
 };
 const matchOverEl = document.getElementById('matchOver');
 const countdownEl = document.getElementById('countdown');
@@ -170,14 +172,19 @@ function updateRoundState(now, dt) {
   }
 }
 
-function handleRoundEndTransition(now) {
+function handleRoundEndTransition(now, dt) {
   koSlowMo = 0.4;
   const rw = world.fighter1.hp <= 0 ? 2 : 1;
   world.roundHistory.push(rw);
   const loser = world.fighter1.hp <= 0 ? world.fighter1 : world.fighter2;
   const winner = world.fighter1.hp <= 0 ? world.fighter2 : world.fighter1;
-  const rd = createRagdoll(loser.x, getRagdollOriginY(loser), loser.facing, loser.vx, loser.vy);
+  const rd = createRagdoll(loser.x, getRagdollOriginY(loser), loser.facing, loser.vx, loser.vy, null, false, now, Math.max(0.016, dt));
   world.activeRagdolls = [{ ragdoll: rd, color: loser.color }];
+  // Stop winner
+  winner.vx = 0;
+  winner.vy = 0;
+  loser.poseHistory = [];
+  loser.attackTrail = [];
   world.ragdollPhase = 1.8;
   world.pendingRoundEnd = { roundWinner: rw, winner: winner };
 }
@@ -189,6 +196,17 @@ function handleRagdollPhase(world, dt, scaledDt, now) {
 
   world.ragdollPhase -= ragdollDt;
   world.activeRagdolls.forEach(r => updateRagdoll(r.ragdoll, ragdollDt, now));
+
+  // Sync loser position for camera/HUD/effects
+  const loser = world.pendingRoundEnd?.roundWinner === 1 ? world.fighter2 : world.fighter1;
+  if (loser && world.activeRagdolls[0]) {
+    const pelvis = world.activeRagdolls[0].ragdoll.points[2];
+    loser.x = pelvis.x;
+    loser.y = pelvis.y - 810;
+    const safeDt = Math.max(0.001, ragdollDt);
+    loser.vx = (pelvis.x - pelvis.prevX) / safeDt;
+    loser.vy = (pelvis.y - pelvis.prevY) / safeDt;
+  }
 
   if (world.ragdollPhase <= 0) applyPendingRoundEnd();
 
@@ -411,7 +429,7 @@ function update(dt) {
   updateHUD(world.fighter1, world.fighter2, hudEls, MAX_ROUNDS, skillFeed);
 
   if (world.fighter1.hp <= 0 || world.fighter2.hp <= 0) {
-    handleRoundEndTransition(now);
+    handleRoundEndTransition(now, scaledDt);
   }
 }
 

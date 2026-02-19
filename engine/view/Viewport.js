@@ -63,7 +63,7 @@ export class Viewport {
 
         // Draw Entities
         if (world.ragdollPhase > 0 && world.activeRagdolls.length > 0) {
-            const loserId = world.pendingRoundEnd?.roundWinner === 1 ? 0 : 1;
+            const loserId = world.pendingRoundEnd?.roundWinner === 1 ? 1 : 0;
             if (loserId === 0) {
                 drawRagdoll(ctx, world.activeRagdolls[0].ragdoll, world.activeRagdolls[0].color);
                 drawStickman(ctx, world.fighter2, GROUND_Y, now);

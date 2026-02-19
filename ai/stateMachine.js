@@ -58,10 +58,11 @@ function getNextComboAttack(fighter, combo, rng) {
   return candidates[Math.floor(rng() * candidates.length)];
 }
 
-const GCD_MS = 1200;
+const GCD_MS = 700;
 
 function pickPower(ctx) {
   const { fighter, rng, now } = ctx;
+  const threshold = ctx._desperateThreshold ?? 12;
   if (fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < GCD_MS) return null;
   if (!fighter.powers?.length) return null;
   let best = null, bestScore = 0;
@@ -70,8 +71,8 @@ function pickPower(ctx) {
     const s = scorePower(pid, ctx);
     if (s > bestScore) { bestScore = s; best = pid; }
   }
-  if (bestScore >= 12 && best === fighter.lastUsedPower && rng() < 0.48) return null;
-  return bestScore >= 12 ? best : null;
+  if (bestScore >= threshold && best === fighter.lastUsedPower && rng() < 0.48) return null;
+  return bestScore >= threshold ? best : null;
 }
 
 function pickRangedPower(ctx) {
@@ -204,13 +205,19 @@ function buildCombatAttackPool(ctx) {
 }
 
 function getCombatAction(ctx) {
-  const { fighter, inRange, grabRange, oppBlocking, rng, dist, tired, isNightmare, intelligence, parkour, nearestEnemyClone, cloneDist } = ctx;
+  const { fighter, inRange, grabRange, oppBlocking, rng, dist, tired, isNightmare, intelligence, parkour, nearestEnemyClone, cloneDist, hpCritical, hpLow, oppHpCritical, cornered } = ctx;
   const toward = ctx.faceToward();
   const away = -toward;
   const reaction = intelligence / 100;
   const strategy = fighter.aiCombatMode || STRATEGY.NEUTRAL;
+  const { underPressure, isSafe, staminaLow, staminaHigh } = ctx;
 
-  // 1. High-Priority Reactive Actions
+  // 1. High-Priority Reactive Actions & Pressure Management
+  if (underPressure) {
+    if (staminaLow || (hpCritical && rng() < 0.7)) return { type: 'move', dir: away, run: true };
+    if (rng() < 0.45) return { type: 'block', duration: 150 };
+  }
+
   if (isNightmare || (reaction > 0.8 && rng() < 0.7)) {
     if (ctx.oppJustWhiffed && inRange && fighter.hasStamina(15)) {
       const punish = [ATTACK.cross, ATTACK.uppercut, ATTACK_POWER_PUNCH];
@@ -227,7 +234,18 @@ function getCombatAction(ctx) {
     return { type: 'move', dir, run: true };
   }
 
-  // 3. Strategy Specifics
+  // 3. HP-Critical Burst: When near death, AI goes all-in on skills
+  if (hpCritical) {
+    // Desperate escape: shinraTensei to blast out of a corner
+    if (cornered && dist < 120 && fighter.canUsePower('shinraTensei')) {
+      return { type: 'power', powerId: 'shinraTensei' };
+    }
+    // Use pickPower but with a lower acceptance threshold (score >= 8 vs normal >= 12)
+    const desperatePower = pickPower({ ...ctx, _desperateThreshold: 8 });
+    if (desperatePower) return { type: 'power', powerId: desperatePower };
+  }
+
+  // 4. Strategy Specifics
   if (strategy === STRATEGY.ZONING) {
     // Use ranged powers liberally
     const ranged = pickRangedPower(ctx);
@@ -247,9 +265,15 @@ function getCombatAction(ctx) {
     if (!ctx.oppAttacking && rng() < 0.8) return { type: 'block', duration: 100 }; // Flash block
   }
 
-  // 4. Power Usage (General)
+  // 5. Finish-Mode: Opponent is critically low — use skills to close out
+  if (oppHpCritical && rng() < 0.85) {
+    const finisher = pickPower(ctx);
+    if (finisher && dist < 280) return { type: 'power', powerId: finisher };
+  }
+
+  // 6. Power Usage (General) — raised probability from 0.55 → 0.72
   const power = pickPower(ctx);
-  if (power && (isNightmare || rng() < 0.55)) {
+  if (power && (isNightmare || rng() < 0.72)) {
     if (power === 'shinraTensei' && dist < 100 && (ctx.oppAttacking || isNightmare)) {
       return { type: 'power', powerId: 'shinraTensei' };
     }
@@ -321,29 +345,69 @@ function getApproachAction(ctx) {
 }
 
 function getRetreatAction(ctx) {
-  const { fighter, dist, rng, staminaRatio } = ctx;
+  const { fighter, dist, rng, staminaRatio, hpLow, hpCritical } = ctx;
   const away = ctx.faceToward() === 1 ? -1 : 1;
   const runToEscape = staminaRatio >= (PHYSICS.RUN_STAMINA_MIN_RATIO ?? 0.28) && staminaRatio > 0.5;
+
+  // Try to heal while retreating if HP is low and we have distance
+  if ((hpLow || hpCritical) && dist > 180) {
+    if (fighter.lastGlobalSkillAt && ctx.now - fighter.lastGlobalSkillAt < GCD_MS) {
+      // still on GCD, skip
+    } else if (fighter.canUsePower('heal') && rng() < 0.85) {
+      return { type: 'power', powerId: 'heal' };
+    }
+  }
+
   if (fighter.onGround() && fighter.hasStamina(14) && dist < 100 && rng() < 0.35) return { type: 'jump' };
   return { type: 'move', dir: away, run: runToEscape && rng() < 0.4 };
 }
 
 function getRegroupAction(ctx) {
-  // Use transitions logic or similar
-  const { fighter, dist, rng, cornered } = ctx;
-  const away = ctx.faceToward() === 1 ? -1 : 1;
+  const { fighter, dist, rng, cornered, hpLow, hpCritical, staminaRatio, tired, inRecovery, isSafe, staminaHigh, staminaLow } = ctx;
   const toward = ctx.faceToward();
+  const away = -toward;
 
-  if (ctx.blockedByWall && ctx.staminaRatio < 0.7) {
-    // Safe behind wall, maybe block or idle?
-    return { type: 'block', duration: 300, low: false }; // Catch breath
+  // 1. Recovery Check: If we are already fully recovered, start moving toward with confidence
+  if (staminaHigh && !tired && !inRecovery && dist > 350) {
+    return { type: 'move', dir: toward, run: false };
   }
 
+  // 2. High-Priority: Heal during regroup if HP is low and safe
+  if ((hpLow || hpCritical) && (dist > 150 || isSafe)) {
+    if (!fighter.lastGlobalSkillAt || ctx.now - fighter.lastGlobalSkillAt >= GCD_MS) {
+      if (fighter.canUsePower('heal') && (rng() < 0.9 || isSafe)) {
+        return { type: 'power', powerId: 'heal' };
+      }
+    }
+  }
+
+  // 3. Medium-Priority: Harassment while regrouping (Don't just run, fight back!)
+  if (!staminaLow && (dist > 140 || isSafe)) {
+    const ranged = pickRangedPower(ctx);
+    if (ranged && rng() < 0.7) {
+      return { type: 'power', powerId: ranged };
+    }
+  }
+
+  // 4. Utility: Safe behind wall
+  if (isSafe) {
+    if (staminaHigh) return { type: 'move', dir: toward, run: false }; // Peeking out
+    return { type: 'block', duration: 300, low: false, idle: true }; // Confident catching breath
+  }
+
+  if (ctx.blockedByWall && staminaRatio < 0.7) {
+    return { type: 'block', duration: 300, low: false };
+  }
+
+  // 5. Emergency: Trapped in corner
   if (cornered && dist < 100) {
     if (rng() < 0.75) return { type: 'dodge', dir: toward };
     return { type: 'move', dir: toward, run: false };
   }
-  return { type: 'move', dir: away, run: true };
+
+  // 6. Default: Maintain distance while recovering
+  const run = staminaRatio > 0.3 && dist < 400;
+  return { type: 'move', dir: away, run };
 }
 
 function getPrepareAction(ctx) {

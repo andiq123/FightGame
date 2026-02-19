@@ -21,10 +21,13 @@ function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
   target.status.set('stun', now + (blocking ? 100 : 200));
   target.status.set('hitFlash', now + 220);
   target.hitLastDmg = dmg;
-  target.currentAttack = null;
-  target.pose = POSE.stagger;
-  target.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
-  target.staggerRagdoll = createRagdoll(target.x, getRagdollOriginY(target), target.facing, target.vx, target.vy, caster.x, false);
+  if (!target.status.active('stagger', now) && target.hp > 0) {
+    target.pose = POSE.stagger;
+    target.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
+    target.staggerRagdoll = createRagdoll(target.x, getRagdollOriginY(target), target.facing, target.vx, target.vy, caster.x, false);
+  } else if (!target.status.active('stagger', now)) {
+    target.pose = POSE.hit;
+  }
   hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg, shinra: true, block: blocking }));
 }
 
@@ -33,7 +36,7 @@ registerPower('shinraTensei', {
   cooldown: 8000,
   tip: 'Almighty Push – exploding circle repulse, ragdoll, deflects projectiles'
 }, {
-  score: ({ dist, inboundThreat, oppAttacking, fighter, opponent, stats, rng, cannotEvade, cornered, oppStaggered, oppRecovering, obstacles }) => {
+  score: ({ dist, inboundThreat, oppAttacking, fighter, opponent, stats, rng, cannotEvade, cornered, oppStaggered, oppRecovering, obstacles, oppHpCritical, oppHealing }) => {
     const intelligence = stats.reaction / 100;
     if (dist > 125) return 0;
     if (!fighter.canUsePower('shinraTensei')) return 0;
@@ -49,12 +52,17 @@ registerPower('shinraTensei', {
     if (!fighter.hasStamina(30) && oppAttacking && dist < 100) s += 60;
     if (cornered && dist < 110) s += 50;
 
-    // Environment Bonus: Pinning against wall
-    // Check if opponent is near a wall
-    // Environment Bonus: Pinning against wall
-    // Check if opponent is near a wall
+    // Blast them mid-heal to deny the recovery
+    if (oppHealing && dist < 120) s += 70;
+
+    // Environment: pinning against wall (shared for both normal and finish scenarios)
     const oppNearWall = (obstacles || []).some(o => Math.abs(opponent.x - o.x) < (o.width / 2 + 60));
-    if (oppNearWall && dist < 100) s += 45;
+    if (oppNearWall && dist < 100) {
+      s += 45; // Normal wall-pin bonus
+      if (oppHpCritical) s += 65; // Extra killzone bonus when finishing
+    } else if (oppHpCritical && dist < 100) {
+      s += 35; // Crit bonus even without a wall nearby
+    }
 
     // Reactive use scaling with intelligence
     if (inboundThreat && inboundThreat.timeToImpact * 1000 < (300 + intelligence * 200)) {

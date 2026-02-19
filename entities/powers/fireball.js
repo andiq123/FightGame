@@ -6,34 +6,39 @@ registerPower('fireball', {
   cooldown: 12000,
   tip: 'Heavy projectile, ragdoll on hit'
 }, {
-  score: ({ dist, opponent, stats, rng, canSeeOpponent, idealShurikenRange, spacing }) => {
+  score: ({ eyeDist, opponent, stats, rng, canSeeOpponent, oppHpCritical, hpLow, spacing }) => {
+    if (!canSeeOpponent) return 0;      // needs line-of-sight
+    if (eyeDist < 90) return 0;         // too close — use melee
+    if (eyeDist < 120) return 10;       // discouraged at close range
+
     const intelligence = stats.reaction / 100;
-    // Environment Check: Don't shoot at walls
-    if (!canSeeOpponent) return 0;
-
-    // Discipline at close range
-    if (dist < 90) return 0;
-    if (dist < 120 && intelligence > 0.5) return 15;
-
     const aggression = stats.aggression / 100;
     const space = (spacing || 50) / 100;
-    let s = 75 + aggression * 20 + space * 30 + rng() * 20;
+    let s = 60 + aggression * 20 + space * 25;
 
-    // Range Prioritization
-    if (dist >= 300) s += 60; // Extreme range priority
-    if (dist >= 130 && dist <= 280) s += 45 + (intelligence * 30);
+    // Sweet spot: mid-to-long range (projectile travels well)
+    if (eyeDist >= 130 && eyeDist <= 280) s += 50 + intelligence * 30;
+    if (eyeDist > 280 && eyeDist <= 450) s += 35 + intelligence * 20;
+    if (eyeDist > 450) s += 20; // Very far — still worth it
 
-    if (opponent.staggerUntil > 0) s += 50;
-    if (opponent.staggerUntil > 0) s += 50;
-    // canSeeOpponent is already required above, so just specific bonus for clear shot? 
-    // actually, canSeeOpponent is binary, so if we are here it fits.
-    s += 35; // Base bonus for having LoS
-    if (idealShurikenRange) s += 40;
+    // Punish openings
+    if (opponent.staggerUntil > 0) s += 55;
+    if (opponent.recoveryUntil > performance.now()) s += 40;
+    if (opponent.pose === 'block') s += 25; // Chip through block
 
-    // Tactical: Attrition check
-    if (opponent.status.active('burning', performance.now())) s -= 30;
+    // Pressure opponent who is healing
+    if (opponent.status.active('healEffect', performance.now())) s += 65;
 
-    return s;
+    // Finish them off
+    if (oppHpCritical && eyeDist > 100) s += 45;
+
+    // Attrition: don't double up on fire when already burning
+    if (opponent.status.active('burning', performance.now())) s -= 25;
+
+    // AI is losing — play it safe at range
+    if (hpLow && eyeDist > 200) s += 20;
+
+    return s + rng() * 20;
   },
   execute: ({ fighter, opponent, projectiles }) => {
     const dir = fighter.x < opponent.x ? 1 : -1;

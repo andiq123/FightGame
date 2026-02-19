@@ -59,6 +59,11 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         : 0;
     const evasiveTimeOver = timeInEvasiveState >= (AI.EVADE_MAX_MS ?? 2500);
 
+    const justGotUp = (fighter.lastStaggerEndAt || 0) > 0 && now - fighter.lastStaggerEndAt < AI.REGROUP_AFTER_STAGGER_MS;
+    const hitALot = (fighter.hitsTakenLast5Sec || 0) >= 3;
+    const tired = fighter.stamina < (stats.reaction >= 95 ? 15 : (fighter.status.active('shocked', now) ? AI.TIRED_STAMINA + 20 : AI.TIRED_STAMINA)) || (!(stats.reaction >= 95) && fighter.stamina < AI.REGROUP_STAMINA_MIN && (fighter.hitsTakenLast5Sec || 0) >= 2);
+    const energized = fighter.stamina >= AI.ENERGIZED_STAMINA && (fighter.hitsTakenLast5Sec || 0) <= 1;
+
     // Base Context Object
     const ctx = {
         fighter,
@@ -68,6 +73,7 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         rng,
         dist,
         rayDist,
+        eyeDist: canSee ? rayDist : dist, // LoS-aware distance: raycast when visible, fallback to positional
         ray,
 
         // Core Attributes
@@ -109,8 +115,11 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         spacing: stats.spacing / 100,
         parkour: (stats.parkourTendency ?? 40) / 100,
 
-        // Status
+        // Status — compute ratios once, derive flags from them
         hpRatio: fighter.hp / fighter.maxHp,
+        hpCritical: fighter.hp / fighter.maxHp < 0.25,
+        hpLow: fighter.hp / fighter.maxHp < 0.45,
+        oppHpCritical: opponent.hp / opponent.maxHp < 0.25,
         staminaRatio: fighter.stamina / fighter.maxStamina,
         isBurning: fighter.status.active('burning', now),
         isFrozen: fighter.status.active('frozen', now),
@@ -124,10 +133,10 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         timeInEvasiveState,
         retreatStopped: dist >= (AI.RETREAT_STOP_DIST ?? 320),
         evasiveTimeOver,
-        justGotUp: (fighter.lastStaggerEndAt || 0) > 0 && now - fighter.lastStaggerEndAt < AI.REGROUP_AFTER_STAGGER_MS,
-        hitALot: (fighter.hitsTakenLast5Sec || 0) >= 3,
-        tired: fighter.stamina < (stats.reaction >= 95 ? 15 : (fighter.status.active('shocked', now) ? AI.TIRED_STAMINA + 20 : AI.TIRED_STAMINA)) || (!(stats.reaction >= 95) && fighter.stamina < AI.REGROUP_STAMINA_MIN && (fighter.hitsTakenLast5Sec || 0) >= 2),
-        energized: fighter.stamina >= AI.ENERGIZED_STAMINA && (fighter.hitsTakenLast5Sec || 0) <= 1,
+        justGotUp,
+        hitALot,
+        tired,
+        energized,
 
         // World / Env
         facingOpponent: ray.facingOpponent,
@@ -141,6 +150,13 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         weapon: fighter.getWeapon(),
         armor: fighter.getArmor(),
         archetype: fighter.archetype || 'hero',
+
+        // New Tactical Senses
+        isSafe: nearestObstacle && ray.blocked && ray.hit && nearestObstacle.o.ownerId === fighter.id && nearestObstacle.d < 150,
+        underPressure: (hitALot || (dist < 150 && oppAttacking)) && !oppStaggered,
+        staminaHigh: fighter.stamina / fighter.maxStamina > 0.85,
+        staminaMid: fighter.stamina / fighter.maxStamina > 0.45,
+        staminaLow: fighter.stamina / fighter.maxStamina < 0.25,
 
         // Helpers
         faceToward: () => faceToward(fighter, opponent),

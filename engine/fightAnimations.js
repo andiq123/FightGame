@@ -41,23 +41,23 @@ function phaseNorm(poseT, durationSec, windup, strike, follow) {
 
 export function getPunchPhase(poseT, durationMs, attackType) {
   const sec = durationMs / 1000;
-  let w = 0.14, s = 0.38, f = 0.22;
-  if (attackType === 0) { w = 0.08; s = 0.32; f = 0.28; }
-  else if (attackType === 1) { w = 0.12; s = 0.4; f = 0.2; }
-  else if (attackType === 2) { w = 0.18; s = 0.35; f = 0.22; }
-  else if (attackType === 6) { w = 0.2; s = 0.35; f = 0.2; }
-  else if (attackType === 5) { w = 0.25; s = 0.4; f = 0.18; }
+  let w = 0.18, s = 0.35, f = 0.25; // Slower default windup, more follow
+  if (attackType === 0) { w = 0.12; s = 0.32; f = 0.3; } // Jab still snappy but longer follow
+  else if (attackType === 1) { w = 0.16; s = 0.38; f = 0.22; }
+  else if (attackType === 2) { w = 0.22; s = 0.32; f = 0.25; }
+  else if (attackType === 6) { w = 0.25; s = 0.35; f = 0.2; } // Uppercut clear windup
+  else if (attackType === 5) { w = 0.32; s = 0.38; f = 0.2; } // Power punch heavy windup
   return phaseNorm(poseT, sec, w, s, f);
 }
 
 export function getKickPhase(poseT, durationMs, attackType) {
   const sec = durationMs / 1000;
-  let w = 0.2, s = 0.4, f = 0.22;
-  if (attackType === 3) { w = 0.15; s = 0.42; f = 0.2; }
-  else if (attackType === 4) { w = 0.28; s = 0.38; f = 0.2; }
-  else if (attackType === 10) { w = 0.12; s = 0.45; f = 0.2; }
-  else if (attackType === 9) { w = 0.25; s = 0.4; f = 0.18; }
-  else if (attackType === 8) { w = 0.32; s = 0.35; f = 0.2; }
+  let w = 0.25, s = 0.38, f = 0.25;
+  if (attackType === 3) { w = 0.18; s = 0.42; f = 0.22; }
+  else if (attackType === 4) { w = 0.35; s = 0.35; f = 0.2; } // High kick coil
+  else if (attackType === 10) { w = 0.15; s = 0.45; f = 0.22; }
+  else if (attackType === 9) { w = 0.28; s = 0.38; f = 0.22; }
+  else if (attackType === 8) { w = 0.38; s = 0.32; f = 0.22; } // Spinning kick big windup
   return phaseNorm(poseT, sec, w, s, f);
 }
 

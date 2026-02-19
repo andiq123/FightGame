@@ -7,7 +7,7 @@ registerPower('spectralDash', {
     cooldown: 9000,
     tip: 'Dash through the opponent'
 }, {
-    score: ({ dist, stats, rng, opponent, projectiles, fighter, obstacles }) => {
+    score: ({ dist, stats, rng, opponent, projectiles, fighter, obstacles, hpCritical, cornered }) => {
         if (dist < 60) return 0; // Too close, just use melee
 
         // Environment Check: Ensure destination is safe
@@ -26,7 +26,10 @@ registerPower('spectralDash', {
 
         let s = 20;
 
-        // 1. Reactive: Dodge incoming projectiles
+        // 1. Desperate escape: cornered + near death
+        if (hpCritical && cornered && dist < 180) s += 70;
+
+        // 2. Reactive: Dodge incoming projectiles
         if (projectiles && projectiles.length > 0) {
             const incoming = projectiles.find(p => (p.x < fighter.x && p.vx > 0) || (p.x > fighter.x && p.vx < 0));
             if (incoming && Math.abs(incoming.x - fighter.x) < 200) {
@@ -34,17 +37,17 @@ registerPower('spectralDash', {
             }
         }
 
-        // 2. Punitive: Opponent is in recovery
+        // 3. Punitive: Opponent is in recovery
         if (opponent.status.active('recovery', performance.now())) {
             s += 50;
         }
 
-        // 3. Position: Dash through if pressing or cornered
+        // 4. Position: Dash through if pressing or cornered
         if (dist < 200 && dist > 60) {
             s += 30;
         }
 
-        // 4. Escape: Cornered with no stamina
+        // 5. Escape: Cornered with no stamina
         if (fighter.x && Math.abs(fighter.x) > 900 && dist < 150) {
             s += 55; // Priority escape
         }

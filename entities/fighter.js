@@ -287,12 +287,13 @@ class Fighter {
     }
 
     if (this.staggerRagdoll) {
-      updateRagdoll(this.staggerRagdoll, dt, now);
+      this.poseHistory = [];
+      this.attackTrail = [];
+      // updateRagdoll is now handled by PhysicsSystem to ensure correct impact detection
       const pelvis = this.staggerRagdoll.points[2];
       this.x = pelvis.x;
-      this.y = 0;
-      this.vx = 0;
-      this.vy = 0;
+      this.y = pelvis.y - 810; // Sync Y for coordinate consistency
+
       const knockStart = this.status.get('stagger') - COMBAT.STAGGER_DURATION_MS;
       const minKnockElapsed = now - knockStart >= (COMBAT.STAGGER_MIN_KNOCK_MS ?? 580);
       const settled = isRagdollSettled(this.staggerRagdoll);

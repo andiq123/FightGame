@@ -1,24 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stick-Man AI Battle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <div class="game-container">
     <canvas id="canvas"></canvas>
     <header class="hud-top">
       <div class="fighter-hud f1">
-        <span class="hud-label">P1</span>
+        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">Lvl 1</span></span>
         <div class="bar-wrap">
-          <div class="hp-track"><div class="hp-fill" id="hp1"></div></div>
-          <div class="stamina-track"><div class="stamina-fill" id="stam1"></div></div>
+          <div class="hp-track">
+            <div class="hp-fill" id="hp1"></div>
+          </div>
+          <div class="stamina-track">
+            <div class="stamina-fill" id="stam1"></div>
+          </div>
         </div>
+        <div class="status-icons" id="statusIcons1"></div>
         <span class="combo-badge" id="combo1" aria-hidden="true"></span>
       </div>
       <div class="vs-center">
@@ -26,12 +35,16 @@
         <div class="vs">VS</div>
       </div>
       <div class="fighter-hud f2">
-        <span class="hud-label">P2</span>
+        <span class="hud-label">Monster <span class="hud-level" id="hudLevel2">Lvl 1</span></span>
         <div class="bar-wrap">
-          <div class="hp-track"><div class="hp-fill" id="hp2"></div></div>
-          <div class="stamina-track"><div class="stamina-fill" id="stam2"></div></div>
+          <div class="hp-track">
+            <div class="hp-fill" id="hp2"></div>
+          </div>
+          <div class="stamina-track">
+            <div class="stamina-fill" id="stam2"></div>
+          </div>
         </div>
-        <span class="combo-badge" id="combo2" aria-hidden="true"></span>
+        <div class="status-icons" id="statusIcons2"></div>
       </div>
     </header>
     <div class="arena-hud">
@@ -39,16 +52,16 @@
         <div class="jutsu-slots" id="jutsuSlots1"></div>
       </div>
       <div class="jutsu-feed" id="jutsuFeed"></div>
-      <div class="jutsu-hud jutsu-f2">
+      <div class="jutsu-hud jutsu-monster">
         <div class="jutsu-slots" id="jutsuSlots2"></div>
       </div>
     </div>
     <div class="match-over" id="matchOver"></div>
     <div class="countdown" id="countdown"></div>
+
     <div class="quick-controls" id="quickControls">
       <div class="quick-row">
-        <button type="button" class="quick-btn primary" id="quickStartBtn">Start</button>
-        <button type="button" class="quick-btn" id="quickResetBtn">Reset</button>
+        <button type="button" class="quick-btn stop-btn" id="stopGameBtn">Stop & Reset</button>
       </div>
       <div class="quick-row">
         <span class="quick-label">Speed</span>
@@ -58,85 +71,174 @@
           <button type="button" class="quick-speed-btn" data-speed="2">2x</button>
         </div>
       </div>
-      <div class="quick-hint">Space: Start · Esc: Reset</div>
+      <div class="quick-hint">Esc: Stop</div>
     </div>
-    <button type="button" class="controls-toggle controls-toggle-left" id="controlsToggle1" title="P1 settings">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
-    <button type="button" class="controls-toggle controls-toggle-right" id="controlsToggle2" title="P2 settings">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
-    <aside class="controls-panel controls-panel-left" id="controlsPanel1">
-      <div class="controls-inner">
-        <div class="fighter-panel" data-fighter="0">
-          <h3>P1</h3>
-          <div class="form-row">
-            <label>HP</label>
-            <input type="number" id="hpSet1" min="100" max="5000" value="400">
+
+
+    <!-- Monster Selection Overlay -->
+    <div class="monster-selection hidden" id="monsterSelection">
+      <div class="monster-selection-inner">
+        <h2 class="selection-title">Choose Your Challenger</h2>
+        <p class="selection-sub">Select a monster to face in single combat</p>
+        <div class="monster-grid">
+          <div class="monster-card" data-id="golem">
+            <div class="monster-visual golem">
+              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 80 L35 30 L65 30 L80 80 Z" />
+                <path d="M35 30 L40 10 L60 10 L65 30" />
+                <circle cx="40" cy="45" r="3" fill="#ff0000" />
+                <circle cx="60" cy="45" r="3" fill="#ff0000" />
+              </svg>
+            </div>
+            <div class="monster-info">
+              <h3>Garnet Golem</h3>
+              <p>Volcanic brute. Slow but unstoppable.</p>
+              <div class="monster-powers">
+                <span class="skill-tag">Flame Shower</span>
+                <span class="skill-tag">Earth Wall</span>
+                <span class="skill-tag">Dragon Roar</span>
+              </div>
+              <div class="monster-stats">
+                <span class="stat-hp">HP: 3500</span>
+                <span class="stat-lvl">Lvl: 25</span>
+                <span class="stat-ai">AI: Nightmare</span>
+              </div>
+            </div>
           </div>
-          <div class="form-row">
-            <label>AI</label>
-            <select id="intelligence1">
-              <option value="12">Novice</option>
-              <option value="28">Amateur</option>
-              <option value="48" selected>Competent</option>
-              <option value="68">Skilled</option>
-              <option value="88">Expert</option>
-              <option value="98">Nightmare</option>
-            </select>
+          <div class="monster-card" data-id="assassin">
+            <div class="monster-visual assassin">
+              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M30 20 Q50 10 70 20 L80 80 Q50 90 20 80 Z" />
+                <path d="M40 40 L60 40" stroke-width="4" stroke="#00ced1" />
+                <path d="M35 15 L65 15" stroke-dasharray="4 2" />
+              </svg>
+            </div>
+            <div class="monster-info">
+              <h3>Azure Assassin</h3>
+              <p>Ethereal specter. Fast and deadly.</p>
+              <div class="monster-powers">
+                <span class="skill-tag">Spectral Dash</span>
+                <span class="skill-tag">Clone Jutsu</span>
+                <span class="skill-tag">Lightning Cutter</span>
+              </div>
+              <div class="monster-stats">
+                <span class="stat-hp">HP: 1800</span>
+                <span class="stat-lvl">Lvl: 30</span>
+                <span class="stat-ai">AI: Nightmare</span>
+              </div>
+            </div>
           </div>
-          <div class="powers">
-            <label>Jutsu <span class="power-count">(0/4)</span></label>
-            <div class="power-btns" id="powers1"></div>
+          <div class="monster-card" data-id="vanguard">
+            <div class="monster-visual vanguard">
+              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M25 30 L50 15 L75 30 L75 75 L50 90 L25 75 Z" />
+                <path d="M50 15 L50 90 M25 30 L75 30 M25 75 L75 75" opacity="0.3" />
+                <path d="M40 45 L60 45" stroke="#32cd32" stroke-width="3" />
+              </svg>
+            </div>
+            <div class="monster-info">
+              <h3>Veridian Vanguard</h3>
+              <p>Jade master. Ancient counter-tactics.</p>
+              <div class="monster-powers">
+                <span class="skill-tag">Earth Wall</span>
+                <span class="skill-tag">Ice Spikes</span>
+                <span class="skill-tag">Shinra Tensei</span>
+              </div>
+              <div class="monster-stats">
+                <span class="stat-hp">HP: 2500</span>
+                <span class="stat-lvl">Lvl: 28</span>
+                <span class="stat-ai">AI: Nightmare</span>
+              </div>
+            </div>
+          </div>
+          <div class="monster-card" data-id="oracle">
+            <div class="monster-visual oracle">
+              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="50" cy="50" r="35" />
+                <path d="M50 15 L50 85 M15 50 L85 50" opacity="0.5" />
+                <circle cx="50" cy="50" r="10" fill="#ffd700" />
+                <path d="M30 30 L70 70 M30 70 L70 30" stroke-width="0.5" />
+              </svg>
+            </div>
+            <div class="monster-info">
+              <h3>Onyx Oracle</h3>
+              <p>Shadow mage. Powerful dark arts.</p>
+              <div class="monster-powers">
+                <span class="skill-tag">Vacuum Pull</span>
+                <span class="skill-tag">Flame Shower</span>
+                <span class="skill-tag">Heal</span>
+              </div>
+              <div class="monster-stats">
+                <span class="stat-hp">HP: 2100</span>
+                <span class="stat-lvl">Lvl: 26</span>
+                <span class="stat-ai">AI: Nightmare</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="game-actions">
-          <button type="button" id="startBtn">Start</button>
-          <button type="button" id="resetBtn">Reset</button>
-          <div class="speed-control">
-            <button data-speed="0.5">0.5x</button>
-            <button data-speed="1" class="active">1x</button>
-            <button data-speed="2">2x</button>
+
+        <button type="button" class="start-btn" id="startGameBtn">Start Battle</button>
+      </div>
+    </div>
+
+    <!-- Hero Customization Screen -->
+    <div class="hero-screen" id="heroScreen">
+      <div class="hero-screen-inner">
+        <div class="hero-panel">
+          <h2 class="selection-title">Knight Customization</h2>
+          <p class="selection-sub">Configure your hero before entering the fray</p>
+
+          <div class="hero-config-grid">
+            <div class="config-section">
+              <div class="form-row">
+                <label>HP</label>
+                <input type="number" id="hpSet1" min="100" max="5000" value="400">
+              </div>
+              <div class="form-row">
+                <label>AI</label>
+                <select id="intelligence1">
+                  <option value="12">Novice</option>
+                  <option value="28">Amateur</option>
+                  <option value="48" selected>Competent</option>
+                  <option value="68">Skilled</option>
+                  <option value="88">Expert</option>
+                  <option value="98">Nightmare</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>Level</label>
+                <div class="level-slider-wrap">
+                  <input type="range" id="level1" min="1" max="20" value="1">
+                  <span class="level-val" id="levelVal1">1</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <div class="powers">
+                <label>Jutsu <span class="power-count">(0/4)</span></label>
+                <div class="power-btns" id="powers1"></div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <div class="equipment-row">
+                <label>Armor</label>
+                <div class="equip-btns" id="armor1"></div>
+              </div>
+              <div class="equipment-row">
+                <label>Weapon</label>
+                <div class="equip-btns" id="weapon1"></div>
+              </div>
+            </div>
           </div>
+
+          <button type="button" class="confirm-btn large-btn" id="confirmHeroBtn">Continue to Monsters</button>
         </div>
       </div>
-    </aside>
-    <aside class="controls-panel controls-panel-right" id="controlsPanel2">
-      <div class="controls-inner">
-        <div class="fighter-panel" data-fighter="1">
-          <h3>P2</h3>
-          <div class="form-row">
-            <label>HP</label>
-            <input type="number" id="hpSet2" min="100" max="5000" value="400">
-          </div>
-          <div class="form-row">
-            <label>AI</label>
-            <select id="intelligence2">
-              <option value="12">Novice</option>
-              <option value="28">Amateur</option>
-              <option value="48" selected>Competent</option>
-              <option value="68">Skilled</option>
-              <option value="88">Expert</option>
-              <option value="98">Nightmare</option>
-            </select>
-          </div>
-          <div class="powers">
-            <label>Jutsu <span class="power-count">(0/4)</span></label>
-            <div class="power-btns" id="powers2"></div>
-          </div>
-        </div>
-        <div class="game-actions">
-          <button type="button" id="startBtn2">Start</button>
-          <button type="button" id="resetBtn2">Reset</button>
-          <div class="speed-control">
-            <button data-speed="0.5">0.5x</button>
-            <button data-speed="1" class="active">1x</button>
-            <button data-speed="2">2x</button>
-          </div>
-        </div>
-      </div>
-    </aside>
+    </div>
   </div>
   <script type="module" src="game.js"></script>
 </body>
+
 </html>

@@ -7,15 +7,20 @@ registerPower('shuriken', {
   tip: 'Spinning kunai, fast & metallic'
 }, {
   score: ({ dist, opponent, stats, rng, canSeeOpponent, idealShurikenRange, spacing }) => {
-    if (dist < 55 || dist > 240) return 0;
+    if (dist < 55) return 0;
+    if (!canSeeOpponent) return 0;
     const aggression = stats.aggression / 100;
     const space = (spacing || 50) / 100;
     let s = 70 + aggression * 25 + space * 35 + rng() * 20;
     if (dist < 80) s -= 35;
+
+    // Range Prioritization
+    if (dist >= 300) s += 55; // Extreme range
     if (dist >= 120) s += 40;
-    if (dist >= 130 && dist <= 200) s += 35;
+    if (dist >= 130 && dist <= 280) s += 35;
     if (opponent.staggerUntil > 0) s += 45;
-    if (canSeeOpponent) s += 35;
+    if (opponent.staggerUntil > 0) s += 45;
+    s += 35;
     if (idealShurikenRange) s += 30;
     return s;
   },

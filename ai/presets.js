@@ -1,3 +1,4 @@
+
 import { getValidPowerIds } from '../entities/powers/index.js';
 
 export const INTELLIGENCE_LEVELS = [
@@ -11,36 +12,49 @@ export const INTELLIGENCE_LEVELS = [
 
 export function getAIStats(intelligence) {
   const i = Math.max(0, Math.min(100, intelligence)) / 100;
-  const steep = Math.pow(i, 1.7);
+  // Steeper curve for higher levels (Nightmare becomes much more extreme)
+  const steep = Math.pow(i, 2.2);
+  const linear = i;
+
   return {
-    aggression: Math.round(8 + steep * 52),
-    defense: Math.round(18 + steep * 78),
-    reaction: Math.round(14 + steep * 84),
-    riskTolerance: Math.round(8 + steep * 62),
-    comboTendency: Math.round(4 + steep * 52),
-    spacing: Math.round(18 + steep * 78)
+    aggression: Math.round(5 + linear * 25 + steep * 65), // Nightmare ~ 95
+    defense: Math.round(10 + linear * 15 + steep * 73), // Nightmare ~ 98
+    reaction: Math.round(10 + linear * 10 + steep * 78), // Nightmare ~ 98
+    riskTolerance: Math.round(5 + linear * 45 + steep * 45), // Expert is high risk, Nightmare is calculated
+    comboTendency: Math.round(2 + linear * 20 + steep * 76), // Nightmare ~ 98 (consistent combos)
+    spacing: Math.round(10 + linear * 20 + steep * 68), // Nightmare ~ 98
+    parkourTendency: Math.round(10 + linear * 30 + steep * 58) // Nightmare ~ 98
+  };
+}
+
+/**
+ * Level 1-20 Scaling
+ * Level 1: HP 200, Intelligence 12, Damage Mult 1.0, Defense Mult 1.0
+ * Level 20: HP 1000, Intelligence 98, Damage Mult 2.0, Defense Mult 2.0
+ */
+export function getLevelStats(level) {
+  const lvl = Math.max(1, Math.min(20, level));
+  const t = (lvl - 1) / 19; // 0 to 1 normalize
+
+  return {
+    hp: Math.round(200 + t * 800),
+    damageMult: 1 + t * 1.0,
+    defenseMult: 1 + t * 1.0
   };
 }
 
 const SETTINGS_KEY = 'fightGame_settings';
 
-const DEFAULT_SETTINGS = {
-  hp1: 400, hp2: 400,
-  intelligence1: 48, intelligence2: 48,
-  powers1: [], powers2: [],
-  gameSpeed: 1
+export const DEFAULT_SETTINGS = {
+  level1: 1,
+  hp1: 200,
+  intelligence1: 12, // User selected Hero AI level
+  powers1: [],
+  armor1: 'none',
+  weapon1: 'fists',
+  gameSpeed: 1,
+  lastMonster: 'golem'
 };
-
-const INTELLIGENCE_VALUES = [12, 28, 48, 68, 88, 98];
-
-function legacyToIntelligence(aiStats) {
-  if (!aiStats || typeof aiStats !== 'object') return 55;
-  const r = (aiStats.reaction ?? 50) / 100;
-  const d = (aiStats.defense ?? 50) / 100;
-  const c = (aiStats.comboTendency ?? 50) / 100;
-  const raw = Math.round(((r + d + c) / 3) * 100);
-  return INTELLIGENCE_VALUES.reduce((a, b) => Math.abs(b - raw) < Math.abs(a - raw) ? b : a);
-}
 
 export function loadSettings() {
   try {
@@ -51,16 +65,15 @@ export function loadSettings() {
       const n = parseInt(v, 10);
       return isNaN(n) ? def : Math.max(min, Math.min(max, n));
     };
-    const int1 = loaded.intelligence1 != null ? clamp(loaded.intelligence1, 0, 100, 55) : legacyToIntelligence(loaded.aiStats1);
-    const int2 = loaded.intelligence2 != null ? clamp(loaded.intelligence2, 0, 100, 55) : legacyToIntelligence(loaded.aiStats2);
     return {
-      hp1: clamp(loaded.hp1, 100, 5000, 400),
-      hp2: clamp(loaded.hp2, 100, 5000, 400),
-      intelligence1: int1,
-      intelligence2: int2,
+      level1: clamp(loaded.level1, 1, 20, 1),
+      hp1: clamp(loaded.hp1, 100, 5000, 200),
+      intelligence1: clamp(loaded.intelligence1, 0, 100, 48),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
-      powers2: Array.isArray(loaded.powers2) ? loaded.powers2.filter(p => getValidPowerIds().includes(p)) : [],
-      gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1
+      armor1: loaded.armor1 || 'none',
+      weapon1: loaded.weapon1 || 'fists',
+      gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1,
+      lastMonster: loaded.lastMonster || 'golem'
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -73,6 +86,6 @@ export function saveSettings(settings) {
   _saveTimeout = setTimeout(() => {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    } catch {}
+    } catch { }
   }, 300);
 }

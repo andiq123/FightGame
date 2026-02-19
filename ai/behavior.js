@@ -1,32 +1,50 @@
 import { POSE } from '../entities/fighter.js';
 import { executePower } from '../entities/powers/index.js';
-import { AI_STATE, evaluateState, getStateAction, faceToward } from './stateMachine.js';
-import { AI, PHYSICS } from '../config/constants.js';
+import { evaluateState, getStateAction, faceToward } from './stateMachine.js';
+import { AI, PHYSICS, AI_STATE } from '../config/constants.js';
 
 const FALLBACK_ATTACK_RATIO = 0.7;
 const FALLBACK_JUMP_RATIO = 0.5;
 const FALLBACK_POWER_RATIO = 0.6;
-const FALLBACK_DODGE_RATIO = 0.8;
 const BLOCK_DEFAULT_MS = 320;
 const ACTION_HISTORY_MAX = 5;
 
 function persistState(fighter, state, now) {
   fighter.aiState = state;
   fighter.aiStateEnteredAt = now;
+
+  const intelligence = fighter.aiIntelligence || 50;
+  const reactivity = Math.max(0.3, 1 - (intelligence / 120)); // Scales duration down as intelligence increases
+
   let dur = {
-    [AI_STATE.COMBAT]: AI.STATE_COMBAT_MS ?? AI.STATE_MIN_MS,
-    [AI_STATE.APPROACHING]: AI.STATE_APPROACH_MS ?? AI.STATE_MIN_MS,
-    [AI_STATE.PUNISHING]: AI.STATE_PUNISH_MS ?? AI.STATE_MIN_MS,
-    [AI_STATE.DEFENDING]: AI.STATE_DEFEND_MS ?? 50,
+    [AI_STATE.COMBAT]: AI.STATE_COMBAT_MS ?? 58,
+    [AI_STATE.APPROACHING]: AI.STATE_APPROACH_MS ?? 38,
+    [AI_STATE.PUNISHING]: AI.STATE_PUNISH_MS ?? 42,
+    [AI_STATE.DEFENDING]: AI.STATE_DEFEND_MS ?? 26,
     [AI_STATE.EVADING_PROJECTILE]: 50,
     [AI_STATE.SHINRA_DEFENSE]: 40,
     [AI_STATE.REGROUPING]: 140,
     [AI_STATE.RETREATING]: 100,
-    [AI_STATE.PREPARING]: 120
+    [AI_STATE.PREPARING]: 120,
+    [AI_STATE.BAITING]: 80,
+    [AI_STATE.PRESSURING]: 150,
+    [AI_STATE.RECHARGING]: 200
   }[state] ?? AI.STATE_MIN_MS;
+
+  // High intelligence = much shorter state locks = more reactive
+  dur = Math.round(dur * reactivity);
+
+  // Nightmare AI Overrides: Stay in offensive states longer to maintain pressure
+  if (intelligence >= 115) {
+    if (state === AI_STATE.COMBAT || state === AI_STATE.PRESSURING || state === AI_STATE.PUNISHING) {
+      dur = Math.max(dur, 100); // Minimum commitment to aggression
+    }
+  }
+
   if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'pressure') dur = Math.min(220, dur + 45);
-  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'spacing') dur = Math.max(100, dur - 25);
-  fighter.aiStateUntil = now + dur;
+  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'spacing') dur = Math.max(10, dur - 25);
+
+  fighter.status.set('aiState', now + dur);
 }
 
 function actionKey(action) {
@@ -55,11 +73,16 @@ function applyFallbackMove(fighter, opponent, dir, ratio = 1) {
 const ACTION_HANDLERS = {
   move(fighter, opponent, action, now) {
     const run = action.run === true && fighter.canRun();
+    const idle = action.idle === true;
     fighter.isRunning = run;
-    const moveSpeed = run ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED;
+    const moveSpeed = idle ? 0 : (run ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED);
     fighter.vx = action.dir * moveSpeed * (fighter.speedMult || 1);
     fighter.facing = action.dir;
-    fighter.pose = run ? POSE.run : POSE.walk;
+    if (idle) {
+      fighter.pose = POSE.idle;
+    } else {
+      fighter.pose = run ? POSE.run : POSE.walk;
+    }
     fighter.poseTime = 0;
   },
   attack(fighter, opponent, action, now) {
@@ -71,32 +94,27 @@ const ACTION_HANDLERS = {
   },
   block(fighter, opponent, action, now) {
     fighter.pose = POSE.block;
+    // Lock facing during block to prevent jitter
+    fighter.facing = faceToward(fighter, opponent);
     const duration = action.duration || BLOCK_DEFAULT_MS;
-    if (action.low) fighter.blockLowUntil = now + duration;
-    else fighter.blockUntil = now + duration;
+    if (action.low) fighter.status.set('blockLow', now + duration);
+    else fighter.status.set('block', now + duration);
   },
   dodge(fighter, opponent, action, now) {
-    const cost = PHYSICS.DODGE_STAMINA ?? 26;
-    if (!fighter.hasStamina(cost)) {
-      applyFallbackMove(fighter, opponent, action.dir, FALLBACK_DODGE_RATIO);
-      return;
-    }
-    fighter.stamina = Math.max(0, fighter.stamina - cost);
-    fighter.invincibleUntil = now + PHYSICS.DODGE_INVULN_MS;
+    fighter.status.set('invincible', now + PHYSICS.DODGE_INVULN_MS);
     fighter.dodgeDir = action.dir;
     fighter.dodgeStartAt = now;
     fighter.vx = 0;
     fighter.pose = POSE.dodge;
     fighter.facing = action.dir;
   },
-  teleport(fighter, opponent, action, now) {
-    if (!fighter.startTeleport(action.dir, now, action.closeEvade === true)) {
-      applyFallbackMove(fighter, opponent, action.dir, 1);
-    }
-  },
   jump(fighter, opponent, action, now) {
     if (!fighter.startJump(now)) {
       applyFallbackMove(fighter, opponent, faceToward(fighter, opponent), FALLBACK_JUMP_RATIO);
+    } else if (action.wallVault && action.dir) {
+      // Wall vault: apply strong forward momentum to arc over the wall
+      fighter.vx = action.dir * PHYSICS.RUN_SPEED * (fighter.speedMult || 1);
+      fighter.facing = action.dir;
     }
   },
   doubleJump(fighter, opponent, action, now) {
@@ -111,7 +129,7 @@ const ACTION_HANDLERS = {
   power(fighter, opponent, action, now, hitEffects, projectiles, clones) {
     if (fighter.usePower(action.powerId, now)) {
       fighter.facing = faceToward(fighter, opponent);
-      const execCtx = { fighter, opponent, hitEffects, projectiles, clones };
+      const execCtx = { fighter, opponent, hitEffects, projectiles, clones, world: action.world };
       executePower(action.powerId, execCtx);
     } else {
       applyFallbackMove(fighter, opponent, faceToward(fighter, opponent), FALLBACK_POWER_RATIO);
@@ -119,29 +137,39 @@ const ACTION_HANDLERS = {
   }
 };
 
-export function executeAI(fighter, opponent, stats, now, rng, hitEffects = [], projectiles = [], clones = []) {
+export function executeAI(fighter, opponent, stats, now, rng, hitEffects = [], projectiles = [], clones = [], world) {
   if (!fighter.canAct(now)) return null;
 
-  const state = evaluateState(fighter, opponent, stats, now, rng, clones, projectiles);
-  if (state !== fighter.aiState) persistState(fighter, state, now);
-  else if (!fighter.aiStateUntil) fighter.aiStateUntil = now + AI.STATE_MIN_MS;
+  // Cache intelligence for persistState
+  fighter.aiIntelligence = stats.reaction ?? 50; // Intelligence Decoupling
 
-  let action = getStateAction(state, fighter, opponent, stats, now, rng, clones, projectiles);
+  const state = evaluateState(fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
+  const reactTime = (AI.REACT_BASE_MS + (100 - stats.reaction) * AI.REACT_SCALE) / 1000;
+  if (!fighter.canAct(now) || fighter.status.active('aiState', now)) return null;
+
+  let action = getStateAction(state, fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
   if (!action) return null;
 
   const comboStat = (stats.comboTendency || 50) / 100;
-  const repeatThreshold = 0.58 + (1 - comboStat) * 0.22;
+  const intelligence = fighter.aiIntelligence / 100;
+
+  // Relax repetition penalty for high intelligence/combo levels (allows multi-hit strings)
+  const repeatThreshold = 0.58 + (1 - comboStat) * 0.22 - (intelligence * 0.15);
   const maxSame = comboStat > 0.6 ? 3 : 2;
+
   if (isRepeating(fighter, action, maxSame) && (action.type === 'attack' || action.type === 'power') && rng() < repeatThreshold) {
     const toward = faceToward(fighter, opponent);
-    action = state === AI_STATE.COMBAT ? { type: 'move', dir: toward === 1 ? -1 : 1, run: false } : (state === AI_STATE.APPROACHING ? { type: 'move', dir: toward, run: false } : action);
+    // Don't just stand there, move if repeating too much
+    action = { type: 'move', dir: toward === 1 ? -1 : 1, run: false };
   }
 
   recordAction(fighter, action);
 
   const handler = ACTION_HANDLERS[action.type];
   if (handler) {
+    persistState(fighter, state, now); // Persist ONLY if we take a valid action
     if (action.type === 'power') {
+      action.world = world;
       handler(fighter, opponent, action, now, hitEffects, projectiles, clones);
     } else {
       handler(fighter, opponent, action, now);

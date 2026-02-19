@@ -1,5 +1,5 @@
 import { GROUND_Y } from './physics.js';
-import { ARENA } from '../config/constants.js';
+import { ARENA, COMBAT } from '../config/constants.js';
 
 const GRAVITY = 1680;
 const AIR_DAMPING = 0.998;
@@ -26,7 +26,7 @@ function spreadVelocity(vx, vy, hitDir, upward, side, isImpactSide) {
   return { vx: dx, vy: dy };
 }
 
-export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit = false) {
+export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit = false, startTime = 0) {
   const dir = facing || 1;
   const hitDir = hitFromX != null ? (x > hitFromX ? 1 : -1) : 0;
   const headR = 14;
@@ -56,8 +56,26 @@ export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit =
     points: [head, chest, pelvis, lShoulder, rShoulder, lElbow, rElbow, lHip, rHip, lKnee, rKnee, lFoot, rFoot],
     groundY: GROUND_Y + 6,
     leftBound: -ARENA.BOUNDS + WALL_MARGIN,
-    rightBound: ARENA.BOUNDS - WALL_MARGIN
+    rightBound: ARENA.BOUNDS - WALL_MARGIN,
+    startTime,
+    facing: dir
   };
+}
+
+function applyAngularTension(p1, p2, p3, targetAng, strength) {
+  const ang1 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  const ang2 = Math.atan2(p3.y - p2.y, p3.x - p2.x);
+  const currentRel = ang2 - ang1;
+  let diff = targetAng - currentRel;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+
+  const move = diff * strength;
+  const cos = Math.cos(ang2 + move);
+  const sin = Math.sin(ang2 + move);
+  const len = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+  p3.x = p2.x + cos * len;
+  p3.y = p2.y + sin * len;
 }
 
 function constrainSegment(p1, p2, restLen, stiffness = CONSTRAINT_STIFFNESS) {
@@ -105,9 +123,13 @@ function applyWall(p, leftBound, rightBound) {
   }
 }
 
-export function updateRagdoll(ragdoll, dt) {
+export function updateRagdoll(ragdoll, dt, now) {
   if (dt <= 0) return;
-  const { points, groundY, leftBound, rightBound } = ragdoll;
+  const { points, groundY, leftBound, rightBound, startTime, facing } = ragdoll;
+  const elapsed = startTime ? now - startTime : 0;
+  const activeT = Math.max(0, 1 - elapsed / (COMBAT.STAGGER_ACTIVE_MS || 850));
+  const tension = activeT * (COMBAT.STAGGER_TENSION_STRENGTH || 0.12);
+
   points.forEach(p => {
     let velX = (p.x - p.prevX) / dt;
     let velY = (p.y - p.prevY) / dt;
@@ -124,8 +146,11 @@ export function updateRagdoll(ragdoll, dt) {
     applyWall(p, leftBound, rightBound);
     applyGround(p, groundY);
   });
+
+  const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
+
   for (let i = 0; i < CONSTRAINT_ITERATIONS; i++) {
-    const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
+    // Basic Skeleton Constraints
     constrainSegment(head, chest, 22);
     constrainSegment(chest, pelvis, 28);
     constrainSegment(chest, lSh, 10);
@@ -138,6 +163,21 @@ export function updateRagdoll(ragdoll, dt) {
     constrainSegment(rHip, rKn, 32);
     constrainSegment(lKn, lFt, 24);
     constrainSegment(rKn, rFt, 24);
+
+    // Active Muscle Tension (Euphoria Feel)
+    if (tension > 0) {
+      const f = facing || 1;
+      // Head/Neck tension (keep upright-ish)
+      applyAngularTension(pelvis, chest, head, 0.1 * f, tension * 1.5);
+      // Fetal position/tensed limbs on impact
+      applyAngularTension(chest, rSh, rEl, -0.6 * f, tension);
+      applyAngularTension(chest, lSh, lEl, -0.6 * f, tension);
+      applyAngularTension(pelvis, rHip, rKn, 0.5 * f, tension);
+      applyAngularTension(pelvis, lHip, lKn, 0.5 * f, tension);
+      applyAngularTension(rHip, rKn, rFt, 1.2 * f, tension);
+      applyAngularTension(lHip, lKn, lFt, 1.2 * f, tension);
+    }
+
     points.forEach(p => {
       applyWall(p, leftBound, rightBound);
       applyGround(p, groundY);
@@ -145,7 +185,58 @@ export function updateRagdoll(ragdoll, dt) {
   }
 }
 
-function drawCapsuleLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor) {
+
+export function drawRagdoll(ctx, ragdoll, color) {
+  const { points, facing } = ragdoll;
+  const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
+  const strokeColor = darken(color, 0.35);
+  const baseColor = color;
+  const face = facing || 1;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Legs
+  drawAdvancedLimb(ctx, pelvis.x, pelvis.y, lHip.x, lHip.y, 6, 5, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, lHip.x, lHip.y, lKn.x, lKn.y, 5, 4, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, lKn.x, lKn.y, lFt.x, lFt.y, 4, 3, baseColor, strokeColor);
+
+  drawAdvancedLimb(ctx, pelvis.x, pelvis.y, rHip.x, rHip.y, 6, 5, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, rHip.x, rHip.y, rKn.x, rKn.y, 5, 4, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, rKn.x, rKn.y, rFt.x, rFt.y, 4, 3, baseColor, strokeColor);
+
+  // Torso
+  drawCapsule(ctx, chest.x, chest.y, pelvis.x, pelvis.y, 11, baseColor, strokeColor);
+
+  // Arms
+  drawAdvancedLimb(ctx, chest.x, chest.y, lSh.x, lSh.y, 5, 4, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, lSh.x, lSh.y, lEl.x, lEl.y, 4, 3.5, baseColor, strokeColor);
+
+  drawAdvancedLimb(ctx, chest.x, chest.y, rSh.x, rSh.y, 5, 4, baseColor, strokeColor);
+  drawAdvancedLimb(ctx, rSh.x, rSh.y, rEl.x, rEl.y, 4, 3.5, baseColor, strokeColor);
+
+  // Head
+  ctx.fillStyle = baseColor;
+  ctx.beginPath();
+  ctx.arc(head.x, head.y, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Visor on ragdoll
+  ctx.fillStyle = "#0c0c0c";
+  const vX = head.x + face * 6;
+  const vY = head.y - 2;
+  const headVelX = head.x - head.prevX;
+  const headVelY = head.y - head.prevY;
+  const headRot = Math.atan2(headVelY, headVelX) * 0.2;
+  ctx.beginPath();
+  ctx.ellipse(vX, vY, 7, 3.5, headRot, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCapsule(ctx, x1, y1, x2, y2, r, fillColor, strokeColor) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 0.001;
@@ -153,11 +244,11 @@ function drawCapsuleLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor) {
   const uy = dy / len;
   ctx.fillStyle = fillColor;
   ctx.beginPath();
-  ctx.moveTo(x1 - uy * r1, y1 + ux * r1);
-  ctx.lineTo(x2 - uy * r2, y2 + ux * r2);
-  ctx.arc(x2, y2, r2, Math.atan2(uy, ux) - Math.PI / 2, Math.atan2(uy, ux) + Math.PI / 2);
-  ctx.lineTo(x1 + uy * r1, y1 - ux * r1);
-  ctx.arc(x1, y1, r1, Math.atan2(uy, ux) + Math.PI / 2, Math.atan2(uy, ux) - Math.PI / 2);
+  ctx.moveTo(x1 - uy * r, y1 + ux * r);
+  ctx.lineTo(x2 - uy * r, y2 + ux * r);
+  ctx.arc(x2, y2, r, Math.atan2(uy, ux) - Math.PI / 2, Math.atan2(uy, ux) + Math.PI / 2);
+  ctx.lineTo(x1 + uy * r, y1 - ux * r);
+  ctx.arc(x1, y1, r, Math.atan2(uy, ux) + Math.PI / 2, Math.atan2(uy, ux) - Math.PI / 2);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = strokeColor;
@@ -165,30 +256,33 @@ function drawCapsuleLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor) {
   ctx.stroke();
 }
 
-export function drawRagdoll(ctx, ragdoll, color) {
-  const { points } = ragdoll;
-  const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
-  const strokeColor = color;
-  const fillColor = color;
-  ctx.strokeStyle = strokeColor;
+function darken(c, pct) {
+  const m = c.match(/\w\w/g);
+  if (!m) return c;
+  return '#' + m.map(x => Math.max(0, Math.min(255, parseInt(x, 16) * (1 - pct))).toString(16).padStart(2, '0')).join('');
+}
+
+function drawAdvancedLimb(ctx, x1, y1, x2, y2, r1, r2, fillColor, strokeColor) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 0.001;
+  const ux = dx / len;
+  const uy = dy / len;
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  const midR = Math.max(r1, r2) * 1.15;
   ctx.fillStyle = fillColor;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.arc(head.x, head.y, 14, 0, Math.PI * 2);
+  ctx.moveTo(x1 - uy * r1, y1 + ux * r1);
+  ctx.quadraticCurveTo(midX - uy * midR, midY + ux * midR, x2 - uy * r2, y2 + ux * r2);
+  ctx.arc(x2, y2, r2, Math.atan2(uy, ux) - Math.PI / 2, Math.atan2(uy, ux) + Math.PI / 2);
+  ctx.quadraticCurveTo(midX + uy * midR, midY - ux * midR, x1 + uy * r1, y1 - ux * r1);
+  ctx.arc(x1, y1, r1, Math.atan2(uy, ux) + Math.PI / 2, Math.atan2(uy, ux) - Math.PI / 2);
+  ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2;
   ctx.stroke();
-  drawCapsuleLimb(ctx, chest.x, chest.y, pelvis.x, pelvis.y, 7, 8, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, chest.x, chest.y, lSh.x, lSh.y, 5, 4, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, lSh.x, lSh.y, lEl.x, lEl.y, 4, 3.5, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, chest.x, chest.y, rSh.x, rSh.y, 5, 4, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, rSh.x, rSh.y, rEl.x, rEl.y, 4, 3.5, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, pelvis.x, pelvis.y, lHip.x, lHip.y, 6, 5, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, lHip.x, lHip.y, lKn.x, lKn.y, 5, 4, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, lKn.x, lKn.y, lFt.x, lFt.y, 4, 3, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, pelvis.x, pelvis.y, rHip.x, rHip.y, 6, 5, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, rHip.x, rHip.y, rKn.x, rKn.y, 5, 4, fillColor, strokeColor);
-  drawCapsuleLimb(ctx, rKn.x, rKn.y, rFt.x, rFt.y, 4, 3, fillColor, strokeColor);
 }
 
 export function isRagdollSettled(ragdoll) {

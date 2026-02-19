@@ -1,4 +1,5 @@
 import { POWERS } from '../entities/powers.js';
+import { MONSTERS } from '../ai/monsters.js';
 
 const DOM_SUFFIX = { hpSet: 'hpSet', intelligence: 'intelligence', powers: 'powers', jutsuSlots: 'jutsuSlots' };
 
@@ -33,7 +34,7 @@ export function updatePowerCooldownUI(f1, f2, now) {
   });
 }
 
-export function updateJutsuHUD(f1, f2, skillFeed, now) {
+export function updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster) {
   if (!f1 || !f2) return;
   [f1, f2].forEach((f, i) => {
     const el = document.getElementById(getFighterDomId(i, 'jutsuSlots'));
@@ -47,11 +48,11 @@ export function updateJutsuHUD(f1, f2, skillFeed, now) {
       const remain = Math.max(0, (f.powerCooldowns[pid] || 0) - now);
       const maxCd = p?.cooldown || 20000;
       const pct = remain > 0 ? 100 - (remain / maxCd) * 100 : 100;
-      const tip = p?.tip ? ` title="${p.tip} (${maxCd/1000}s cd)"` : '';
+      const tip = p?.tip ? ` title="${p.tip} (${maxCd / 1000}s cd)"` : '';
       return `<div class="jutsu-slot ${remain <= 0 ? 'ready' : ''}"${tip}>
         <span class="jutsu-slot-name">${p?.name || pid}</span>
         <div class="jutsu-slot-cd"><div class="jutsu-slot-cd-fill ${remain > 0 ? 'depleted' : ''}" style="width:${pct}%"></div></div>
-        <span class="jutsu-slot-time">${remain > 0 ? Math.ceil(remain/1000) + 's' : '✓'}</span>
+        <span class="jutsu-slot-time">${remain > 0 ? Math.ceil(remain / 1000) + 's' : '✓'}</span>
       </div>`;
     }).join('');
   });
@@ -60,15 +61,41 @@ export function updateJutsuHUD(f1, f2, skillFeed, now) {
     const filtered = skillFeed.filter(s => now - s.at < 3500);
     feedEl.innerHTML = filtered.map(s => {
       const name = POWERS[s.powerId]?.name || s.powerId;
-      return `<div class="jutsu-feed-item f${s.fighterId + 1}">F${s.fighterId + 1}: ${name}</div>`;
+      const actorName = s.fighterId === 0 ? 'Hero' : (MONSTERS[selectedMonster]?.name.split(' ').pop() || 'Monster');
+      return `<div class="jutsu-feed-item f${s.fighterId + 1}">${actorName}: ${name}</div>`;
     }).join('');
   }
 }
+const STATUS_ICONS = {
+  deepFreeze: '🧊',
+  frozen: '❄️',
+  burning: '🔥',
+  shocked: '⚡',
+  phased: '👻',
+  anchored: '⚓'
+};
 
-export function updateHUD(f1, f2, els, maxRounds, skillFeed) {
+export function updateStatusIcons(f1, f2, s1, s2, now) {
+  if (!s1 || !s2) return;
+  [f1, f2].forEach((f, i) => {
+    const container = i === 0 ? s1 : s2;
+    const active = f.status.activeKeys(now);
+
+    // Simple diffing to avoid heavy innerHTML rewrites
+    const currentIcons = container.querySelectorAll('.status-icon');
+    const activeValid = active.filter(k => STATUS_ICONS[k]);
+
+    if (currentIcons.length !== activeValid.length || [...currentIcons].some((el, idx) => !el.classList.contains(activeValid[idx]))) {
+      container.innerHTML = activeValid.map(k => `<div class="status-icon ${k}" title="${k}">${STATUS_ICONS[k]}</div>`).join('');
+    }
+  });
+}
+
+export function updateHUD(f1, f2, els, maxRounds, skillFeed, selectedMonster) {
   const now = performance.now();
   updateBars(f1, f2, els.hp1, els.hp2, els.stam1, els.stam2);
   updateRounds(els.rounds, f1, f2, maxRounds);
   updatePowerCooldownUI(f1, f2, now);
-  updateJutsuHUD(f1, f2, skillFeed, now);
+  updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster);
+  updateStatusIcons(f1, f2, els.statusIcons1, els.statusIcons2, now);
 }

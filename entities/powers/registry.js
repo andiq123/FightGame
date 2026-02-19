@@ -23,7 +23,7 @@ export function scorePower(pid, ctx) {
 
 export function executePower(pid, ctx) {
   const p = registry.get(pid);
-  return p?.execute ? p.execute(ctx) : false;
+  return p?.execute ? p.execute({ ...ctx, world: ctx.world }) : false;
 }
 
 export function getSpawnEffect(pid) {

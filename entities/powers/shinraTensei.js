@@ -3,7 +3,7 @@ import { POSE } from '../fighter.js';
 import { applyKnockback } from '../../engine/physics.js';
 import { createRagdoll } from '../../engine/ragdoll.js';
 import { createHitEffect } from '../../core/hitEffectFactory.js';
-import { getRagdollOriginY } from '../../core/coordinates.js';
+import { getRagdollOriginY, getHitEffectY } from '../../core/coordinates.js';
 import { COMBAT, SKILL_DAMAGE } from '../../config/constants.js';
 
 const REPULSE_KNOCKBACK = 420;
@@ -18,14 +18,14 @@ function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
   caster.damageDealt += dmg;
   const knockback = blocking ? REPULSE_KNOCKBACK * 0.4 : REPULSE_KNOCKBACK;
   applyKnockback(target, knockback, caster.x, true);
-  target.stunUntil = Math.max(target.stunUntil, now + 200);
-  target.hitFlashUntil = now + 220;
+  target.status.set('stun', now + (blocking ? 100 : 200));
+  target.status.set('hitFlash', now + 220);
   target.hitLastDmg = dmg;
   target.currentAttack = null;
   target.pose = POSE.stagger;
-  target.staggerUntil = now + COMBAT.STAGGER_DURATION_MS;
+  target.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
   target.staggerRagdoll = createRagdoll(target.x, getRagdollOriginY(target), target.facing, target.vx, target.vy, caster.x, false);
-  hitEffects.push(createHitEffect(target.x, { dmg, shinra: true, block: blocking }));
+  hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg, shinra: true, block: blocking }));
 }
 
 registerPower('shinraTensei', {
@@ -33,27 +33,57 @@ registerPower('shinraTensei', {
   cooldown: 8000,
   tip: 'Almighty Push – exploding circle repulse, ragdoll, deflects projectiles'
 }, {
-  score: ({ dist, inboundThreat, oppAttacking, fighter, defense, rng, cannotEvade, cornered }) => {
-    if (dist > REPULSE_RANGE) return 0;
+  score: ({ dist, inboundThreat, oppAttacking, fighter, opponent, stats, rng, cannotEvade, cornered, oppStaggered, oppRecovering, obstacles }) => {
+    const intelligence = stats.reaction / 100;
+    if (dist > 125) return 0;
     if (!fighter.canUsePower('shinraTensei')) return 0;
-    let s = 0;
-    if (cannotEvade) s += 90;
-    if (!fighter.hasStamina(26) && oppAttacking && dist < REPULSE_RANGE) s += 50;
-    if (cornered && dist < 90) s += 45;
-    if (inboundThreat && inboundThreat.timeToImpact * 1000 < 400) s += 70;
-    if (dist < 80 && dist > 35) s += 55;
-    if (oppAttacking && dist < 70) s += 40;
-    s += defense * 30 + rng() * 25;
+
+    let s = 40;
+    if (dist <= 85) s += 55;
+    if (dist <= 60) s += 40;
+
+    if (oppStaggered) s += 60 + (intelligence * 30);
+    if (oppRecovering) s += 45 + (intelligence * 20);
+
+    if (cannotEvade) s += 80;
+    if (!fighter.hasStamina(30) && oppAttacking && dist < 100) s += 60;
+    if (cornered && dist < 110) s += 50;
+
+    // Environment Bonus: Pinning against wall
+    // Check if opponent is near a wall
+    // Environment Bonus: Pinning against wall
+    // Check if opponent is near a wall
+    const oppNearWall = (obstacles || []).some(o => Math.abs(opponent.x - o.x) < (o.width / 2 + 60));
+    if (oppNearWall && dist < 100) s += 45;
+
+    // Reactive use scaling with intelligence
+    if (inboundThreat && inboundThreat.timeToImpact * 1000 < (300 + intelligence * 200)) {
+      s += 60 + (intelligence * 40);
+    }
+
+    if (oppAttacking && dist < 80) s += 40 + (intelligence * 25);
+
+    s += (stats.defense / 100) * 35 + rng() * 25;
     return s;
   },
   execute: ({ fighter, opponent, hitEffects, clones }) => {
     const now = performance.now();
     const centerX = fighter.x;
-    fighter.shinraTenseiUntil = now + REPULSE_DEFLECT_MS;
-    hitEffects.push(createHitEffect(centerX, { shinra: true, shinraCircle: true, radius: REPULSE_RANGE }));
+    fighter.status.set('shinraTensei', now + REPULSE_DEFLECT_MS);
+    hitEffects.push(createHitEffect(centerX, { y: getHitEffectY(fighter.y), shinra: true, shinraCircle: true, radius: REPULSE_RANGE }));
+
+    // Cinematic Shockwave & Flash
+    const world = fighter.world; // Usually world is passed in ctx
+    if (world) {
+      world.screenShake = 15;
+      world.skyFocus = { type: 'shinra', intensity: 1, expiry: now + 400 };
+      import('../../services/particleSystem.js').then(ps => {
+        ps.spawnShinraTensei(world.particles, fighter, Math.random); // Existing but now boosted
+      });
+    }
     const oppDist = Math.abs(opponent.x - centerX);
     if (oppDist <= REPULSE_RANGE) {
-      const blocking = opponent.blockUntil > now || opponent.blockLowUntil > now;
+      const blocking = opponent.status.active('block', now) || opponent.status.active('blockLow', now);
       applyShinraToTarget(fighter, opponent, now, hitEffects, blocking);
     }
     const oppId = opponent.id === 0 ? 1 : 0;

@@ -1,12 +1,19 @@
 import { registerPower } from './registry.js';
+import { CLONE } from '../../config/constants.js';
 
 registerPower('cloneJutsu', {
   name: 'Clone Jutsu',
   cooldown: 16000,
-  duration: 3000,
-  tip: 'Smoke poof spawn, clone chases & attacks 3s'
+  tip: 'Spectral clone chases & combos for 5s'
 }, {
-  score: ({ dist, oppAttacking, opponent, stats, rng }) => {
+  score: ({ dist, oppAttacking, opponent, stats, rng, fighter, clones }) => {
+    // Prevent clone spam
+    const myClones = (clones || []).filter(c => c.ownerId === fighter.id);
+    if (myClones.length >= 2) return 0;
+
+    // Anti-heal interrupt: opponent is healing, send a clone!
+    if (opponent.status?.active('healEffect', performance.now())) return 95 + rng() * 15;
+
     const inRange = dist <= 115;
     if ((inRange || (dist < 140 && dist > 50)) && oppAttacking) {
       const risk = stats.riskTolerance / 100;
@@ -17,24 +24,30 @@ registerPower('cloneJutsu', {
       return 58 + risk * 32 + rng() * 22;
     }
     if (opponent.staggerUntil > 0) return 40;
-    return 0;
+
+    let finalScore = 0;
+    if (fighter.archetype === 'assassin') finalScore += 40;
+    return finalScore;
   },
   execute: ({ fighter, opponent, clones }) => {
     const dir = fighter.x < opponent.x ? 1 : -1;
     const targetId = fighter.id === 0 ? 1 : 0;
     const now = performance.now();
     clones.push({
-      x: fighter.x + dir * 50,
-      vx: dir * 420,
+      x: fighter.x + dir * 60,
+      vx: dir * CLONE.CHASE_SPEED,
       facing: dir,
       targetId,
       ownerId: fighter.id,
       color: fighter.color,
       createdAt: now,
-      spawnEffectUntil: now + 400,
+      hp: CLONE.HP,
+      maxHp: CLONE.HP,
       lastHitAt: 0,
-      damage: 35,
-      stun: 160
+      lastTeleportAt: 0,
+      comboStep: 0,
+      damage: CLONE.DAMAGE,
+      stun: 140
     });
     return true;
   },

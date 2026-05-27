@@ -4,7 +4,7 @@ import { tickParticles, spawnHealParticles, spawnFireballLaunch, spawnClonePoof,
 import { updateHUD, getFighterDomId } from './services/hud.js';
 import { World } from './engine/core/World.js';
 import { Viewport } from './engine/view/Viewport.js';
-import { INTELLIGENCE_LEVELS, loadSettings, saveSettings, DEFAULT_SETTINGS } from './ai/presets.js';
+import { loadSettings, saveSettings } from './ai/presets.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -14,7 +14,7 @@ import { POWERS } from './entities/powers.js';
 import { CombatSystem } from './engine/systems/CombatSystem.js';
 import { PhysicsSystem } from './engine/systems/PhysicsSystem.js';
 import { AISystem } from './engine/systems/AISystem.js';
-import { MONSTERS } from './ai/monsters.js';
+import { AZURE_ASSASSIN } from './ai/monsters.js';
 import { UIManager } from './services/UIManager.js';
 
 // 1. Initialization
@@ -45,8 +45,6 @@ const countdownEl = document.getElementById('countdown');
 
 let lastTime = 0;
 let intelligence1 = 12;
-let monsterIntelligence = 48;
-let selectedMonster = 'golem';
 let running = false;
 let skillFeed = [];
 let koSlowMo = 0;
@@ -95,21 +93,16 @@ function persistSettings() {
     intelligence1: parseInt(document.getElementById('intelligence1')?.value || 12, 10),
     gameSpeed: parseFloat(document.getElementById('gameSpeed')?.value || 1),
     powers1: p1,
-    armor1: document.querySelector('#armor1 .equip-btn.selected')?.dataset.id || 'none',
     weapon1: document.querySelector('#weapon1 .equip-btn.selected')?.dataset.id || 'fists',
-    lastMonster: selectedMonster,
     hp1: parseInt(document.getElementById('hpSet1')?.value || 100, 10),
   });
 }
 
-function syncEquipmentFromUI() {
+function syncWeaponFromUI() {
   if (!world.fighter1) return;
-  const a1 = document.querySelector('#armor1 .equip-btn.selected')?.dataset.id || 'none';
   const w1 = document.querySelector('#weapon1 .equip-btn.selected')?.dataset.id || 'fists';
-  world.fighter1.setArmor(a1);
   world.fighter1.setWeapon(w1);
 
-  // Sync Level
   const l1 = parseInt(document.getElementById('level1')?.value || 1, 10);
   syncLevel(0, l1);
 }
@@ -132,10 +125,6 @@ function syncLevel(fighterIndex, level) {
   if (valEl) valEl.textContent = level;
   const hudEl = document.getElementById(`hudLevel${fighterIndex + 1}`);
   if (hudEl) hudEl.textContent = `Lvl ${level}`;
-}
-
-function updateMonsterUI() {
-  uiManager?.updateMonsterUI(selectedMonster);
 }
 
 function getCameraX() {
@@ -165,7 +154,6 @@ function updateRoundState(now, dt) {
     world.roundState = 'fighting';
     countdownEl?.classList.remove('visible');
     if (world.fighter1) world.fighter1.maxHp = getFighterHealth(0);
-    if (world.fighter2) world.fighter2.maxHp = getFighterHealth(1);
     world.fighter1?.resetForRound(-ARENA.START_OFFSET, 1);
     world.fighter2?.resetForRound(ARENA.START_OFFSET, -1);
     world.smoothCamX = getCameraX();
@@ -255,9 +243,8 @@ function createFighters() {
   world.fighter1 = new Fighter(0, color1, -ARENA.START_OFFSET, 1, hp1);
 
   // Initialize Monster
-  const m = MONSTERS[selectedMonster] || MONSTERS.golem;
+  const m = AZURE_ASSASSIN;
   world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1, m.hp);
-  world.fighter2.setArmor(m.armor);
   world.fighter2.setWeapon(m.weapon);
   world.fighter2.setPowers(m.powers);
   world.fighter2.level = m.level;
@@ -270,25 +257,20 @@ function createFighters() {
   syncLevel(1, m.level);
 
   syncPowersFromUI();
-  syncEquipmentFromUI();
+  syncWeaponFromUI();
 }
 
 function applySettings(settings) {
   intelligence1 = settings.intelligence1 ?? 12;
   world.gameSpeed = settings.gameSpeed || 1;
-  selectedMonster = settings.lastMonster || 'golem';
 
   uiManager?.buildPowerButtons('powers1', POWERS, settings.powers1, (wrap) => {
     if (running) syncPowersFromUI();
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
-  uiManager?.buildEquipButtons('armor1', EQUIPMENT.ARMORS, settings.armor1, () => {
-    if (running) syncEquipmentFromUI();
-    persistSettings();
-  });
   uiManager?.buildEquipButtons('weapon1', EQUIPMENT.WEAPONS, settings.weapon1, () => {
-    if (running) syncEquipmentFromUI();
+    if (running) syncWeaponFromUI();
     persistSettings();
   });
 
@@ -307,24 +289,12 @@ function applySettings(settings) {
     syncLevel(0, settings.level1);
   }
 
-  // Intelligence is now fixed per monster archetype
-  monsterIntelligence = MONSTERS[selectedMonster]?.intelligence || 48;
-
-  syncLevel(1, MONSTERS[selectedMonster]?.level || 15);
-
-  updateMonsterUI();
+  syncLevel(1, AZURE_ASSASSIN.level);
 }
 
 function initUI() {
   uiManager = new UIManager({
     onHeroConfirmed: () => {
-      persistSettings();
-    },
-    onMonsterSelected: (id) => {
-      selectedMonster = id;
-      monsterIntelligence = MONSTERS[id]?.intelligence || 48;
-      syncLevel(1, MONSTERS[id]?.level || 15);
-      uiManager.updateMonsterUI(id);
       persistSettings();
     },
     onStart: () => {
@@ -411,8 +381,7 @@ function update(dt) {
     }
   });
 
-  const mInt = monsterIntelligence || (MONSTERS[selectedMonster]?.intelligence || 48);
-  aiSystem.update(world, dt, now, secureRandom, intelligence1, mInt, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
+  aiSystem.update(world, dt, now, secureRandom, intelligence1, AZURE_ASSASSIN.intelligence, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
   combatSystem.update(world, dt, now, secureRandom);
   physicsSystem.update(world, dt, now, secureRandom);
 

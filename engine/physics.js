@@ -6,16 +6,16 @@ export const ARENA_BOUNDS = ARENA.BOUNDS;
 
 const FIGHTER_MARGIN = ARENA.FIGHTER_MARGIN ?? 24;
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const perFrameDamping = (factor, dt) => Math.pow(factor, dt * 60);
+
 function applyDodgeMotion(fighter, now) {
   const elapsed = (now - (fighter.dodgeStartAt ?? now)) / 1000;
   const totalDur = PHYSICS.DODGE_DURATION_MS / 1000;
   const phase = Math.min(1, totalDur > 0 ? elapsed / totalDur : 1);
-  const anticipation = Math.min(1, (PHYSICS.DODGE_ANTICIPATION_MS / 1000) > 0 ? elapsed / (PHYSICS.DODGE_ANTICIPATION_MS / 1000) : 1);
-  const rampUp = 1 - Math.exp(-PHYSICS.DODGE_ACCEL * elapsed * (1 + anticipation * 0.5));
-  const rampDown = phase > 0.7 ? Math.max(0, (1 - phase) / 0.3) : 1;
+  const ease = Math.sin(phase * Math.PI);
   const speedMult = fighter.speedMult || 1;
-  fighter.vx = (fighter.dodgeDir ?? 1) * PHYSICS.DODGE_PEAK_SPEED * speedMult * rampUp * rampDown;
-  fighter.vx *= 1 - PHYSICS.DODGE_DECEL * Math.max(0, phase - 0.5);
+  fighter.vx = (fighter.dodgeDir ?? 1) * PHYSICS.DODGE_PEAK_SPEED * speedMult * ease;
 }
 
 function applyGravity(fighter, dt) {
@@ -30,42 +30,33 @@ function applyGravity(fighter, dt) {
   if (fighter.y < 0) fighter.vy *= (PHYSICS.AIR_RESISTANCE ?? 0.99);
 }
 
+function applyAirDrag(fighter, dt) {
+  if (fighter.onGround()) return;
+  const speed = Math.hypot(fighter.vx, fighter.vy);
+  if (speed < 80) return;
+  const drag = speed * (PHYSICS.AIR_DRAG ?? 0.00055) * dt;
+  fighter.vx -= fighter.vx * drag;
+  fighter.vy -= fighter.vy * drag * 0.35;
+}
+
 export function integratePosition(fighter, dt, now) {
   const wasOnGround = fighter.y >= -2;
-  const prevVy = fighter.vy;
-
-  // Apply Air Resistance (Drag)
-  const speed = Math.hypot(fighter.vx, fighter.vy);
-  const dragCoeff = PHYSICS.AIR_DRAG ?? 0.0012;
-  if (speed > 100) {
-    const drag = speed * speed * dragCoeff * dt;
-    const dragX = (fighter.vx / speed) * drag;
-    const dragY = (fighter.vy / speed) * drag;
-    fighter.vx -= dragX;
-    fighter.vy -= dragY;
-  }
-  fighter.vx *= (PHYSICS.AIR_RESISTANCE ?? 0.992);
 
   fighter.x += fighter.vx * dt;
   fighter.y += fighter.vy * dt;
   if (wasOnGround && fighter.y < -2) fighter.lastLeftGroundAt = now;
   if (fighter.y >= 0) {
     fighter.lastLeftGroundAt = 0;
-    if (!wasOnGround && prevVy > (PHYSICS.LANDING_BOUNCE_VY_THRESH ?? 400)) {
-      const bounceMult = PHYSICS.LANDING_BOUNCE_MULT ?? 0.12;
-      fighter.vy = -prevVy * bounceMult;
-    }
   }
 }
 
 export function applyFriction(fighter, dt) {
   if (fighter.onGround()) {
-    const isMoving = Math.abs(fighter.vx) > 10;
     const isSliding = fighter.pose === 'slide';
-    const friction = isSliding ? PHYSICS.FRICTION_MIN : (isMoving ? PHYSICS.FRICTION_AIR : PHYSICS.FRICTION_GROUND);
-    fighter.vx *= Math.pow(friction, dt * 60);
+    const friction = isSliding ? PHYSICS.FRICTION_MIN : PHYSICS.FRICTION_GROUND;
+    fighter.vx *= perFrameDamping(friction, dt);
   } else {
-    fighter.vx *= Math.pow(PHYSICS.FRICTION_AIR, dt * 60);
+    fighter.vx *= perFrameDamping(PHYSICS.FRICTION_AIR, dt);
   }
 }
 
@@ -92,7 +83,7 @@ function clampWalkRunSpeed(fighter) {
   }
   const speedMult = fighter.speedMult || 1;
   const maxSpeed = (fighter.pose === 'run' ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED) * speedMult;
-  if (Math.abs(fighter.vx) > maxSpeed) fighter.vx = Math.sign(fighter.vx) * maxSpeed;
+  fighter.vx = clamp(fighter.vx, -maxSpeed, maxSpeed);
 }
 
 function clampToArena(fighter) {
@@ -107,31 +98,14 @@ function clampToArena(fighter) {
 }
 
 export function updatePhysics(fighter, dt, now) {
-  if (fighter.pose === 'swing') {
-    applyGravity(fighter, dt);
-    integratePosition(fighter, dt, now);
-    applyFriction(fighter, dt, false, false);
-    clampToGround(fighter);
-    clampToArena(fighter);
-    return;
-  }
-
   const inDodge = fighter.pose === 'dodge' && fighter.status.active('invincible', now);
-  if (inDodge && fighter.dodgeStartAt != null) {
-    applyDodgeMotion(fighter, now);
-    applyGravity(fighter, dt);
-    integratePosition(fighter, dt, now);
-    clampToGround(fighter);
-    applyFriction(fighter, dt, true, false);
-    clampToArena(fighter);
-    return;
-  }
+  if (inDodge && fighter.dodgeStartAt != null) applyDodgeMotion(fighter, now);
 
-  const inHitstun = fighter.status.active('stun', now) && fighter.pose === 'hit';
   applyGravity(fighter, dt);
+  applyAirDrag(fighter, dt);
   integratePosition(fighter, dt, now);
   clampToGround(fighter);
-  applyFriction(fighter, dt, false, inHitstun);
+  applyFriction(fighter, dt);
   clampWalkRunSpeed(fighter);
   clampToArena(fighter);
 }
@@ -142,12 +116,12 @@ export function applyKnockback(fighter, amount, fromX, heavy, upward = false, ki
   if (kickLaunch && PHYSICS.KNOCKBACK_KICK_LAUNCH_MULT) mult = PHYSICS.KNOCKBACK_KICK_LAUNCH_MULT;
   const stability = fighter.getStability ? fighter.getStability() : 1;
   const horiz = dir * amount * mult * stability;
-  fighter.vx += horiz;
+  fighter.vx = clamp(fighter.vx + horiz, -760, 760);
   const upwardMult = upward ? PHYSICS.UPPERCUT_UPWARD : (heavy ? PHYSICS.KNOCKBACK_UPWARD : 0);
   if (upwardMult > 0) {
-    fighter.vy += -Math.abs(amount) * upwardMult * 0.92;
+    fighter.vy = clamp(fighter.vy - Math.abs(amount) * upwardMult, -720, 820);
   } else if (heavy && Math.abs(horiz) > 80) {
-    fighter.vy += -Math.abs(amount) * 0.08;
+    fighter.vy = clamp(fighter.vy - Math.abs(amount) * 0.05, -720, 820);
   }
   fighter.facing = -dir;
 }

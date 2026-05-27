@@ -546,7 +546,6 @@ export function drawStickman(ctx, fighter, groundY, now) {
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // Equipment Rendering
   const joints = {
     pelvisX, pelvisY, ribsX, ribsY, headX, headY,
     lShX, lShY, rShX, rShY,
@@ -555,7 +554,6 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lHipX, rHipX, lKneeX, lKneeY, rKneeX, rKneeY,
     lAnkleX, lAnkleY, rAnkleX, rAnkleY
   };
-  drawArmor(ctx, fighter, fighter.armorId, joints);
   drawWeapon(ctx, fighter, fighter.weaponId, joints);
 
   ctx.shadowColor = 'transparent';
@@ -1338,123 +1336,6 @@ function drawStickmanFigure(ctx, x, groundY, face, attackPose) {
   drawTaperedLimb(ctx, x + 8, pelvisY, x + 8 + legLen * 0.5 * face, pelvisY + legLen, 5, 4);
 }
 
-
-function drawArmor(ctx, fighter, armorId, joints) {
-  const armor = EQUIPMENT.ARMORS[armorId];
-  if (!armor || armorId === 'none') return;
-
-  const { ribsX, ribsY, pelvisX, pelvisY, lShX, lShY, rShX, rShY, lKneeX, lKneeY, rKneeX, rKneeY, headX, headY } = joints;
-  const face = fighter.facing || 1;
-  const color = armor.color || '#888';
-  const trim = armor.trim || '#fff';
-  const bodyAng = Math.atan2(pelvisY - ribsY, pelvisX - ribsX) + Math.PI / 2;
-
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.strokeStyle = trim;
-  ctx.lineWidth = 1.2;
-
-  if (armorId === 'samurai') {
-    // Angular Lamellar Chestplate
-    ctx.beginPath();
-    ctx.moveTo(ribsX - 14, ribsY - 5);
-    ctx.lineTo(ribsX + 14, ribsY - 5);
-    ctx.lineTo(pelvisX + 12, pelvisY + 5);
-    ctx.lineTo(pelvisX - 12, pelvisY + 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // Lamellar lines
-    for (let i = 0; i < 3; i++) {
-      const ty = ribsY + 8 + i * 6;
-      ctx.beginPath();
-      ctx.moveTo(ribsX - 12, ty);
-      ctx.lineTo(ribsX + 12, ty);
-      ctx.stroke();
-    }
-    // Tiered Pauldrons
-    [[lShX, lShY, -1], [rShX, rShY, 1]].forEach(([sx, sy, sdir]) => {
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.roundRect(sx - 8, sy - 4 + i * 4, 16, 6, 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    });
-  } else if (armorId === 'heavy') {
-    // Massive Layered Plate
-    ctx.beginPath();
-    ctx.ellipse((ribsX + pelvisX) / 2, (ribsY + pelvisY) / 2, 18, 24, bodyAng, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // Oversized Pauldrons
-    [[lShX, lShY], [rShX, rShY]].forEach(([sx, sy]) => {
-      ctx.beginPath();
-      ctx.arc(sx, sy, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(sx, sy, 6, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-    // Heavy Thigh Guards
-    [[pelvisX - 8 * face, lKneeX, lKneeY], [pelvisX + 8 * face, rKneeX, rKneeY]].forEach(([hx, kx, ky]) => {
-      const mx = (hx + kx) / 2;
-      const my = (pelvisY + ky) / 2;
-      ctx.beginPath();
-      ctx.ellipse(mx, my, 10, 15, Math.atan2(ky - pelvisY, kx - hx) + Math.PI / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    });
-  } else if (armorId === 'cyber') {
-    // Sleek Torso
-    ctx.beginPath();
-    ctx.ellipse((ribsX + pelvisX) / 2, (ribsY + pelvisY) / 2, 13, 19, bodyAng, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // Glowing Lines
-    ctx.strokeStyle = trim;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(ribsX, ribsY - 10);
-    ctx.lineTo(ribsX, ribsY + 15);
-    ctx.stroke();
-    // Minimalist Pauldrons
-    [[lShX, lShY], [rShX, rShY]].forEach(([sx, sy]) => {
-      ctx.beginPath();
-      ctx.ellipse(sx, sy, 8, 5, bodyAng, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-  } else if (armorId === 'ninja') {
-    // Lightweight Straps/Wraps
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(lShX, lShY);
-    ctx.lineTo(pelvisX + 5, pelvisY);
-    ctx.moveTo(rShX, rShY);
-    ctx.lineTo(pelvisX - 5, pelvisY);
-    ctx.stroke();
-    // Scarf/Collar
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(ribsX - 10, ribsY - 8);
-    ctx.lineTo(ribsX + 10, ribsY - 8);
-    ctx.lineTo(ribsX + 15 * face, ribsY + 5);
-    ctx.lineTo(ribsX - 5 * face, ribsY + 5);
-    ctx.closePath();
-    ctx.fill();
-    // Arm/Leg wraps
-    ctx.lineWidth = 1;
-    [[lShX, lShY], [rShX, rShY], [lKneeX, lKneeY], [rKneeX, rKneeY]].forEach(([x, y]) => {
-      ctx.beginPath();
-      ctx.arc(x, y, 5, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-  }
-
-  ctx.restore();
-}
 
 function drawWeapon(ctx, fighter, weaponId, joints) {
   const weapon = EQUIPMENT.WEAPONS[weaponId];

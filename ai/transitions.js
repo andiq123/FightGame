@@ -41,26 +41,22 @@ export const Transitions = {
         const needsRegroup = tired || justGotUp || inRecovery || (hitALot && staminaRatio < 0.7);
         if (!needsRegroup) return false;
 
-        const chance = AI.TRANSITION?.REGROUP_CHANCE ?? 0.52;
-        return ctx.rng() < chance;
+        return true;
     },
     retreat(ctx) {
-        const t = AI.TRANSITION || {};
         if (ctx.evasiveTimeOver || ctx.retreatStopped) return false;
         if (!ctx.shouldRetreat || ctx.dist <= AI.PREFERRED_DIST_MIN) return false;
-        const intelligence = (ctx.stats?.reaction ?? 50) / 100;
-        const baseChance = (t.RETREAT_BASE ?? 0.04) + (1 - ctx.spacing) * (t.RETREAT_SPACING_MUL ?? 0.02);
-        // Nightmare AI is confident and rarely retreats purely out of fear
-        const chance = intelligence > 0.95 ? baseChance * 0.28 : baseChance;
-        return ctx.rng() < chance;
+        if (ctx.fighter.aiState === AI_STATE.RETREATING) return true;
+        return ctx.hpCritical || ctx.staminaLow || ctx.isBurning;
     },
     defend(ctx) {
         const { oppAttacking, oppHeavyWindup, fighter, defense, rng, evasiveTimeOver, inRecovery } = ctx;
         if (evasiveTimeOver) return false;
         if (!oppAttacking && !oppHeavyWindup) return false;
         const t = AI.TRANSITION || {};
-        if (oppHeavyWindup && rng() < (t.DEFEND_WINDUP ?? 0.78)) return true;
-        if (inRecovery && (oppAttacking || oppHeavyWindup)) return rng() < 0.82;
+        if (oppHeavyWindup) return rng() < (t.DEFEND_WINDUP ?? 0.78);
+        if (inRecovery && (oppAttacking || oppHeavyWindup)) return true;
+        if (ctx.dist < AI.GRAB_RANGE) return true;
         return rng() < (t.DEFEND_ATTACK_BASE ?? 0.32) + defense * (t.DEFEND_ATTACK_STAT_MUL ?? 0.48);
     },
     punish(ctx) {
@@ -81,12 +77,11 @@ export const Transitions = {
         const hasRanged = (fighter.powers || []).some(p => ['fireball', 'shuriken', 'lightningCutter'].includes(p));
         const wantsPrep = (emerging && (fighter.hitsTakenLast5Sec || 0) >= 2) || (hasRanged && !energized && dist < 180);
         if (!wantsPrep || dist <= AI.PREFERRED_DIST_MIN) return false;
-        const t = AI.TRANSITION || {};
-        const chance = (t.PREPARE_BASE ?? 0.1) + (ctx.stats.reaction / 100) * (t.PREPARE_REACTION_MUL ?? 0.06);
-        return rng() < chance;
+        if (fighter.aiState === AI_STATE.PREPARING) return true;
+        return ctx.staminaRatio < 0.55 || ctx.hitALot;
     },
     bait(ctx) {
-        const { dist, oppRecovering, oppBlocking, aggression, rng, isExpert, speed } = ctx;
+        const { dist, oppRecovering, oppBlocking, aggression, rng, isExpert } = ctx;
         if (dist < 100 || dist > 220 || !isExpert) return false;
         // Bait if opponent is blocking a lot or if we have high spacing stat
         const baitChance = (0.1 + (1 - aggression) * 0.3 + ctx.spacing * 0.2);
@@ -95,8 +90,8 @@ export const Transitions = {
     pressure(ctx) {
         const { fighter, dist, aggression, rng, tired, immobilized } = ctx;
         if (tired || immobilized || dist > 140) return false;
-        const chance = (aggression * 0.6 + (1 - ctx.hpRatio) * 0.3);
-        return rng() < chance;
+        if (fighter.aiState === AI_STATE.PRESSURING) return dist <= AI.COMBAT_ENTER && !tired;
+        return aggression > 0.65 || ctx.oppJustGotHit || ctx.oppCornered;
     },
     recharge(ctx) {
         const { fighter, dist, inboundThreat, oppAttacking, staminaLow, staminaHigh, isSafe } = ctx;
@@ -146,8 +141,8 @@ export const TRANSITION_CHECKS = [
     // APPROACHING Transition with Hysteresis
     [(ctx) => ctx.canTransition, (ctx) => {
         const isApproaching = ctx.fighter.aiState === AI_STATE.APPROACHING;
-        const exitBound = AI.COMBAT_ENTER - 40; // Hard boundary for approach
-        if (isApproaching) return ctx.dist > exitBound;
+        const exitBound = AI.COMBAT_ENTER - 35;
+        if (isApproaching) return ctx.dist > exitBound && !ctx.oppAttacking;
         return ctx.dist > AI.COMBAT_EXIT || ctx.far;
     }, AI_STATE.APPROACHING],
 ];

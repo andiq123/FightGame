@@ -737,30 +737,6 @@ body {
   transition: all 0.15s;
 }
 
-/* Monster Selection Menu */
-.monster-selection {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(20, 26, 42, 0.4) 0%, rgba(13, 17, 27, 0.6) 100%);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  padding: 40px;
-  transition: all 0.4s ease;
-}
-
-.monster-selection.hidden {
-  display: none;
-}
-
-.monster-selection-inner {
-  width: 100%;
-  max-width: 1200px;
-}
-
 /* UI Elements Modernization */
 .powers label {
   display: flex;
@@ -844,143 +820,12 @@ body {
   letter-spacing: 0.5px;
 }
 
-.monster-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 30px;
-  margin-bottom: 60px;
-}
-
-.monster-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  padding: 24px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  text-align: left;
-}
-
-.monster-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  transform: translateY(-15px);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
-}
-
-.monster-card.selected {
-  background: rgba(255, 184, 108, 0.05);
-  border-color: rgba(255, 184, 108, 0.4);
-  box-shadow: 0 0 40px rgba(255, 184, 108, 0.1);
-}
-
-.monster-visual {
-  width: 120px;
-  height: 120px;
-  margin-bottom: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.8);
-  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.monster-card:hover .monster-visual {
-  transform: scale(1.1);
-  color: #fff;
-}
-
-.monster-visual svg {
-  width: 100%;
-  height: 100%;
-  filter: drop-shadow(0 0 20px currentColor);
-}
-
-.monster-info h3 {
-  font-size: 24px;
-  font-weight: 800;
-  margin-bottom: 12px;
-  color: #fff;
-}
-
-.monster-info p {
-  font-size: 14px;
-  opacity: 0.4;
-  line-height: 1.6;
-  margin-bottom: 12px;
-  min-height: 48px;
-}
-
-.monster-powers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 24px;
-}
-
-.skill-tag {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.monster-card.selected .skill-tag {
-  border-color: rgba(255, 184, 108, 0.3);
-  color: rgba(255, 184, 108, 0.9);
-}
-
 .mons.jutsu-slots {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
   justify-content: inherit;
-}
-
-.monster-stats {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.monster-stats span {
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 100px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.monster-card.selected .monster-stats span {
-  background: rgba(255, 184, 108, 0.15);
-  color: #ffb86c;
-}
-
-.stat-hp {
-  color: #ff5555 !important;
-  border: 1px solid rgba(255, 85, 85, 0.2);
-}
-
-.stat-lvl {
-  color: #ffb86c !important;
-  border: 1px solid rgba(255, 184, 108, 0.2);
-}
-
-.stat-ai {
-  color: #8be9fd !important;
-  border: 1px solid rgba(139, 233, 253, 0.2);
 }
 
 .start-rounds-btn {

@@ -1,5 +1,5 @@
 import { POWERS } from '../entities/powers.js';
-import { MONSTERS } from '../ai/monsters.js';
+import { AZURE_ASSASSIN } from '../ai/monsters.js';
 
 const DOM_SUFFIX = { hpSet: 'hpSet', intelligence: 'intelligence', powers: 'powers', jutsuSlots: 'jutsuSlots' };
 
@@ -34,7 +34,7 @@ export function updatePowerCooldownUI(f1, f2, now) {
   });
 }
 
-export function updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster) {
+export function updateJutsuHUD(f1, f2, skillFeed, now) {
   if (!f1 || !f2) return;
   [f1, f2].forEach((f, i) => {
     const el = document.getElementById(getFighterDomId(i, 'jutsuSlots'));
@@ -61,7 +61,7 @@ export function updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster) {
     const filtered = skillFeed.filter(s => now - s.at < 3500);
     feedEl.innerHTML = filtered.map(s => {
       const name = POWERS[s.powerId]?.name || s.powerId;
-      const actorName = s.fighterId === 0 ? 'Hero' : (MONSTERS[selectedMonster]?.name.split(' ').pop() || 'Monster');
+      const actorName = s.fighterId === 0 ? 'Hero' : AZURE_ASSASSIN.name.split(' ').pop();
       return `<div class="jutsu-feed-item f${s.fighterId + 1}">${actorName}: ${name}</div>`;
     }).join('');
   }
@@ -132,12 +132,12 @@ export function updateAIStateTag(fighter, el) {
   el.innerHTML = `<span class="ai-state-emoji">${meta.emoji}</span><span class="ai-state-label">${meta.label}</span>`;
 }
 
-export function updateHUD(f1, f2, els, maxRounds, skillFeed, selectedMonster) {
+export function updateHUD(f1, f2, els, maxRounds, skillFeed) {
   const now = performance.now();
   updateBars(f1, f2, els.hp1, els.hp2, els.stam1, els.stam2);
   updateRounds(els.rounds, f1, f2, maxRounds);
   updatePowerCooldownUI(f1, f2, now);
-  updateJutsuHUD(f1, f2, skillFeed, now, selectedMonster);
+  updateJutsuHUD(f1, f2, skillFeed, now);
   updateStatusIcons(f1, f2, els.statusIcons1, els.statusIcons2, now);
 
   updateAIStateTag(f1, els.aiState1);

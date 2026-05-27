@@ -28,7 +28,7 @@ registerPower('cloneJutsu', {
       const risk = stats.riskTolerance / 100;
       return 58 + risk * 32 + rng() * 22;
     }
-    if (opponent.staggerUntil > 0) return 40;
+    if (opponent.status.active('stagger', performance.now())) return 40;
 
     let finalScore = 0;
     if (fighter.archetype === 'assassin') finalScore += 40;

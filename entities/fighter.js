@@ -1,5 +1,5 @@
 import { getPower } from './powers/index.js';
-import { updateRagdoll, isRagdollSettled } from '../engine/ragdoll.js';
+import { isRagdollSettled } from '../engine/ragdoll.js';
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, ATTACK_DATA } from './attacks.js';
 import { ARENA, PHYSICS, HP, COMBAT, FIGHTER, EQUIPMENT } from '../config/constants.js';
 import { StatusManager } from './components/StatusManager.js';
@@ -81,16 +81,8 @@ class Fighter {
     return this.stamina >= 10 && !this.status.active('frozen', now) && !this.status.active('deepFreeze', now) && !this.status.active('anchored', now);
   }
 
-  setArmor(armorId) {
-    if (EQUIPMENT.ARMORS[armorId]) this.armorId = armorId;
-  }
-
   setWeapon(weaponId) {
     if (EQUIPMENT.WEAPONS[weaponId]) this.weaponId = weaponId;
-  }
-
-  getArmor() {
-    return EQUIPMENT.ARMORS[this.armorId || 'none'];
   }
 
   getWeapon() {
@@ -98,13 +90,12 @@ class Fighter {
   }
 
   getWeight() {
-    const armor = this.getArmor();
     const weapon = this.getWeapon();
-    return (armor.weight || 0) + (weapon.weight || 0);
+    return weapon.weight || 0;
   }
 
   getStability() {
-    return this.getArmor().knockbackResist || this.getArmor().stability || 1;
+    return 1;
   }
 
   getLifesteal() {
@@ -190,7 +181,7 @@ class Fighter {
       return false;
     }
     if (!this.canJump(now)) return false;
-    this.vy = PHYSICS.JUMP_VY * (this.getArmor().jumpMult || 1);
+    this.vy = PHYSICS.JUMP_VY;
     this.doubleJumpUsed = false;
     this.pose = POSE.jump;
     this.status.clear('jumpBuffer');
@@ -203,7 +194,7 @@ class Fighter {
       return false;
     }
     if (!this.canJump(now)) return false;
-    this.vy = PHYSICS.JUMP_SHORT_VY * (this.getArmor().jumpMult || 1);
+    this.vy = PHYSICS.JUMP_SHORT_VY;
     this.doubleJumpUsed = false;
     this.pose = POSE.jump;
     this.status.clear('jumpBuffer');
@@ -214,7 +205,7 @@ class Fighter {
     if (!this.canDoubleJump(now)) return false;
     if (this.stamina < (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10)) return false;
     this.stamina -= (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10);
-    this.vy = PHYSICS.DOUBLE_JUMP_VY * (this.getArmor().jumpMult || 1);
+    this.vy = PHYSICS.DOUBLE_JUMP_VY;
     this.doubleJumpUsed = true;
     this.pose = POSE.air;
     return true;
@@ -224,7 +215,7 @@ class Fighter {
     if (!this.canWallJump(now)) return false;
     if (this.stamina < (FIGHTER.WALL_JUMP_STAMINA ?? 12)) return false;
     this.stamina -= (FIGHTER.WALL_JUMP_STAMINA ?? 12);
-    this.vy = PHYSICS.WALL_JUMP_VY * (this.getArmor().jumpMult || 1);
+    this.vy = PHYSICS.WALL_JUMP_VY;
     this.vx = dir * PHYSICS.WALL_JUMP_VX;
     this.facing = dir;
     this.wallJumpCooldown = now + FIGHTER.WALL_JUMP_COOLDOWN_MS;
@@ -247,8 +238,7 @@ class Fighter {
       this.buffer.set('dash', { dir }, now);
       return false;
     }
-    const dodgeBoost = this.getArmor().dodgeInvuln || 1;
-    this.status.set('invincible', now + PHYSICS.DODGE_INVULN_MS * dodgeBoost);
+    this.status.set('invincible', now + PHYSICS.DODGE_INVULN_MS);
     this.dodgeDir = dir;
     this.dodgeStartAt = now;
     this.vx = 0;
@@ -322,15 +312,14 @@ class Fighter {
 
     if (this.lastHitAt > 0 && now - this.lastHitAt > FIGHTER.HITS_DECAY_MS) this.hitsTakenLast5Sec = 0;
 
-    const armor = this.getArmor(); // Moved up to be available for staminaRegenBase
-    const staminaRegenBase = (armor.staminaRegen || 1) * (this.hasPassive('battleFocus') ? 1.3 : 1);
+    const staminaRegenBase = this.hasPassive('battleFocus') ? 1.3 : 1;
     this.stamina = Math.min(this.maxStamina, this.stamina + dt * (FIGHTER.STAMINA_REGEN_PER_SEC ?? 32) * staminaRegenBase);
 
     // Apply Equipment Stats & Level Multipliers
     const weapon = this.getWeapon();
     const isFrozen = this.status.active('frozen', now);
 
-    this.speedMult = armor.speed * (this.status.active('speedBoost', now) ? 1.4 : 1);
+    this.speedMult = this.status.active('speedBoost', now) ? 1.4 : 1;
     if (this.status.active('phased', now)) this.speedMult *= 1.2; // Phased speed boost
 
     if (isFrozen) {
@@ -354,7 +343,7 @@ class Fighter {
 
     this.damageMult = weapon.damage * this.levelDamageMult * (this.status.active('overcharge', now) ? 1.5 : 1);
     const passiveDefense = this.hasPassive('stonePlating') ? 0.8 : 1;
-    this.damageTakenMult = (1 / (armor.defense * this.levelDefenseMult)) * (this.status.active('defenseBoost', now) ? 0.6 : 1) * passiveDefense;
+    this.damageTakenMult = (1 / this.levelDefenseMult) * (this.status.active('defenseBoost', now) ? 0.6 : 1) * passiveDefense;
 
     if (this.status.active('speedMult', now) && now > this.status.get('speedMult')) {
       this.status.clear('speedMult');
@@ -391,7 +380,6 @@ class Fighter {
     }
 
     this.powers.forEach(p => {
-      const cdr = this.status.active('phased', now) ? 1.25 : 1;
       if (this.powerCooldowns[p] > 0 && this.powerCooldowns[p] <= now) {
         this.powerCooldowns[p] = 0;
       }

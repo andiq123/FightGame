@@ -284,9 +284,8 @@ function getCombatAction(ctx) {
   }
 
   // 5. Parkour & Style
-  if (parkour > 0.3 && !inRange && dist > 70 && dist < 240 && fighter.onGround() && strategy !== STRATEGY.TURTLE) {
-    if (rng() < 0.3 * parkour) return { type: 'slide', dir: toward };
-    if (rng() < 0.25 * parkour) return { type: 'jump' };
+  if (parkour > 0.65 && !inRange && dist > 90 && dist < 190 && fighter.onGround() && strategy !== STRATEGY.TURTLE) {
+    if (rng() < 0.18 * parkour) return { type: 'slide', dir: toward };
   }
 
   // 6. Default Attack Execution
@@ -333,14 +332,14 @@ function getApproachAction(ctx) {
     return { type: 'move', dir, run: true };
   }
 
-  if (!fighter.onGround() && fighter.hasStamina(10) && !fighter.doubleJumpUsed && rng() < 0.45 + (parkour ?? 0) * 0.3) return { type: 'doubleJump' };
+  if (!fighter.onGround() && fighter.hasStamina(10) && !fighter.doubleJumpUsed && dist > 260 && rng() < 0.18 + (parkour ?? 0) * 0.18) return { type: 'doubleJump' };
 
   const runMinStamina = (ctx.staminaRatio ?? 0.5) >= (PHYSICS.RUN_STAMINA_MIN_RATIO ?? 0.28);
   const slideMinDist = AI.SLIDE_MIN_DIST ?? 95;
 
-  if (dist >= slideMinDist && dist < 160 && fighter.onGround() && canAffordSlide && rng() < 0.7 + (parkour ?? 0) * 0.2) return { type: 'slide', dir: toward };
+  if (parkour > 0.7 && dist >= slideMinDist && dist < 150 && fighter.onGround() && canAffordSlide && rng() < 0.25) return { type: 'slide', dir: toward };
 
-  const canRunNow = dist > 60 && runMinStamina && (ctx.staminaRatio > 0.4 || dist > 550 || isNightmare);
+  const canRunNow = dist > AI.PREFERRED_DIST_MAX && runMinStamina && (ctx.staminaRatio > 0.4 || dist > 550 || isNightmare);
   return { type: 'move', dir: toward, run: canRunNow };
 }
 
@@ -358,8 +357,8 @@ function getRetreatAction(ctx) {
     }
   }
 
-  if (fighter.onGround() && fighter.hasStamina(14) && dist < 100 && rng() < 0.35) return { type: 'jump' };
-  return { type: 'move', dir: away, run: runToEscape && rng() < 0.4 };
+  if (fighter.onGround() && fighter.hasStamina(14) && dist < 90 && rng() < 0.2) return { type: 'jump' };
+  return { type: 'move', dir: away, run: runToEscape };
 }
 
 function getRegroupAction(ctx) {
@@ -474,6 +473,17 @@ export function evaluateState(fighter, opponent, stats, now, rng, clones = [], p
   const minEvadeReaction = AI.EVADE_PROJECTILE_REACTION_MIN ?? 0.9;
 
   if (ctx.inboundThreat && fighter.canAct(now) && reaction >= minEvadeReaction && Transitions.evadeProjectile(ctx)) return AI_STATE.EVADING_PROJECTILE;
+
+  const currentStateLocked = fighter.aiState && !ctx.canTransition;
+  const urgentDefense = (ctx.oppAttacking || ctx.oppHeavyWindup) && ctx.dist <= AI.COMBAT_ENTER && Transitions.defend(ctx);
+  const urgentPunish = ctx.oppJustWhiffed && ctx.dist < 155 && !ctx.tired;
+
+  if (currentStateLocked && !urgentDefense && !urgentPunish) {
+    return fighter.aiState;
+  }
+
+  if (urgentDefense) return AI_STATE.DEFENDING;
+  if (urgentPunish) return AI_STATE.PUNISHING;
 
   for (const [guard, check, state] of TRANSITION_CHECKS) {
     if (!guard(ctx)) continue;

@@ -34,7 +34,7 @@ export class AISystem {
                 const opponent = fighters[1 - i];
 
                 // Strategy Update
-                if (!fighter.aiStrategy && i === 1) { // Only for enemy AI (or both if AI vs AI)
+                if (!fighter.aiStrategy) {
                     fighter.aiStrategy = new AIStrategy(fighter.id, aiStats[i].reaction);
                 }
 

@@ -1,25 +1,25 @@
 export const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
 export const easeInCubic = t => t * t * t;
 export const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-export const easeOutBack = (t, c = 1.5) => 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
-export const easeOutElastic = (t, p = 0.4) => t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI) / p) + 1;
+export const easeOutBack = (t, c = 0.7) => 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
+export const smoothStep = t => t * t * (3 - 2 * t);
 
 export const REST_STANCE = {
-  headTilt: 0.1,
-  torsoLean: 0.12,
-  torsoTwist: 0.08,
-  lShoulderAng: -0.82, // Tighter guard
-  rShoulderAng: 0.45,
-  lElbowAng: 1.1,
-  rElbowAng: -0.75,
-  lHipAng: 0.42,
-  rHipAng: 0.38,
-  lKneeAng: 0.35, // More "ready" crouch
-  rKneeAng: 0.32,
-  weightLead: 0.62,
-  stanceWidth: 0.55, // Wider base
-  breathAmplitude: 0.022,
-  guardHeight: 1.05
+  headTilt: 0.05,
+  torsoLean: 0.08,
+  torsoTwist: 0.04,
+  lShoulderAng: -0.72,
+  rShoulderAng: 0.36,
+  lElbowAng: 0.95,
+  rElbowAng: -0.62,
+  lHipAng: 0.34,
+  rHipAng: 0.3,
+  lKneeAng: 0.24,
+  rKneeAng: 0.22,
+  weightLead: 0.56,
+  stanceWidth: 0.48,
+  breathAmplitude: 0.015,
+  guardHeight: 0.98
 };
 
 const WINDUP = 0;
@@ -41,80 +41,77 @@ function phaseNorm(poseT, durationSec, windup, strike, follow) {
 
 export function getPunchPhase(poseT, durationMs, attackType) {
   const sec = durationMs / 1000;
-  let w = 0.18, s = 0.35, f = 0.25; // Slower default windup, more follow
-  if (attackType === 0) { w = 0.12; s = 0.32; f = 0.3; } // Jab still snappy but longer follow
-  else if (attackType === 1) { w = 0.16; s = 0.38; f = 0.22; }
-  else if (attackType === 2) { w = 0.22; s = 0.32; f = 0.25; }
-  else if (attackType === 6) { w = 0.25; s = 0.35; f = 0.2; } // Uppercut clear windup
-  else if (attackType === 5) { w = 0.32; s = 0.38; f = 0.2; } // Power punch heavy windup
+  let w = 0.2, s = 0.32, f = 0.24;
+  if (attackType === 0) { w = 0.14; s = 0.36; f = 0.26; }
+  else if (attackType === 1) { w = 0.18; s = 0.34; f = 0.24; }
+  else if (attackType === 2) { w = 0.24; s = 0.3; f = 0.26; }
+  else if (attackType === 6) { w = 0.28; s = 0.3; f = 0.24; }
+  else if (attackType === 5) { w = 0.34; s = 0.32; f = 0.22; }
   return phaseNorm(poseT, sec, w, s, f);
 }
 
 export function getKickPhase(poseT, durationMs, attackType) {
   const sec = durationMs / 1000;
-  let w = 0.25, s = 0.38, f = 0.25;
-  if (attackType === 3) { w = 0.18; s = 0.42; f = 0.22; }
-  else if (attackType === 4) { w = 0.35; s = 0.35; f = 0.2; } // High kick coil
-  else if (attackType === 10) { w = 0.15; s = 0.45; f = 0.22; }
-  else if (attackType === 9) { w = 0.28; s = 0.38; f = 0.22; }
-  else if (attackType === 8) { w = 0.38; s = 0.32; f = 0.22; } // Spinning kick big windup
+  let w = 0.28, s = 0.32, f = 0.24;
+  if (attackType === 3) { w = 0.2; s = 0.36; f = 0.24; }
+  else if (attackType === 4) { w = 0.34; s = 0.3; f = 0.24; }
+  else if (attackType === 10) { w = 0.18; s = 0.38; f = 0.24; }
+  else if (attackType === 9) { w = 0.3; s = 0.32; f = 0.24; }
+  else if (attackType === 8) { w = 0.4; s = 0.28; f = 0.24; }
   return phaseNorm(poseT, sec, w, s, f);
 }
 
 export function getWalkCycle(phase, face, weight = 0) {
-  // Phase 0-2PI
   const swing = Math.sin(phase);
-  const wMult = 1 + weight * 1.5; // More weight = exaggerated movement
-  const hipRot = swing * 0.38;
-  const oppositeHip = Math.sin(phase + Math.PI) * 0.38;
+  const wMult = 1 + weight * 0.75;
+  const hipRot = swing * 0.28;
+  const oppositeHip = Math.sin(phase + Math.PI) * 0.28;
 
-  // Stance vs Swing logic
   const leftLegStance = Math.cos(phase) > 0;
   const rightLegStance = Math.cos(phase + Math.PI) > 0;
 
-  const lKnee = leftLegStance ? 0.05 : 0.6 + swing * 0.2;
-  const rKnee = rightLegStance ? 0.05 : 0.6 - swing * 0.2;
+  const lKnee = leftLegStance ? 0.08 : 0.44 + Math.max(0, swing) * 0.12;
+  const rKnee = rightLegStance ? 0.08 : 0.44 + Math.max(0, -swing) * 0.12;
 
   return {
     lHip: hipRot,
     rHip: oppositeHip,
     lKnee: lKnee,
     rKnee: rKnee,
-    lArm: -0.2 - swing * 0.5,
-    rArm: -0.2 + swing * 0.5,
-    lElbow: 0.4 + Math.abs(swing) * 0.3,
-    rElbow: 0.4 + Math.abs(swing) * 0.3,
-    bob: Math.abs(Math.sin(phase * 2)) * 3.5 * wMult,
-    torsoTwist: -swing * 0.12 * face * wMult,
-    lean: 0.05 * face * wMult
+    lArm: -0.18 - swing * 0.34,
+    rArm: -0.18 + swing * 0.34,
+    lElbow: 0.34 + Math.abs(swing) * 0.18,
+    rElbow: 0.34 + Math.abs(swing) * 0.18,
+    bob: Math.abs(Math.sin(phase * 2)) * 2.4 * wMult,
+    torsoTwist: -swing * 0.08 * face * wMult,
+    lean: 0.035 * face * wMult
   };
 }
 
 export function getRunCycle(phase, face, weight = 0) {
-  const wMult = 1 + weight * 1.2;
+  const wMult = 1 + weight * 0.7;
   const swing = Math.sin(phase);
-  const hipRot = swing * 0.75;
-  const oppositeHip = Math.sin(phase + Math.PI) * 0.75;
+  const hipRot = swing * 0.56;
+  const oppositeHip = Math.sin(phase + Math.PI) * 0.56;
 
   const leftSwing = Math.sin(phase) > 0;
   const rightSwing = Math.sin(phase + Math.PI) > 0;
 
-  // High knees on swing, straight on stance
-  const lKnee = leftSwing ? 1.05 : 0.1;
-  const rKnee = rightSwing ? 1.05 : 0.1;
+  const lKnee = leftSwing ? 0.82 : 0.12;
+  const rKnee = rightSwing ? 0.82 : 0.12;
 
   return {
     lHip: hipRot,
     rHip: oppositeHip,
     lKnee: lKnee,
     rKnee: rKnee,
-    lArm: -0.4 - swing * 1.1,
-    rArm: -0.4 + swing * 1.1,
-    lElbow: 1.1 + Math.abs(swing) * 0.4,
-    rElbow: 1.1 + Math.abs(swing) * 0.4,
-    bob: Math.abs(Math.sin(phase)) * 8.5 * wMult,
-    torsoTwist: -swing * 0.25 * face * wMult,
-    lean: 0.18 * face * wMult
+    lArm: -0.34 - swing * 0.78,
+    rArm: -0.34 + swing * 0.78,
+    lElbow: 0.88 + Math.abs(swing) * 0.24,
+    rElbow: 0.88 + Math.abs(swing) * 0.24,
+    bob: Math.abs(Math.sin(phase)) * 5.5 * wMult,
+    torsoTwist: -swing * 0.16 * face * wMult,
+    lean: 0.12 * face * wMult
   };
 }
 
@@ -134,8 +131,7 @@ export function punchExtension(phase, localT, face, attackType, weaponId = 'fist
     return { arm: shoulder, forearm: elbow, torsoTwist: twist, lean, headTilt: 0.08 * pull };
   }
   if (phase === STRIKE) {
-    const extRaw = easeOutElastic(localT, 0.48);
-    const ext = localT < 0.8 ? extRaw : 1.0 + Math.sin((localT - 0.8) * Math.PI * 5) * 0.04;
+    const ext = smoothStep(localT);
 
     let armAng = -Math.PI / 2 + ext * Math.PI * 1.02 * face;
     let forearmAng = ext * 0.18 * face;
@@ -186,7 +182,7 @@ export function punchExtension(phase, localT, face, attackType, weaponId = 'fist
     return { arm: armAng, forearm: forearmAng, torsoTwist: twist, lean };
   }
   if (phase === FOLLOW) {
-    const hold = 1 - easeInCubic(localT) * 0.35;
+    const hold = 1 - easeInOutCubic(localT) * 0.42;
     return {
       arm: -Math.PI / 2 + Math.PI * 0.95 * face * hold,
       forearm: 0.12 * face * hold,
@@ -219,8 +215,7 @@ export function kickExtension(phase, localT, face, attackType) {
     return { leadHip: hip, leadKnee: knee, supportHip: 0.28 + chamber * 0.15, supportKnee: 0.18, torsoTwist: twist, lean };
   }
   if (phase === STRIKE) {
-    const extRaw = easeOutElastic(localT, 0.48);
-    const ext = localT < 0.8 ? extRaw : 1.0 + Math.sin((localT - 0.8) * Math.PI * 5) * 0.04;
+    const ext = smoothStep(localT);
     let leadHip = -0.7, leadKnee = 1.5;
 
     if (attackType === ATTACK.lowKick) { leadHip = 0.45 + ext * 0.6 * face; leadKnee = 1.2 + ext * 0.45 * face; }

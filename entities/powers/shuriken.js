@@ -25,8 +25,8 @@ registerPower('shuriken', {
     if (Math.abs(opponent.vx) > 80) s += 30;
 
     // Punish openings
-    if (opponent.staggerUntil > 0) s += 55;
-    if (opponent.recoveryUntil > performance.now()) s += 40;
+    if (opponent.status.active('stagger', performance.now())) s += 55;
+    if (opponent.status.active('recovery', performance.now())) s += 40;
 
     // Anti-heal: interrupt opponent heal with fast projectile
     if (opponent.status.active('healEffect', performance.now())) s += 60;

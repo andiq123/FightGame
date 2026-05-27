@@ -9,9 +9,6 @@ export class UIManager {
         return {
             heroScreen: document.getElementById('heroScreen'),
             confirmHeroBtn: document.getElementById('confirmHeroBtn'),
-            monsterSelection: document.getElementById('monsterSelection'),
-            monsterCards: document.querySelectorAll('.monster-card'),
-            startGameBtn: document.getElementById('startGameBtn'),
             stopGameBtn: document.getElementById('stopGameBtn'),
             speedBtns: document.querySelectorAll('.speed-control button, .quick-speed-btn'),
             hp1: document.getElementById('hpSet1'),
@@ -26,18 +23,7 @@ export class UIManager {
 
         elements.confirmHeroBtn?.addEventListener('click', () => {
             elements.heroScreen?.classList.add('hidden');
-            elements.monsterSelection?.classList.remove('hidden');
             callbacks.onHeroConfirmed?.();
-        });
-
-        elements.monsterCards.forEach(card => {
-            card.addEventListener('click', () => {
-                callbacks.onMonsterSelected?.(card.dataset.id);
-            });
-        });
-
-        elements.startGameBtn?.addEventListener('click', () => {
-            elements.monsterSelection?.classList.add('hidden');
             callbacks.onStart?.();
         });
 
@@ -60,15 +46,8 @@ export class UIManager {
         });
     }
 
-    updateMonsterUI(selectedId) {
-        this.elements.monsterCards.forEach(card => {
-            card.classList.toggle('selected', card.dataset.id === selectedId);
-        });
-    }
-
     showInitialFlow() {
         this.elements.heroScreen?.classList.remove('hidden');
-        this.elements.monsterSelection?.classList.add('hidden');
     }
 
     updateSpeedUI(speed) {
@@ -120,21 +99,13 @@ export class UIManager {
             btn.appendChild(nameSpan);
 
             let lines = [];
-            if (item.damage && item.damage !== 1) lines.push(`⚔ Attack: ${Math.round(item.damage * 100)}%`);
-            if (item.defense && item.defense !== 1) lines.push(`🛡 Defense: ${Math.round(item.defense * 100)}%`);
-            if (item.speed && item.speed !== 1) lines.push(`💨 Speed: ${Math.round(item.speed * 100)}%`);
-            if (item.range && item.range !== 1) lines.push(`📏 Range: ${item.range}x`);
-            if (item.knockback && item.knockback !== 1) lines.push(`💥 Knockback: ${Math.round(item.knockback * 100)}%`);
-            if (item.jumpMult && item.jumpMult !== 1) lines.push(`⬆ Jump: ${Math.round(item.jumpMult * 100)}%`);
-            if (item.staminaRegen && item.staminaRegen !== 1) lines.push(`♻ Stamina: +${Math.round((item.staminaRegen - 1) * 100)}%`);
-            if (item.parryWindow) lines.push('✦ Enhanced Parry Window');
-            if (item.shieldBoost) lines.push('✦ Stronger Shield');
-            if (item.dodgeInvuln) lines.push('✦ Extended Dodge I-Frames');
-            if (item.stability) lines.push(`✦ Stability: +${Math.round((1 - item.stability) * 100)}%`);
-            if (item.critChance) lines.push(`✦ Crit Chance: ${Math.round(item.critChance * 100)}%`);
-            if (item.stunMult) lines.push(`✦ Stun: +${Math.round((item.stunMult - 1) * 100)}%`);
-            if (item.lifesteal) lines.push(`✦ Lifesteal: ${Math.round(item.lifesteal * 100)}%`);
-            if (item.guardBreak) lines.push('✦ Guard Break');
+            if (item.damage && item.damage !== 1) lines.push(`Attack: ${Math.round(item.damage * 100)}%`);
+            if (item.range && item.range !== 1) lines.push(`Range: ${item.range}x`);
+            if (item.knockback && item.knockback !== 1) lines.push(`Knockback: ${Math.round(item.knockback * 100)}%`);
+            if (item.critChance) lines.push(`Crit Chance: ${Math.round(item.critChance * 100)}%`);
+            if (item.stunMult) lines.push(`Stun: +${Math.round((item.stunMult - 1) * 100)}%`);
+            if (item.lifesteal) lines.push(`Lifesteal: ${Math.round(item.lifesteal * 100)}%`);
+            if (item.guardBreak) lines.push('Guard Break');
 
             if (lines.length > 0) {
                 const tooltip = document.createElement('div');

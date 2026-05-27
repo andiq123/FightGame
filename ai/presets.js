@@ -50,10 +50,8 @@ export const DEFAULT_SETTINGS = {
   hp1: 200,
   intelligence1: 12, // User selected Hero AI level
   powers1: [],
-  armor1: 'none',
   weapon1: 'fists',
   gameSpeed: 1,
-  lastMonster: 'golem'
 };
 
 export function loadSettings() {
@@ -70,10 +68,8 @@ export function loadSettings() {
       hp1: clamp(loaded.hp1, 100, 5000, 200),
       intelligence1: clamp(loaded.intelligence1, 0, 100, 48),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
-      armor1: loaded.armor1 || 'none',
       weapon1: loaded.weapon1 || 'fists',
       gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1,
-      lastMonster: loaded.lastMonster || 'golem'
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

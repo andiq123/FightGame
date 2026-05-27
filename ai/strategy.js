@@ -57,11 +57,8 @@ export class AIStrategy {
     }
 
     selectPersona(intelligence) {
-        // Higher intelligence = more specialized personas? Or just better use of them?
-        // For now, map loosely or random
-        const r = Math.random();
-        if (intelligence > 85) return r > 0.5 ? PERSONAS.TRICKSTER : PERSONAS.BALANCED; // Pro players
-        if (intelligence > 60) return r > 0.5 ? PERSONAS.AGGRESSIVE : PERSONAS.DEFENSIVE;
+        if (intelligence > 85) return PERSONAS.TRICKSTER;
+        if (intelligence > 60) return PERSONAS.BALANCED;
         return PERSONAS.BALANCED;
     }
 
@@ -74,7 +71,7 @@ export class AIStrategy {
 
         if (this.strategyTimer <= 0 || this.shouldForceStrategyChange(ctx)) {
             this.pickStrategy(ctx);
-            this.strategyTimer = 2000 + Math.random() * 3000; // Re-evaluate every 2-5s
+            this.strategyTimer = 4500 + Math.random() * 2500;
         }
 
         return {
@@ -111,34 +108,40 @@ export class AIStrategy {
 
     shouldForceStrategyChange(ctx) {
         // Immediate overrides
-        if (ctx.cornered && this.currentStrategy !== STRATEGY.TURTLE && this.currentStrategy !== STRATEGY.RUSH_DOWN) return true; // Panic or Fight out
+        if (ctx.cornered && ctx.dist < 140 && this.currentStrategy !== STRATEGY.TURTLE && this.currentStrategy !== STRATEGY.RUSH_DOWN) return true;
         if (ctx.oppCornered && this.currentStrategy !== STRATEGY.CORNER_TRAP) return true;
         return false;
     }
 
     pickStrategy(ctx) {
         const { dist, hpLead, canSeeOpponent, oppCornered } = ctx;
-        const { strategies } = this.persona;
 
-        // Default logic
         if (oppCornered && this.mood.confidence > 0.4) {
             this.currentStrategy = STRATEGY.CORNER_TRAP;
             return;
         }
 
-        if (hpLead < -0.3 && this.mood.confidence < 0.3) {
-            this.currentStrategy = STRATEGY.TURTLE; // Play safe
+        if (hpLead < -0.3 && this.mood.confidence < 0.35) {
+            this.currentStrategy = STRATEGY.TURTLE;
             return;
         }
 
         if (!canSeeOpponent) {
-            this.currentStrategy = STRATEGY.ZONING; // Charge or wait
+            this.currentStrategy = STRATEGY.ZONING;
             return;
         }
 
-        // Pick based on Persona preference + RNG
-        const roll = Math.random();
-        this.currentStrategy = strategies[Math.floor(roll * strategies.length)];
+        if (dist > 260) {
+            this.currentStrategy = this.intelligence > 65 ? STRATEGY.ZONING : STRATEGY.NEUTRAL;
+            return;
+        }
+
+        if (dist < 95 && this.mood.confidence > 0.45) {
+            this.currentStrategy = STRATEGY.RUSH_DOWN;
+            return;
+        }
+
+        this.currentStrategy = STRATEGY.NEUTRAL;
     }
 
     getTargetRange() {

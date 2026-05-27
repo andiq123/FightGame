@@ -45,12 +45,6 @@ function processHit(attacker, defender, now, hitEffects) {
     }
     attacker.stamina = Math.max(0, attacker.stamina - (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10));
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), block: true }));
-    // Cyber: Shield on Block — recover HP on successful block
-    const defArmor = defender.getArmor();
-    if (defArmor.shieldOnBlock) {
-      defender.hp = Math.min(defender.maxHp, defender.hp + Math.round(defender.maxHp * defArmor.shieldOnBlock));
-      hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), heal: true }));
-    }
     return;
   }
 
@@ -102,9 +96,7 @@ function processHit(attacker, defender, now, hitEffects) {
   const dmg = Math.round(hb.damage * comboScale * counter * attacker.damageMult * defender.damageTakenMult * overchargeMult * momentumMult * crit * executeMult);
 
   if (defender.status.active('counterStance', now)) {
-    // Samurai: Counter Multiplier
-    const armorCounterMult = defender.getArmor().counterMult || 1;
-    const counterDmg = Math.round(dmg * 0.8 * armorCounterMult);
+    const counterDmg = Math.round(dmg * 0.8);
     applyHitResult(defender, attacker, counterDmg, now, hitEffects, { extra: { dmg: counterDmg, counter: true } });
     defender.status.clear('counterStance');
   }
@@ -157,30 +149,20 @@ function processHit(attacker, defender, now, hitEffects) {
   const afterwardDefender = defender.x > attacker.x ? 1 : -1;
   const heavy = hb.damage >= 14 || hb.kickLaunch;
 
-  // Knockback: apply weapon multiplier + armor resist
-  const defArmor = defender.getArmor();
+  // Knockback: apply weapon multiplier and passive resist.
   const kbResist = defender.hasPassive('sturdy') ? 0.6 : 1;
-  const armorKBResist = defArmor.knockbackResist || 1;
   const pushback = weapon.pushback || 1;
-  applyKnockback(defender, hb.knockback * kbResist * armorKBResist * weaponKB * pushback, attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch);
+  applyKnockback(defender, hb.knockback * kbResist * weaponKB * pushback, attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch);
   applyAttackerRecoil(attacker, hb.knockback, -afterwardDefender);
 
-  // Heavy Armor: Super Armor — resist first stagger every 5s
-  const hasSuperArmor = defArmor.superArmor && (!defender.lastSuperArmorAt || now - defender.lastSuperArmorAt > 5000);
-
-  const staggerThreshold = defArmor.staggerResist || 1;
   const shouldStagger = !defender.status.active('stagger', now) && defender.hp > 0 &&
-    (dmg >= COMBAT.STAGGER_DAMAGE * staggerThreshold || (counter > 1 && dmg >= COMBAT.STAGGER_COUNTER * staggerThreshold) || (attacker.comboCount >= 4 && dmg >= 9 * staggerThreshold));
+    (dmg >= COMBAT.STAGGER_DAMAGE || (counter > 1 && dmg >= COMBAT.STAGGER_COUNTER) || (attacker.comboCount >= 4 && dmg >= 9));
 
-  if ((shouldStagger || hb.kickLaunch) && !hasSuperArmor) {
+  if (shouldStagger || hb.kickLaunch) {
     defender.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
     defender.currentAttack = null;
     defender.pose = POSE.stagger;
     defender.staggerRagdoll = createRagdoll(defender.x, getRagdollOriginY(defender), defender.facing, defender.vx, defender.vy, attacker.x, hb.type === 6, now);
-  } else if (hasSuperArmor && (shouldStagger || hb.kickLaunch)) {
-    // Super armor absorbed the stagger
-    defender.lastSuperArmorAt = now;
-    hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), superArmor: true }));
   }
 
   const punchDir = defender.x > attacker.x ? 1 : -1;

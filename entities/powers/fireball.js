@@ -22,8 +22,8 @@ registerPower('fireball', {
     if (eyeDist > 450) s += 20; // Very far — still worth it
 
     // Punish openings
-    if (opponent.staggerUntil > 0) s += 55;
-    if (opponent.recoveryUntil > performance.now()) s += 40;
+    if (opponent.status.active('stagger', performance.now())) s += 55;
+    if (opponent.status.active('recovery', performance.now())) s += 40;
     if (opponent.pose === 'block') s += 25; // Chip through block
 
     // Pressure opponent who is healing

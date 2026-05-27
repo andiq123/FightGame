@@ -80,113 +80,6 @@
       <div class="quick-hint">Esc: Stop</div>
     </div>
 
-
-    <!-- Monster Selection Overlay -->
-    <div class="monster-selection hidden" id="monsterSelection">
-      <div class="monster-selection-inner">
-        <h2 class="selection-title">Choose Your Challenger</h2>
-        <p class="selection-sub">Select a monster to face in single combat</p>
-        <div class="monster-grid">
-          <div class="monster-card" data-id="golem">
-            <div class="monster-visual golem">
-              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 80 L35 30 L65 30 L80 80 Z" />
-                <path d="M35 30 L40 10 L60 10 L65 30" />
-                <circle cx="40" cy="45" r="3" fill="#ff0000" />
-                <circle cx="60" cy="45" r="3" fill="#ff0000" />
-              </svg>
-            </div>
-            <div class="monster-info">
-              <h3>Garnet Golem</h3>
-              <p>Volcanic brute. Slow but unstoppable.</p>
-              <div class="monster-powers">
-                <span class="skill-tag">Flame Shower</span>
-                <span class="skill-tag">Earth Wall</span>
-                <span class="skill-tag">Dragon Roar</span>
-              </div>
-              <div class="monster-stats">
-                <span class="stat-hp">HP: 3500</span>
-                <span class="stat-lvl">Lvl: 25</span>
-                <span class="stat-ai">AI: Nightmare</span>
-              </div>
-            </div>
-          </div>
-          <div class="monster-card" data-id="assassin">
-            <div class="monster-visual assassin">
-              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M30 20 Q50 10 70 20 L80 80 Q50 90 20 80 Z" />
-                <path d="M40 40 L60 40" stroke-width="4" stroke="#00ced1" />
-                <path d="M35 15 L65 15" stroke-dasharray="4 2" />
-              </svg>
-            </div>
-            <div class="monster-info">
-              <h3>Azure Assassin</h3>
-              <p>Ethereal specter. Fast and deadly.</p>
-              <div class="monster-powers">
-                <span class="skill-tag">Spectral Dash</span>
-                <span class="skill-tag">Clone Jutsu</span>
-                <span class="skill-tag">Lightning Cutter</span>
-              </div>
-              <div class="monster-stats">
-                <span class="stat-hp">HP: 1800</span>
-                <span class="stat-lvl">Lvl: 30</span>
-                <span class="stat-ai">AI: Nightmare</span>
-              </div>
-            </div>
-          </div>
-          <div class="monster-card" data-id="vanguard">
-            <div class="monster-visual vanguard">
-              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M25 30 L50 15 L75 30 L75 75 L50 90 L25 75 Z" />
-                <path d="M50 15 L50 90 M25 30 L75 30 M25 75 L75 75" opacity="0.3" />
-                <path d="M40 45 L60 45" stroke="#32cd32" stroke-width="3" />
-              </svg>
-            </div>
-            <div class="monster-info">
-              <h3>Veridian Vanguard</h3>
-              <p>Jade master. Ancient counter-tactics.</p>
-              <div class="monster-powers">
-                <span class="skill-tag">Earth Wall</span>
-                <span class="skill-tag">Ice Spikes</span>
-                <span class="skill-tag">Shinra Tensei</span>
-              </div>
-              <div class="monster-stats">
-                <span class="stat-hp">HP: 2500</span>
-                <span class="stat-lvl">Lvl: 28</span>
-                <span class="stat-ai">AI: Nightmare</span>
-              </div>
-            </div>
-          </div>
-          <div class="monster-card" data-id="oracle">
-            <div class="monster-visual oracle">
-              <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="50" cy="50" r="35" />
-                <path d="M50 15 L50 85 M15 50 L85 50" opacity="0.5" />
-                <circle cx="50" cy="50" r="10" fill="#ffd700" />
-                <path d="M30 30 L70 70 M30 70 L70 30" stroke-width="0.5" />
-              </svg>
-            </div>
-            <div class="monster-info">
-              <h3>Onyx Oracle</h3>
-              <p>Shadow mage. Powerful dark arts.</p>
-              <div class="monster-powers">
-                <span class="skill-tag">Vacuum Pull</span>
-                <span class="skill-tag">Flame Shower</span>
-                <span class="skill-tag">Heal</span>
-              </div>
-              <div class="monster-stats">
-                <span class="stat-hp">HP: 2100</span>
-                <span class="stat-lvl">Lvl: 26</span>
-                <span class="stat-ai">AI: Nightmare</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <button type="button" class="start-btn" id="startGameBtn">Start Battle</button>
-      </div>
-    </div>
-
     <!-- Hero Customization Screen -->
     <div class="hero-screen" id="heroScreen">
       <div class="hero-screen-inner">
@@ -229,17 +122,13 @@
 
             <div class="config-section">
               <div class="equipment-row">
-                <label>Armor</label>
-                <div class="equip-btns" id="armor1"></div>
-              </div>
-              <div class="equipment-row">
                 <label>Weapon</label>
                 <div class="equip-btns" id="weapon1"></div>
               </div>
             </div>
           </div>
 
-          <button type="button" class="confirm-btn large-btn" id="confirmHeroBtn">Continue to Monsters</button>
+          <button type="button" class="confirm-btn large-btn" id="confirmHeroBtn">Start Battle</button>
         </div>
       </div>
     </div>

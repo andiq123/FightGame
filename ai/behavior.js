@@ -14,36 +14,35 @@ function persistState(fighter, state, now) {
   fighter.aiStateEnteredAt = now;
 
   const intelligence = fighter.aiIntelligence || 50;
-  const reactivity = Math.max(0.3, 1 - (intelligence / 120)); // Scales duration down as intelligence increases
+  const reactivity = Math.max(0.75, 1.15 - (intelligence / 280));
 
   let dur = {
-    [AI_STATE.COMBAT]: AI.STATE_COMBAT_MS ?? 58,
-    [AI_STATE.APPROACHING]: AI.STATE_APPROACH_MS ?? 38,
-    [AI_STATE.PUNISHING]: AI.STATE_PUNISH_MS ?? 42,
-    [AI_STATE.DEFENDING]: AI.STATE_DEFEND_MS ?? 26,
-    [AI_STATE.EVADING_PROJECTILE]: 50,
-    [AI_STATE.SHINRA_DEFENSE]: 40,
-    [AI_STATE.REGROUPING]: 140,
-    [AI_STATE.RETREATING]: 100,
-    [AI_STATE.PREPARING]: 120,
-    [AI_STATE.BAITING]: 80,
-    [AI_STATE.PRESSURING]: 150,
-    [AI_STATE.RECHARGING]: 200
+    [AI_STATE.COMBAT]: AI.STATE_COMBAT_MS ?? 360,
+    [AI_STATE.APPROACHING]: AI.STATE_APPROACH_MS ?? 520,
+    [AI_STATE.PUNISHING]: AI.STATE_PUNISH_MS ?? 280,
+    [AI_STATE.DEFENDING]: AI.STATE_DEFEND_MS ?? 240,
+    [AI_STATE.EVADING_PROJECTILE]: 180,
+    [AI_STATE.SHINRA_DEFENSE]: 180,
+    [AI_STATE.REGROUPING]: 700,
+    [AI_STATE.RETREATING]: 620,
+    [AI_STATE.PREPARING]: 500,
+    [AI_STATE.BAITING]: 520,
+    [AI_STATE.PRESSURING]: 460,
+    [AI_STATE.RECHARGING]: 760
   }[state] ?? AI.STATE_MIN_MS;
 
-  // High intelligence = much shorter state locks = more reactive
   dur = Math.round(dur * reactivity);
 
-  // Nightmare AI Overrides: Stay in offensive states longer to maintain pressure
   if (intelligence >= 115) {
     if (state === AI_STATE.COMBAT || state === AI_STATE.PRESSURING || state === AI_STATE.PUNISHING) {
-      dur = Math.max(dur, 100); // Minimum commitment to aggression
+      dur = Math.max(dur, 320);
     }
   }
 
-  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'pressure') dur = Math.min(220, dur + 45);
-  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'spacing') dur = Math.max(10, dur - 25);
+  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'pressure') dur = Math.min(700, dur + 120);
+  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'spacing') dur = Math.max(260, dur - 80);
 
+  fighter.aiStateUntil = now + dur;
   fighter.status.set('aiState', now + dur);
 }
 

@@ -35,16 +35,25 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
     // Opponent State
     const oppHitbox = opponent.getAttackHitbox(now);
     const oppAttacking = opponent.currentAttack && oppHitbox;
-    const oppRecovering = opponent.recoveryUntil > now;
-    const oppStaggered = opponent.staggerUntil > now;
-    const oppGettingUp = opponent.getUpUntil > now;
-    const oppBlocking = opponent.blockUntil > now || opponent.blockLowUntil > now;
+    const oppRecoveryUntil = opponent.status.get('recovery');
+    const oppStaggerUntil = opponent.status.get('stagger');
+    const oppGetUpUntil = opponent.status.get('getUp');
+    const oppBlockUntil = opponent.status.get('block');
+    const oppBlockLowUntil = opponent.status.get('blockLow');
+    const fighterRecoveryUntil = fighter.status.get('recovery');
+
+    const oppRecovering = oppRecoveryUntil > now;
+    const oppStaggered = oppStaggerUntil > now;
+    const oppGettingUp = oppGetUpUntil > now;
+    const oppBlocking = oppBlockUntil > now || oppBlockLowUntil > now;
+    const inRecovery = fighterRecoveryUntil > now;
+    const immobilized = fighter.status.anyActive(['frozen', 'deepFreeze', 'anchored', 'stun', 'stagger'], now);
 
     // Frame Advantage
     let frameAdvantage = 0;
-    if (oppRecovering) frameAdvantage += (opponent.recoveryUntil - now);
-    if (oppStaggered) frameAdvantage += (opponent.staggerUntil - now);
-    if (fighter.recoveryUntil > now) frameAdvantage -= (fighter.recoveryUntil - now);
+    if (oppRecovering) frameAdvantage += (oppRecoveryUntil - now);
+    if (oppStaggered) frameAdvantage += (oppStaggerUntil - now);
+    if (inRecovery) frameAdvantage -= (fighterRecoveryUntil - now);
 
     // Ranges
     const inFireballRange = canSee && rayDist >= AI.FIREBALL_MIN && rayDist <= AI.FIREBALL_MAX && !oppAttacking;
@@ -94,6 +103,8 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         oppRecovering,
         oppBlocking,
         oppHeavyWindup: opponent.currentAttack && oppHitbox === null && (opponent.currentAttack.data?.damage || 0) >= 12,
+        inRecovery,
+        immobilized,
 
         // Zones
         inRange: dist <= AI.ATTACK_RANGE,
@@ -145,10 +156,11 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         projectiles,
         obstacles,
         nearestClone,
+        nearestEnemyClone: nearestClone?.clone || null,
+        cloneDist: nearestClone?.dist ?? Infinity,
         nearestObstacle,
         inboundThreat: getInboundThreat(fighter, projectiles),
         weapon: fighter.getWeapon(),
-        armor: fighter.getArmor(),
         archetype: fighter.archetype || 'hero',
 
         // New Tactical Senses

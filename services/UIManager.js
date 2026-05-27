@@ -8,7 +8,9 @@ export class UIManager {
     _cacheElements() {
         return {
             heroScreen: document.getElementById('heroScreen'),
+            monsterScreen: document.getElementById('monsterScreen'),
             confirmHeroBtn: document.getElementById('confirmHeroBtn'),
+            startGameBtn: document.getElementById('startGameBtn'),
             stopGameBtn: document.getElementById('stopGameBtn'),
             speedBtns: document.querySelectorAll('.speed-control button, .quick-speed-btn'),
             hp1: document.getElementById('hpSet1'),
@@ -24,6 +26,11 @@ export class UIManager {
         elements.confirmHeroBtn?.addEventListener('click', () => {
             elements.heroScreen?.classList.add('hidden');
             callbacks.onHeroConfirmed?.();
+            this.showMonsterFlow();
+        });
+
+        elements.startGameBtn?.addEventListener('click', () => {
+            elements.monsterScreen?.classList.add('hidden');
             callbacks.onStart?.();
         });
 
@@ -48,6 +55,11 @@ export class UIManager {
 
     showInitialFlow() {
         this.elements.heroScreen?.classList.remove('hidden');
+        this.elements.monsterScreen?.classList.add('hidden');
+    }
+
+    showMonsterFlow() {
+        this.elements.monsterScreen?.classList.remove('hidden');
     }
 
     updateSpeedUI(speed) {

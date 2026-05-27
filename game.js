@@ -4,7 +4,7 @@ import { tickParticles, spawnHealParticles, spawnFireballLaunch, spawnClonePoof,
 import { updateHUD, getFighterDomId } from './services/hud.js';
 import { World } from './engine/core/World.js';
 import { Viewport } from './engine/view/Viewport.js';
-import { loadSettings, saveSettings } from './ai/presets.js';
+import { getLevelStats, loadSettings, saveSettings } from './ai/presets.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -38,6 +38,8 @@ const hudEls = {
   statusIcons2: document.getElementById('statusIcons2'),
   aiState1: document.getElementById('aiState1'),
   aiState2: document.getElementById('aiState2'),
+  health1: document.getElementById('hudHealth1'),
+  health2: document.getElementById('hudHealth2'),
 };
 const matchOverEl = document.getElementById('matchOver');
 const countdownEl = document.getElementById('countdown');
@@ -73,6 +75,10 @@ function getFighterHealth(fighterIndex) {
   return isNaN(v) ? HP.DEFAULT : Math.max(HP.MIN, Math.min(HP.MAX, v));
 }
 
+function getSelectedPowerIds(containerId) {
+  return [...document.querySelectorAll(`#${containerId} .power-btn.selected`)].map(b => b.dataset.power);
+}
+
 function syncStatsFromUI(fighterIndex) {
   if (fighterIndex !== 0) return;
   const inp = document.getElementById('intelligence1');
@@ -81,22 +87,22 @@ function syncStatsFromUI(fighterIndex) {
 }
 
 function syncPowersFromUI() {
-  const p1 = [...document.querySelectorAll('#powers1 .power-btn.selected')].map(b => b.dataset.power);
+  const p1 = getSelectedPowerIds('powers1');
+  const p2 = getSelectedPowerIds('powers2');
   if (world.fighter1) world.fighter1.setPowers(p1);
+  if (world.fighter2) world.fighter2.setPowers(p2);
 }
 
 function persistSettings() {
-  const p1 = [...document.querySelectorAll('#powers1 .power-btn.selected')].map(b => b.dataset.power);
   saveSettings({
     level1: parseInt(document.getElementById('level1')?.value || 1, 10),
     intelligence1: parseInt(document.getElementById('intelligence1')?.value || 12, 10),
     gameSpeed: parseFloat(document.getElementById('gameSpeed')?.value || 1),
-    powers1: p1,
+    powers1: getSelectedPowerIds('powers1'),
+    monsterPowers: getSelectedPowerIds('powers2'),
     hp1: parseInt(document.getElementById('hpSet1')?.value || 100, 10),
   });
 }
-
-import { getLevelStats, getAIStats } from './ai/presets.js';
 
 function syncLevel(fighterIndex, level) {
   const fighter = fighterIndex === 0 ? world.fighter1 : world.fighter2;
@@ -203,8 +209,8 @@ function applyPendingRoundEnd() {
   if (winner.roundsWon >= 2) {
     running = false;
     const d1 = world.fighter1.damageDealt || 0;
-    const roundsText = world.roundHistory.map((rw, i) => `R${i + 1}: ${rw === 1 ? 'Hero' : 'Monster'}`).join(' · ');
-    matchOverEl.innerHTML = `<div class="match-over-inner"><div class="match-over-title">${roundWinner === 1 ? 'Hero' : 'Monster'} Victory!</div><div class="match-over-sub">Best of 3</div><div class="match-over-rounds">${roundsText}</div><div class="match-over-stats">Total Damage: ${Math.round(d1)}</div><button type="button" class="match-over-replay" id="matchOverReplay">Back to Setup</button></div>`;
+    const roundsText = world.roundHistory.map((rw, i) => `R${i + 1}: ${rw === 1 ? 'Hero' : AZURE_ASSASSIN.name}`).join(' · ');
+    matchOverEl.innerHTML = `<div class="match-over-inner"><div class="match-over-title">${roundWinner === 1 ? 'Hero' : AZURE_ASSASSIN.name} Victory!</div><div class="match-over-sub">Best of 3</div><div class="match-over-rounds">${roundsText}</div><div class="match-over-stats">Total Damage: ${Math.round(d1)}</div><button type="button" class="match-over-replay" id="matchOverReplay">Back to Setup</button></div>`;
     matchOverEl.classList.add('visible');
     document.getElementById('matchOverReplay')?.addEventListener('click', () => fullReset());
   } else {
@@ -233,8 +239,9 @@ function createFighters() {
 
   // Initialize Monster
   const m = AZURE_ASSASSIN;
+  const monsterPowers = getSelectedPowerIds('powers2');
   world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1, m.hp);
-  world.fighter2.setPowers(m.powers);
+  world.fighter2.setPowers(monsterPowers);
   world.fighter2.level = m.level;
   world.fighter2.passives = m.passives || [];
   world.fighter2.scale = m.scale || 1;
@@ -256,6 +263,11 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
+  uiManager?.buildPowerButtons('powers2', POWERS, settings.monsterPowers || AZURE_ASSASSIN.powers, (wrap) => {
+    if (running) syncPowersFromUI();
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
   const i1El = document.getElementById('intelligence1');
   if (i1El) i1El.value = intelligence1;
 
@@ -272,6 +284,25 @@ function applySettings(settings) {
   }
 
   syncLevel(1, AZURE_ASSASSIN.level);
+  renderMonsterStats();
+}
+
+function renderMonsterStats() {
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('monsterStatId', AZURE_ASSASSIN.id);
+  setText('monsterStatName', AZURE_ASSASSIN.name);
+  setText('monsterStatHp', AZURE_ASSASSIN.hp);
+  setText('monsterStatAi', AZURE_ASSASSIN.intelligence);
+  setText('monsterStatLevel', AZURE_ASSASSIN.level);
+  setText('monsterStatScale', AZURE_ASSASSIN.scale);
+  setText('monsterStatColor', AZURE_ASSASSIN.color);
+  setText('monsterStatPassives', (AZURE_ASSASSIN.passives || []).join(', ') || 'none');
+  setText('monsterStatPowers', AZURE_ASSASSIN.powers.join(', '));
+  const swatch = document.getElementById('monsterColorSwatch');
+  if (swatch) swatch.style.background = AZURE_ASSASSIN.color;
 }
 
 function initUI() {

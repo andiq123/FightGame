@@ -8,6 +8,51 @@ const FALLBACK_JUMP_RATIO = 0.5;
 const FALLBACK_POWER_RATIO = 0.6;
 const BLOCK_DEFAULT_MS = 320;
 const ACTION_HISTORY_MAX = 5;
+const MOVE_INTENT_MS = 520;
+
+function canUseLocomotion(fighter, now) {
+  return fighter.canAct(now) || fighter.pose === POSE.walk || fighter.pose === POSE.run || fighter.pose === POSE.idle;
+}
+
+function applyLocomotion(fighter, dir, run, idle, now) {
+  const shouldRun = run === true && fighter.canRun();
+  fighter.isRunning = shouldRun;
+  fighter.facing = dir || fighter.facing || 1;
+
+  if (idle) {
+    fighter.vx = 0;
+    if (fighter.pose !== POSE.idle) {
+      fighter.pose = POSE.idle;
+      fighter.poseTime = 0;
+    }
+    return;
+  }
+
+  const nextPose = shouldRun ? POSE.run : POSE.walk;
+  const speed = shouldRun ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED;
+  const targetVx = dir * speed * (fighter.speedMult || 1);
+  fighter.vx += (targetVx - fighter.vx) * 0.55;
+
+  if (fighter.pose !== nextPose || fighter.moveDir !== dir) {
+    fighter.pose = nextPose;
+    fighter.poseTime = 0;
+  }
+  fighter.moveDir = dir;
+}
+
+function continueMoveIntent(fighter, now) {
+  const intent = fighter.aiMoveIntent;
+  if (!intent || intent.until <= now) {
+    fighter.aiMoveIntent = null;
+    return false;
+  }
+  if (!canUseLocomotion(fighter, now)) {
+    fighter.aiMoveIntent = null;
+    return false;
+  }
+  applyLocomotion(fighter, intent.dir, intent.run, intent.idle, now);
+  return true;
+}
 
 function persistState(fighter, state, now) {
   fighter.aiState = state;
@@ -71,18 +116,13 @@ function applyFallbackMove(fighter, opponent, dir, ratio = 1) {
 
 const ACTION_HANDLERS = {
   move(fighter, opponent, action, now) {
-    const run = action.run === true && fighter.canRun();
-    const idle = action.idle === true;
-    fighter.isRunning = run;
-    const moveSpeed = idle ? 0 : (run ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED);
-    fighter.vx = action.dir * moveSpeed * (fighter.speedMult || 1);
-    fighter.facing = action.dir;
-    if (idle) {
-      fighter.pose = POSE.idle;
-    } else {
-      fighter.pose = run ? POSE.run : POSE.walk;
-    }
-    fighter.poseTime = 0;
+    fighter.aiMoveIntent = {
+      dir: action.dir,
+      run: action.run === true,
+      idle: action.idle === true,
+      until: now + (action.commitMs || MOVE_INTENT_MS)
+    };
+    applyLocomotion(fighter, action.dir, action.run, action.idle, now);
   },
   attack(fighter, opponent, action, now) {
     fighter.facing = faceToward(fighter, opponent);
@@ -137,14 +177,20 @@ const ACTION_HANDLERS = {
 };
 
 export function executeAI(fighter, opponent, stats, now, rng, hitEffects = [], projectiles = [], clones = [], world) {
-  if (!fighter.canAct(now)) return null;
+  if (!fighter.canAct(now)) {
+    fighter.aiMoveIntent = null;
+    return null;
+  }
 
   // Cache intelligence for persistState
   fighter.aiIntelligence = stats.reaction ?? 50; // Intelligence Decoupling
 
   const state = evaluateState(fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
   const reactTime = (AI.REACT_BASE_MS + (100 - stats.reaction) * AI.REACT_SCALE) / 1000;
-  if (!fighter.canAct(now) || fighter.status.active('aiState', now)) return null;
+  if (fighter.status.active('aiState', now)) {
+    continueMoveIntent(fighter, now);
+    return null;
+  }
 
   let action = getStateAction(state, fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
   if (!action) return null;

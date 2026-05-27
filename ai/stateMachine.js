@@ -298,12 +298,18 @@ function getCombatAction(ctx) {
   if (tired || (fighter.stamina < 15 && dist < 110)) return { type: 'move', dir: away, run: false };
 
   if (!inRange) {
-    const runMinStamina = (ctx.staminaRatio ?? 0.5) >= (PHYSICS.RUN_STAMINA_MIN_RATIO ?? 0.28);
-    const run = dist > 85 && runMinStamina && (ctx.staminaRatio > 0.5 || dist > 600 || isNightmare);
-    return { type: 'move', dir: toward, run };
+    const run = shouldRunToEngage(ctx, 120);
+    return { type: 'move', dir: toward, run, commitMs: run ? 520 : 360 };
   }
 
   return { type: 'move', dir: toward, run: false };
+}
+
+function shouldRunToEngage(ctx, threshold = AI.PREFERRED_DIST_MAX) {
+  if (ctx.tired || ctx.staminaLow) return false;
+  if (ctx.fighter.aiCombatMode === STRATEGY.TURTLE) return false;
+  if ((ctx.staminaRatio ?? 0) < (PHYSICS.RUN_STAMINA_MIN_RATIO ?? 0.28)) return false;
+  return ctx.dist > threshold || ctx.oppStaggered || ctx.oppRecovering || ctx.oppHpCritical || ctx.isNightmare;
 }
 
 function getApproachAction(ctx) {
@@ -334,13 +340,12 @@ function getApproachAction(ctx) {
 
   if (!fighter.onGround() && fighter.hasStamina(10) && !fighter.doubleJumpUsed && dist > 260 && rng() < 0.18 + (parkour ?? 0) * 0.18) return { type: 'doubleJump' };
 
-  const runMinStamina = (ctx.staminaRatio ?? 0.5) >= (PHYSICS.RUN_STAMINA_MIN_RATIO ?? 0.28);
   const slideMinDist = AI.SLIDE_MIN_DIST ?? 95;
 
   if (parkour > 0.7 && dist >= slideMinDist && dist < 150 && fighter.onGround() && canAffordSlide && rng() < 0.25) return { type: 'slide', dir: toward };
 
-  const canRunNow = dist > AI.PREFERRED_DIST_MAX && runMinStamina && (ctx.staminaRatio > 0.4 || dist > 550 || isNightmare);
-  return { type: 'move', dir: toward, run: canRunNow };
+  const run = shouldRunToEngage(ctx, AI.PREFERRED_DIST_MAX);
+  return { type: 'move', dir: toward, run, commitMs: run ? 620 : 420 };
 }
 
 function getRetreatAction(ctx) {
@@ -358,7 +363,7 @@ function getRetreatAction(ctx) {
   }
 
   if (fighter.onGround() && fighter.hasStamina(14) && dist < 90 && rng() < 0.2) return { type: 'jump' };
-  return { type: 'move', dir: away, run: runToEscape };
+  return { type: 'move', dir: away, run: runToEscape, commitMs: 560 };
 }
 
 function getRegroupAction(ctx) {
@@ -368,7 +373,7 @@ function getRegroupAction(ctx) {
 
   // 1. Recovery Check: If we are already fully recovered, start moving toward with confidence
   if (staminaHigh && !tired && !inRecovery && dist > 350) {
-    return { type: 'move', dir: toward, run: false };
+    return { type: 'move', dir: toward, run: false, commitMs: 420 };
   }
 
   // 2. High-Priority: Heal during regroup if HP is low and safe
@@ -406,7 +411,7 @@ function getRegroupAction(ctx) {
 
   // 6. Default: Maintain distance while recovering
   const run = staminaRatio > 0.3 && dist < 400;
-  return { type: 'move', dir: away, run };
+  return { type: 'move', dir: away, run, commitMs: run ? 560 : 420 };
 }
 
 function getPrepareAction(ctx) {

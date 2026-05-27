@@ -14,6 +14,11 @@ export function updateBars(f1, f2, hp1, hp2, stam1, stam2) {
   if (stam2) stam2.style.width = `${(f2.stamina / f2.maxStamina) * 100}%`;
 }
 
+export function updateHealthNumbers(f1, f2, health1, health2) {
+  if (health1) health1.textContent = `${Math.ceil(Math.max(0, f1.hp))} / ${Math.ceil(f1.maxHp)}`;
+  if (health2) health2.textContent = `${Math.ceil(Math.max(0, f2.hp))} / ${Math.ceil(f2.maxHp)}`;
+}
+
 export function updateRounds(el, f1, f2, max) {
   if (el) el.textContent = `${f1.roundsWon} - ${f2.roundsWon} | R${f1.roundsWon + f2.roundsWon + 1}/${max}`;
 }
@@ -135,6 +140,7 @@ export function updateAIStateTag(fighter, el) {
 export function updateHUD(f1, f2, els, maxRounds, skillFeed) {
   const now = performance.now();
   updateBars(f1, f2, els.hp1, els.hp2, els.stam1, els.stam2);
+  updateHealthNumbers(f1, f2, els.health1, els.health2);
   updateRounds(els.rounds, f1, f2, maxRounds);
   updatePowerCooldownUI(f1, f2, now);
   updateJutsuHUD(f1, f2, skillFeed, now);

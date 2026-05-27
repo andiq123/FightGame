@@ -41,6 +41,7 @@ export const DEFAULT_SETTINGS = {
   hp1: 200,
   intelligence1: 12, // User selected Hero AI level
   powers1: [],
+  monsterPowers: ['spectralDash', 'cloneJutsu', 'lightningCutter'],
   gameSpeed: 1,
 };
 
@@ -58,6 +59,9 @@ export function loadSettings() {
       hp1: clamp(loaded.hp1, 100, 5000, 200),
       intelligence1: clamp(loaded.intelligence1, 0, 100, 48),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
+      monsterPowers: Array.isArray(loaded.monsterPowers)
+        ? loaded.monsterPowers.filter(p => getValidPowerIds().includes(p))
+        : [...DEFAULT_SETTINGS.monsterPowers],
       gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1,
     };
   } catch {

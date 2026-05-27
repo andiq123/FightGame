@@ -94,10 +94,6 @@ class Fighter {
     return weapon.weight || 0;
   }
 
-  getStability() {
-    return 1;
-  }
-
   getLifesteal() {
     return this.getWeapon().lifesteal || 0;
   }
@@ -312,8 +308,7 @@ class Fighter {
 
     if (this.lastHitAt > 0 && now - this.lastHitAt > FIGHTER.HITS_DECAY_MS) this.hitsTakenLast5Sec = 0;
 
-    const staminaRegenBase = this.hasPassive('battleFocus') ? 1.3 : 1;
-    this.stamina = Math.min(this.maxStamina, this.stamina + dt * (FIGHTER.STAMINA_REGEN_PER_SEC ?? 32) * staminaRegenBase);
+    this.stamina = Math.min(this.maxStamina, this.stamina + dt * (FIGHTER.STAMINA_REGEN_PER_SEC ?? 32));
 
     // Apply Equipment Stats & Level Multipliers
     const weapon = this.getWeapon();
@@ -342,8 +337,7 @@ class Fighter {
     }
 
     this.damageMult = weapon.damage * this.levelDamageMult * (this.status.active('overcharge', now) ? 1.5 : 1);
-    const passiveDefense = this.hasPassive('stonePlating') ? 0.8 : 1;
-    this.damageTakenMult = (1 / this.levelDefenseMult) * (this.status.active('defenseBoost', now) ? 0.6 : 1) * passiveDefense;
+    this.damageTakenMult = (1 / this.levelDefenseMult) * (this.status.active('defenseBoost', now) ? 0.6 : 1);
 
     if (this.status.active('speedMult', now) && now > this.status.get('speedMult')) {
       this.status.clear('speedMult');

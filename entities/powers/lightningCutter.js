@@ -14,9 +14,10 @@ const KNOCKBACK = 360;
 registerPower('lightningCutter', {
   name: 'Lightning Cutter',
   cooldown: 10000,
+  staminaCost: 38,
   tip: 'Short-range piercing thrust, 48 dmg'
 }, {
-  score: ({ dist, oppStaggered, oppRecovering, fighter, stats, rng, canSeeOpponent, hpCritical, oppBlocking }) => {
+  score: ({ dist, oppStaggered, oppRecovering, fighter, stats, rng, canSeeOpponent, hpCritical, oppBlocking, oppFrozen, oppHpCritical }) => {
     const intelligence = stats.reaction / 100;
     if (dist > 95) return 0;
     if (!canSeeOpponent) return 0; // Cannot dash through walls
@@ -29,12 +30,15 @@ registerPower('lightningCutter', {
     // Perfect punish windows
     if (oppStaggered) s += 60 + intelligence * 30;
     if (oppRecovering) s += 45 + intelligence * 20;
+    if (oppFrozen) s += 55;
+    if (oppHpCritical) s += 42;
 
     // Lightning pierces block — great against turtles
     if (oppBlocking) s += 45;
 
     // Desperation: commit to damage when near death
     if (hpCritical) s += 40;
+    if (!oppStaggered && !oppRecovering && !oppBlocking && !oppFrozen && !oppHpCritical) s -= 38;
 
     s += (stats.aggression / 100) * 45 + rng() * 25;
     return s;
@@ -45,17 +49,14 @@ registerPower('lightningCutter', {
     if (dist > RANGE) return false;
     const blocking = opponent.status.active('block', now) || opponent.status.active('blockLow', now);
     const dmg = blocking ? Math.round(DAMAGE * 0.35) : DAMAGE;
-    opponent.hp = Math.max(0, opponent.hp - dmg);
-    opponent.lastHitAt = now;
-    opponent.hitsTakenLast5Sec = (opponent.hitsTakenLast5Sec || 0) + 1;
-    fighter.damageDealt += dmg;
+    const finalDmg = opponent.takeDamage(dmg, true, fighter.x, now);
+    fighter.damageDealt += finalDmg;
     opponent.status.set('stun', now + (blocking ? STUN * 0.5 : STUN));
     opponent.status.set('hitFlash', now + 180);
     opponent.status.set('shocked', now + 5000); // 5 seconds of electricity
-    opponent.hitLastDmg = dmg;
     opponent.hitFromX = fighter.x;
     const knockback = blocking ? KNOCKBACK * 0.35 : KNOCKBACK;
-    applyKnockback(opponent, knockback, fighter.x, true);
+    applyKnockback(opponent, knockback, fighter.x, true, false, false, now);
     if (!blocking && !opponent.status.active('stagger', now) && opponent.hp > 0) {
       opponent.pose = POSE.stagger;
       opponent.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
@@ -65,7 +66,7 @@ registerPower('lightningCutter', {
       opponent.pose = POSE.hit;
       opponent.poseTime = 0;
     }
-    hitEffects.push(createHitEffect(opponent.x, { y: getHitEffectY(opponent.y), dmg, lightning: true, block: blocking }));
+    hitEffects.push(createHitEffect(opponent.x, { y: getHitEffectY(opponent.y), dmg: finalDmg, lightning: true, block: blocking }));
 
     // Cinematic lightning flash
     const world = fighter.world;

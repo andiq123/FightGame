@@ -10,6 +10,7 @@ import {
   punchExtension,
   kickExtension,
   idleFromRest,
+  recoveryFromRest,
   getWalkCycle,
   getRunCycle,
   getHitReaction
@@ -279,7 +280,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   // Basic Animation Logic
   if (pose === POSE.walk || pose === POSE.run) {
     const baseSpeed = pose === POSE.run ? 11.5 : 7.2;
-    const expectedSpeed = pose === POSE.run ? 500 : 230;
+    const expectedSpeed = pose === POSE.run ? 540 : 280;
     const speedRatio = Math.min(1.25, Math.max(0.55, Math.abs(velX) / expectedSpeed));
     const cycleSpeed = baseSpeed * speedRatio;
     const phase = (poseT * cycleSpeed) % (2 * Math.PI);
@@ -314,6 +315,22 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rKneeOff = idle.rKneeAng;
     lFootAng = idle.lFootAng ?? lFootAng;
     rFootAng = idle.rFootAng ?? rFootAng;
+  } else if (pose === POSE.recover) {
+    const recovery = recoveryFromRest(poseT, rest);
+    bob = recovery.bob;
+    torsoTwist = recovery.torsoTwist * face;
+    lean = recovery.lean * face;
+    headTilt = recovery.headTilt * face;
+    lArmAng = recovery.lShoulderAng;
+    rArmAng = recovery.rShoulderAng;
+    lForeArmAng = recovery.lElbowAng;
+    rForeArmAng = recovery.rElbowAng;
+    lLegAng = recovery.lHipAng;
+    rLegAng = recovery.rHipAng;
+    lKneeOff = recovery.lKneeAng;
+    rKneeOff = recovery.rKneeAng;
+    lFootAng = recovery.lFootAng;
+    rFootAng = recovery.rFootAng;
   } else if (pose === POSE.slide) {
     pelvisX = x + face * slideT * 22;
     lean = face * slideT * 0.28;

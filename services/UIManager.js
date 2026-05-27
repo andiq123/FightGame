@@ -15,6 +15,7 @@ export class UIManager {
             speedBtns: document.querySelectorAll('.speed-control button, .quick-speed-btn'),
             hp1: document.getElementById('hpSet1'),
             intel1: document.getElementById('intelligence1'),
+            intelRange1: document.getElementById('intelligenceRange1'),
             level1: document.getElementById('level1'),
             levelVal1: document.getElementById('levelVal1')
         };
@@ -37,7 +38,9 @@ export class UIManager {
         elements.stopGameBtn?.addEventListener('click', () => callbacks.onReset?.());
 
         elements.hp1?.addEventListener('input', () => callbacks.onSettingsChange?.());
-        elements.intel1?.addEventListener('change', () => callbacks.onStatsSync?.(0));
+        elements.intel1?.addEventListener('input', () => callbacks.onStatsSync?.(0, elements.intel1.value));
+        elements.intel1?.addEventListener('change', () => callbacks.onStatsSync?.(0, elements.intel1.value));
+        elements.intelRange1?.addEventListener('input', () => callbacks.onStatsSync?.(0, elements.intelRange1.value));
         elements.level1?.addEventListener('input', () => {
             callbacks.onLevelChange?.(0, parseInt(elements.level1.value, 10));
         });

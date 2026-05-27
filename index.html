@@ -18,7 +18,7 @@
     <canvas id="canvas"></canvas>
     <header class="hud-top">
       <div class="fighter-hud f1">
-        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">Lvl 1</span><span class="hud-health" id="hudHealth1">200 / 200</span></span>
+        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">Lvl 1</span><span class="hud-ai-level" id="hudAiLevel1">AI 12</span><span class="hud-health" id="hudHealth1">200 / 200</span></span>
         <div class="bar-wrap">
           <div class="hp-track">
             <div class="hp-fill" id="hp1"></div>
@@ -54,10 +54,12 @@
     </header>
     <div class="arena-hud">
       <div class="jutsu-hud jutsu-f1">
+        <div class="jutsu-queue" id="jutsuQueue1"></div>
         <div class="jutsu-slots" id="jutsuSlots1"></div>
       </div>
       <div class="jutsu-feed" id="jutsuFeed"></div>
       <div class="jutsu-hud jutsu-monster">
+        <div class="jutsu-queue" id="jutsuQueue2"></div>
         <div class="jutsu-slots" id="jutsuSlots2"></div>
       </div>
     </div>
@@ -95,8 +97,8 @@
               <div class="form-row">
                 <label for="intelligence1">AI Intelligence</label>
                 <div class="intelligence-control">
-                  <input type="range" id="intelligenceRange1" min="0" max="100" value="12" aria-label="Hero AI intelligence">
-                  <input type="number" id="intelligence1" min="0" max="100" value="12" inputmode="numeric" aria-label="Hero AI intelligence value">
+                  <input type="range" id="intelligenceRange1" min="0" max="500" step="1" value="12" aria-label="Hero AI intelligence">
+                  <input type="number" id="intelligence1" min="0" max="500" step="1" value="12" inputmode="numeric" aria-label="Hero AI intelligence value">
                 </div>
               </div>
               <div class="form-row">

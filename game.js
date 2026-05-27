@@ -4,7 +4,7 @@ import { tickParticles, spawnHealParticles, spawnFireballLaunch, spawnClonePoof,
 import { updateHUD, getFighterDomId } from './services/hud.js';
 import { World } from './engine/core/World.js';
 import { Viewport } from './engine/view/Viewport.js';
-import { getLevelStats, loadSettings, saveSettings } from './ai/presets.js';
+import { AI_INTELLIGENCE_MAX, getLevelStats, loadSettings, saveSettings } from './ai/presets.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -38,6 +38,7 @@ const hudEls = {
   statusIcons2: document.getElementById('statusIcons2'),
   aiState1: document.getElementById('aiState1'),
   aiState2: document.getElementById('aiState2'),
+  aiLevel1: document.getElementById('hudAiLevel1'),
   health1: document.getElementById('hudHealth1'),
   health2: document.getElementById('hudHealth2'),
 };
@@ -79,11 +80,25 @@ function getSelectedPowerIds(containerId) {
   return [...document.querySelectorAll(`#${containerId} .power-btn.selected`)].map(b => b.dataset.power);
 }
 
-function syncStatsFromUI(fighterIndex) {
+function clampIntelligence(value, fallback = 48) {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : Math.max(0, Math.min(AI_INTELLIGENCE_MAX, parsed));
+}
+
+function setHeroIntelligence(value) {
+  intelligence1 = clampIntelligence(value, intelligence1);
+  const inputEl = document.getElementById('intelligence1');
+  const rangeEl = document.getElementById('intelligenceRange1');
+  if (inputEl) inputEl.value = intelligence1;
+  if (rangeEl) rangeEl.value = intelligence1;
+  if (hudEls.aiLevel1) hudEls.aiLevel1.textContent = `AI ${intelligence1}`;
+}
+
+function syncStatsFromUI(fighterIndex, value) {
   if (fighterIndex !== 0) return;
-  const inp = document.getElementById('intelligence1');
-  const v = parseInt(inp?.value, 10);
-  intelligence1 = isNaN(v) ? 48 : Math.max(0, Math.min(100, v));
+  const inputEl = document.getElementById('intelligence1');
+  const rangeEl = document.getElementById('intelligenceRange1');
+  setHeroIntelligence(value ?? inputEl?.value ?? rangeEl?.value);
 }
 
 function syncPowersFromUI() {
@@ -96,8 +111,8 @@ function syncPowersFromUI() {
 function persistSettings() {
   saveSettings({
     level1: parseInt(document.getElementById('level1')?.value || 1, 10),
-    intelligence1: parseInt(document.getElementById('intelligence1')?.value || 12, 10),
-    gameSpeed: parseFloat(document.getElementById('gameSpeed')?.value || 1),
+    intelligence1,
+    gameSpeed: world.gameSpeed || 1,
     powers1: getSelectedPowerIds('powers1'),
     monsterPowers: getSelectedPowerIds('powers2'),
     hp1: parseInt(document.getElementById('hpSet1')?.value || 100, 10),
@@ -255,7 +270,7 @@ function createFighters() {
 }
 
 function applySettings(settings) {
-  intelligence1 = settings.intelligence1 ?? 12;
+  setHeroIntelligence(settings.intelligence1 ?? 12);
   world.gameSpeed = settings.gameSpeed || 1;
 
   uiManager?.buildPowerButtons('powers1', POWERS, settings.powers1, (wrap) => {
@@ -268,9 +283,6 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
-  const i1El = document.getElementById('intelligence1');
-  if (i1El) i1El.value = intelligence1;
-
   const hp1 = document.getElementById('hpSet1');
   if (hp1) hp1.value = settings.hp1 || HP.DEFAULT;
 
@@ -308,10 +320,13 @@ function renderMonsterStats() {
 function initUI() {
   uiManager = new UIManager({
     onHeroConfirmed: () => {
+      syncStatsFromUI(0);
       persistSettings();
     },
     onStart: () => {
       if (running) return;
+      syncStatsFromUI(0);
+      persistSettings();
       matchOverEl?.classList.remove('visible');
       countdownEl?.classList.remove('visible');
       world.clearTransientState();
@@ -323,7 +338,7 @@ function initUI() {
     },
     onReset: () => fullReset(),
     onSettingsChange: () => persistSettings(),
-    onStatsSync: (idx) => { syncStatsFromUI(idx); persistSettings(); },
+    onStatsSync: (idx, value) => { syncStatsFromUI(idx, value); persistSettings(); },
     onLevelChange: (idx, lvl) => { syncLevel(idx, lvl); persistSettings(); },
     onSpeedChange: (speed) => {
       world.gameSpeed = speed;

@@ -4,6 +4,7 @@ import { SKILL_DAMAGE, ARENA } from '../../config/constants.js';
 registerPower('flameShower', {
     name: 'Flame Shower',
     cooldown: 25000,
+    staminaCost: 58,
     tip: 'Ultimate: Rain fire from the heavens. High knockback force.'
 }, {
     score: ({ dist, fighter, opponent, stats, rng, oppBlockingALot, oppCornered, oppHpCritical, hpLow }) => {
@@ -45,7 +46,9 @@ registerPower('flameShower', {
             // Staggered timing could be done here, but usually execute is for one frame.
             // However, we can just push them all with slightly different Y or different VY.
             // Or better: slightly offset Y positions so they don't all land at once.
-            const xPos = (Math.random() - 0.5) * (ARENA.BOUNDS * 1.8);
+            const spread = opponent.status.active('stagger', now) || opponent.status.active('recovery', now) ? 260 : 520;
+            const center = Math.max(-ARENA.BOUNDS + 120, Math.min(ARENA.BOUNDS - 120, opponent.x));
+            const xPos = Math.max(-ARENA.BOUNDS + 60, Math.min(ARENA.BOUNDS - 60, center + (Math.random() - 0.5) * spread));
             const yOffset = - (i * 120); // Each one starts higher than the last
 
             projectiles.push({

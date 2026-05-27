@@ -1,11 +1,20 @@
-import { getPower } from './powers/index.js';
+import { getPower, getPowerStaminaCost } from './powers/index.js';
 import { isRagdollSettled } from '../engine/ragdoll.js';
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, ATTACK_DATA } from './attacks.js';
 import { ARENA, PHYSICS, HP, COMBAT, FIGHTER } from '../config/constants.js';
 import { StatusManager } from './components/StatusManager.js';
 import { ActionBuffer } from './components/ActionBuffer.js';
+import {
+  canSpendStamina,
+  getAttackStaminaCost,
+  getHitStaminaDamage,
+  getMovementStaminaDrain,
+  getStaminaRegenRate,
+  isRunAffordable,
+  spendStamina
+} from './components/StaminaModel.js';
 
-export const POSE = { idle: 'idle', punch: 'punch', kick: 'kick', block: 'block', dodge: 'dodge', grab: 'grab', hit: 'hit', jump: 'jump', air: 'air', slide: 'slide', stagger: 'stagger', getUp: 'getUp', walk: 'walk', run: 'run' };
+export const POSE = { idle: 'idle', punch: 'punch', kick: 'kick', block: 'block', dodge: 'dodge', grab: 'grab', hit: 'hit', jump: 'jump', air: 'air', slide: 'slide', stagger: 'stagger', getUp: 'getUp', walk: 'walk', run: 'run', recover: 'recover' };
 
 class Fighter {
   constructor(id, color, x, facing = 1, maxHp = 200) {
@@ -52,6 +61,11 @@ class Fighter {
     this.lastWhiffAt = 0;
     this.lastLandingAttackType = null;
     this.isRunning = false;
+    this.impactFrictionUntil = 0;
+    this.aiMoveIntent = null;
+    this.aiJutsuHistory = [];
+    this.aiJutsuQueue = [];
+    this.blockedMove = null;
     this.poseHistory = [];
     this.attackTrail = [];
     this.passives = [];
@@ -76,7 +90,7 @@ class Fighter {
 
   canRun() {
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
-    return this.stamina >= 10 && !this.status.active('frozen', now) && !this.status.active('deepFreeze', now) && !this.status.active('anchored', now);
+    return isRunAffordable(this) && !this.status.active('frozen', now) && !this.status.active('deepFreeze', now) && !this.status.active('anchored', now);
   }
 
   canAct(now) {
@@ -109,7 +123,7 @@ class Fighter {
   canUsePower(powerId) {
     const end = this.powerCooldowns[powerId] ?? 0;
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
-    return this.powers.includes(powerId) && end <= now && this.stamina >= FIGHTER.POWER_BASE_COST;
+    return this.powers.includes(powerId) && end <= now && this.stamina >= getPowerStaminaCost(powerId);
   }
 
   usePower(powerId, now) {
@@ -121,7 +135,7 @@ class Fighter {
     const p = getPower(powerId);
     if (!p) return false;
     this.powerCooldowns[powerId] = now + p.cooldown;
-    this.stamina = Math.max(0, this.stamina - FIGHTER.POWER_BASE_COST);
+    spendStamina(this, getPowerStaminaCost(powerId));
     this.lastUsedPower = powerId;
     this.lastUsedAt = now;
     return true;
@@ -133,16 +147,18 @@ class Fighter {
       return false;
     }
     const data = ATTACK_DATA[type];
-    if (!data || !this.hasStamina(data.stamina)) return false;
+    if (!data) return false;
     const aerialOk = [ATTACK.jab, ATTACK.cross, ATTACK.highKick, ATTACK.frontKick, ATTACK.axeKick].includes(type);
     if (this.onGround()) { if (!this.canAct(now)) return false; }
     else { if (this.currentAttack || !aerialOk) return false; }
-    this.stamina = Math.max(0, this.stamina - data.stamina);
     if (this.isRunning) this.momentumAtAttackStart = 1;
     else if (this.status.active('swingLand', now)) this.momentumAtAttackStart = 0.92;
     else if (Math.abs(this.vx) >= PHYSICS.RUN_SPEED_THRESH) this.momentumAtAttackStart = 0.6;
     else if (Math.abs(this.vx) >= PHYSICS.WALK_FAST_THRESH) this.momentumAtAttackStart = 0.35;
     else this.momentumAtAttackStart = 0;
+    const staminaCost = getAttackStaminaCost(data, this.momentumAtAttackStart);
+    if (!canSpendStamina(this, staminaCost)) return false;
+    spendStamina(this, staminaCost);
     this.airAttack = !this.onGround();
     this.currentAttack = { type, started: now, data, dir: this.facing };
     const isPunch = type <= 2 || type === ATTACK_POWER_PUNCH || type === ATTACK.uppercut;
@@ -158,6 +174,8 @@ class Fighter {
       return false;
     }
     if (!this.canJump(now)) return false;
+    if (!canSpendStamina(this, FIGHTER.JUMP_STAMINA ?? 14)) return false;
+    spendStamina(this, FIGHTER.JUMP_STAMINA ?? 14);
     this.vy = PHYSICS.JUMP_VY;
     this.doubleJumpUsed = false;
     this.pose = POSE.jump;
@@ -171,6 +189,8 @@ class Fighter {
       return false;
     }
     if (!this.canJump(now)) return false;
+    if (!canSpendStamina(this, (FIGHTER.JUMP_STAMINA ?? 14) * 0.7)) return false;
+    spendStamina(this, (FIGHTER.JUMP_STAMINA ?? 14) * 0.7);
     this.vy = PHYSICS.JUMP_SHORT_VY;
     this.doubleJumpUsed = false;
     this.pose = POSE.jump;
@@ -181,7 +201,7 @@ class Fighter {
   doubleJump(now) {
     if (!this.canDoubleJump(now)) return false;
     if (this.stamina < (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10)) return false;
-    this.stamina -= (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10);
+    spendStamina(this, FIGHTER.DOUBLE_JUMP_STAMINA ?? 10);
     this.vy = PHYSICS.DOUBLE_JUMP_VY;
     this.doubleJumpUsed = true;
     this.pose = POSE.air;
@@ -191,7 +211,7 @@ class Fighter {
   wallJump(dir, now) {
     if (!this.canWallJump(now)) return false;
     if (this.stamina < (FIGHTER.WALL_JUMP_STAMINA ?? 12)) return false;
-    this.stamina -= (FIGHTER.WALL_JUMP_STAMINA ?? 12);
+    spendStamina(this, FIGHTER.WALL_JUMP_STAMINA ?? 12);
     this.vy = PHYSICS.WALL_JUMP_VY;
     this.vx = dir * PHYSICS.WALL_JUMP_VX;
     this.facing = dir;
@@ -202,6 +222,8 @@ class Fighter {
 
   startSlide(dir, now) {
     if (!this.canSlide(now)) return false;
+    if (!canSpendStamina(this, FIGHTER.SLIDE_STAMINA ?? 18)) return false;
+    spendStamina(this, FIGHTER.SLIDE_STAMINA ?? 18);
     this.vx = dir * PHYSICS.SLIDE_SPEED * this.speedMult;
     this.facing = dir;
     this.status.set('slide', now + FIGHTER.SLIDE_DURATION_MS);
@@ -215,6 +237,8 @@ class Fighter {
       this.buffer.set('dash', { dir }, now);
       return false;
     }
+    if (!canSpendStamina(this, FIGHTER.DASH_STAMINA ?? 20)) return false;
+    spendStamina(this, FIGHTER.DASH_STAMINA ?? 20);
     this.status.set('invincible', now + PHYSICS.DODGE_INVULN_MS);
     this.dodgeDir = dir;
     this.dodgeStartAt = now;
@@ -289,7 +313,17 @@ class Fighter {
 
     if (this.lastHitAt > 0 && now - this.lastHitAt > FIGHTER.HITS_DECAY_MS) this.hitsTakenLast5Sec = 0;
 
-    this.stamina = Math.min(this.maxStamina, this.stamina + dt * (FIGHTER.STAMINA_REGEN_PER_SEC ?? 32));
+    const movementDrain = getMovementStaminaDrain(this, dt);
+    if (movementDrain > 0) {
+      spendStamina(this, movementDrain);
+      if (this.stamina <= 0 && this.pose === POSE.run) {
+        this.isRunning = false;
+        this.pose = Math.abs(this.vx) > PHYSICS.WALK_RUN_IDLE_THRESHOLD ? POSE.walk : POSE.idle;
+        this.poseTime = 0;
+      }
+    } else {
+      this.stamina = Math.min(this.maxStamina, this.stamina + dt * getStaminaRegenRate(this));
+    }
 
     const isFrozen = this.status.active('frozen', now);
 
@@ -354,6 +388,9 @@ class Fighter {
     if (this.pose === POSE.hit && !this.status.active('stun', now) && !this.status.active('hitFlash', now)) {
       this.pose = POSE.idle;
     }
+    if (this.pose === POSE.recover && !this.status.active('aiState', now)) {
+      this.pose = POSE.idle;
+    }
     if (this.status.active('slide', now) && now > this.status.get('slide')) {
       this.status.clear('slide');
       this.pose = POSE.idle;
@@ -415,10 +452,12 @@ class Fighter {
     this.hitFromX = attackerX;
     this.hitsTakenLast5Sec = (this.hitsTakenLast5Sec || 0) + 1;
     this.hitLastDmg = finalDmg;
+    spendStamina(this, getHitStaminaDamage(finalDmg, isHeavy));
     this.status.set('hitFlash', now + (isHeavy ? 200 : 140));
     if (this.hp > 0 && isHeavy) {
       this.pose = POSE.hit;
       this.poseTime = 0;
+      this.impactFrictionUntil = Math.max(this.impactFrictionUntil || 0, now + (PHYSICS.IMPACT_FRICTION_MS ?? 360));
     }
 
     // Clear Deep Freeze on damage
@@ -452,6 +491,8 @@ class Fighter {
     this.aiStateUntil = 0;
     this.aiStateEnteredAt = 0;
     this.aiActionHistory = [];
+    this.aiJutsuHistory = [];
+    this.aiJutsuQueue = [];
     this.dodgeDir = undefined;
     this.dodgeStartAt = undefined;
     this.lastLeftGroundAt = 0;
@@ -467,6 +508,9 @@ class Fighter {
     this.lastLandingAttackType = null;
     this.hitFromX = 0;
     this.isRunning = false;
+    this.impactFrictionUntil = 0;
+    this.aiMoveIntent = null;
+    this.blockedMove = null;
     this.momentumAtAttackStart = 0;
     this.airAttack = false;
   }

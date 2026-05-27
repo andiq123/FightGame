@@ -1,3 +1,5 @@
+import { FIGHTER } from '../../config/constants.js';
+
 const registry = new Map();
 
 export function registerPower(id, meta, handlers) {
@@ -8,8 +10,13 @@ export function getPower(id) {
   return registry.get(id);
 }
 
+export function getPowerStaminaCost(id) {
+  const p = registry.get(id);
+  return p?.staminaCost ?? FIGHTER.POWER_BASE_COST;
+}
+
 export function getAllPowers() {
-  return Object.fromEntries([...registry.entries()].map(([k, v]) => [k, { id: v.id, name: v.name, cooldown: v.cooldown, tip: v.tip }]));
+  return Object.fromEntries([...registry.entries()].map(([k, v]) => [k, { id: v.id, name: v.name, cooldown: v.cooldown, tip: v.tip, staminaCost: getPowerStaminaCost(k) }]));
 }
 
 export function getValidPowerIds() {

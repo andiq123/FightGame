@@ -1,7 +1,7 @@
 import { POWERS } from '../entities/powers.js';
 import { AZURE_ASSASSIN } from '../ai/monsters.js';
 
-const DOM_SUFFIX = { hpSet: 'hpSet', intelligence: 'intelligence', powers: 'powers', jutsuSlots: 'jutsuSlots' };
+const DOM_SUFFIX = { hpSet: 'hpSet', intelligence: 'intelligence', powers: 'powers', jutsuSlots: 'jutsuSlots', jutsuQueue: 'jutsuQueue' };
 
 export function getFighterDomId(idx, key) {
   return `${DOM_SUFFIX[key] || key}${idx + 1}`;
@@ -39,8 +39,84 @@ export function updatePowerCooldownUI(f1, f2, now) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
+function getQueuedPlans(fighter) {
+  const selected = new Set(fighter.powers || []);
+  return (fighter.aiJutsuQueue || [])
+    .filter(plan => plan?.powerId && selected.has(plan.powerId) && POWERS[plan.powerId])
+    .slice(0, 2);
+}
+
+function getRangeLabel(plan) {
+  if (!Number.isFinite(plan.desiredMin) || !Number.isFinite(plan.desiredMax)) return '';
+  if (plan.desiredMin <= 0 && plan.desiredMax >= 900) return '';
+  const min = Math.round(Math.max(0, plan.desiredMin));
+  const max = Math.round(plan.desiredMax);
+  return max >= 900 ? `${min}+` : `${min}-${max}`;
+}
+
+function getPlanState(fighter, opponent, plan, now) {
+  const power = POWERS[plan.powerId];
+  const cooldown = Math.max(0, (fighter.powerCooldowns?.[plan.powerId] || 0) - now);
+  const staminaCost = power?.staminaCost ?? 0;
+  const staminaShort = Math.max(0, staminaCost - (fighter.stamina || 0));
+  const dist = opponent ? Math.abs((fighter.x || 0) - (opponent.x || 0)) : null;
+
+  if (cooldown > 0) return { label: `CD ${Math.ceil(cooldown / 1000)}s`, cls: 'cooldown' };
+  if (staminaShort > 0) return { label: `STA ${Math.ceil(staminaShort)}`, cls: 'stamina' };
+  if (!fighter.canAct?.(now)) return { label: 'BUSY', cls: 'busy' };
+  if (dist != null && Number.isFinite(plan.desiredMin) && dist < plan.desiredMin) return { label: 'SPACE', cls: 'spacing' };
+  if (dist != null && Number.isFinite(plan.desiredMax) && dist > plan.desiredMax) return { label: 'CLOSE', cls: 'spacing' };
+  return { label: 'READY', cls: 'ready' };
+}
+
+function updateJutsuQueueHUD(fighters, now) {
+  fighters.forEach((fighter, i) => {
+    const el = document.getElementById(getFighterDomId(i, 'jutsuQueue'));
+    if (!el) return;
+
+    if (!fighter?.powers?.length) {
+      el.className = 'jutsu-queue empty';
+      el.innerHTML = '<div class="jutsu-queue-row"><span class="jutsu-queue-label">NEXT</span><span class="jutsu-queue-name">No jutsu</span></div>';
+      return;
+    }
+
+    const plans = getQueuedPlans(fighter);
+    if (!plans.length) {
+      el.className = 'jutsu-queue planning';
+      el.innerHTML = '<div class="jutsu-queue-row"><span class="jutsu-queue-label">NEXT</span><span class="jutsu-queue-name">Planning</span><span class="jutsu-queue-state">...</span></div>';
+      return;
+    }
+
+    const opponent = fighters[1 - i];
+    el.className = 'jutsu-queue active';
+    el.innerHTML = plans.map((plan, idx) => {
+      const power = POWERS[plan.powerId];
+      const state = getPlanState(fighter, opponent, plan, now);
+      const range = getRangeLabel(plan);
+      const meta = range ? `<span class="jutsu-queue-range">${range}</span>` : '';
+      return `<div class="jutsu-queue-row ${state.cls}" title="${escapeHtml(power?.tip || '')}">
+        <span class="jutsu-queue-label">${idx === 0 ? 'NEXT' : 'AFTER'}</span>
+        <span class="jutsu-queue-name">${escapeHtml(power?.name || plan.powerId)}</span>
+        ${meta}
+        <span class="jutsu-queue-state">${state.label}</span>
+      </div>`;
+    }).join('');
+  });
+}
+
 export function updateJutsuHUD(f1, f2, skillFeed, now) {
   if (!f1 || !f2) return;
+  updateJutsuQueueHUD([f1, f2], now);
   [f1, f2].forEach((f, i) => {
     const el = document.getElementById(getFighterDomId(i, 'jutsuSlots'));
     if (!el) return;

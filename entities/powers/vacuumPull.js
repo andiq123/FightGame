@@ -4,6 +4,7 @@ import { SKILL_DAMAGE } from '../../config/constants.js';
 registerPower('vacuumPull', {
     name: 'Vacuum Pull',
     cooldown: 14000,
+    staminaCost: 32,
     tip: 'Pulls the opponent towards you'
 }, {
     score: ({ dist, stats, rng, opponent, fighter, oppCornered, oppBlocking, oppHpCritical, hpCritical }) => {

@@ -5,10 +5,11 @@ import { spawnSpectralTrail } from '../../services/particleSystem.js';
 registerPower('spectralDash', {
     name: 'Spectral Dash',
     cooldown: 9000,
+    staminaCost: 26,
     tip: 'Dash through the opponent'
 }, {
     score: ({ dist, stats, rng, opponent, projectiles, fighter, obstacles, hpCritical, cornered }) => {
-        if (dist < 60) return 0; // Too close, just use melee
+        if (dist < 60 || dist > 450) return 0; // Too close, just use melee; too far becomes a blind teleport
 
         // Environment Check: Ensure destination is safe
         const dir = fighter.x < opponent.x ? 1 : -1;
@@ -45,6 +46,9 @@ registerPower('spectralDash', {
         // 4. Position: Dash through if pressing or cornered
         if (dist < 200 && dist > 60) {
             s += 30;
+        }
+        if (dist >= 200 && dist <= 450 && opponent.status.active('recovery', performance.now())) {
+            s += 35;
         }
 
         // 5. Escape: Cornered with no stamina

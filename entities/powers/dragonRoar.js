@@ -5,18 +5,23 @@ import { spawnDragonFire } from '../../services/particleSystem.js';
 registerPower('dragonRoar', {
     name: 'Dragon Roar',
     cooldown: 25000,
+    staminaCost: 52,
     tip: 'Massive shockwave, high stun'
 }, {
-    score: ({ dist, stats, rng, opponent, fighter, hpCritical }) => {
+    score: ({ dist, stats, rng, opponent, fighter, hpCritical, oppAttacking, oppRecovering, oppBurning, oppHpCritical }) => {
         if (dist > 140) return 0; // Must be very close
 
         let s = 60;
 
         // 1. Counter: Punish their attack
-        if (opponent.pose === 'attack') s += 60;
+        if (oppAttacking) s += 60;
+        if (oppRecovering) s += 35;
+        if (oppBurning || opponent.status.active('burning', performance.now())) s += 45;
+        if (oppHpCritical) s += 42;
 
         // 2. Desperation: Low HP, go for broke
         if (hpCritical && dist <= 130) s += 50;
+        if (!oppAttacking && !oppRecovering && !oppBurning && !oppHpCritical && fighter.stamina < 100) s -= 35;
 
         // 3. Risk scaling
         const risk = stats.riskTolerance / 100;

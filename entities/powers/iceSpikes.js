@@ -4,10 +4,11 @@ import { SKILL_DAMAGE } from '../../config/constants.js';
 registerPower('iceSpikes', {
     name: 'Ice Spikes',
     cooldown: 10000,
+    staminaCost: 30,
     tip: 'Trail of ice pillars that hits low'
 }, {
     score: ({ eyeDist, dist, stats, rng, opponent, fighter, oppHpCritical, hpLow }) => {
-        if (eyeDist < 85 || eyeDist > 420) return 0;
+        if (eyeDist < 85 || eyeDist > 360) return 0;
 
         let s = 45;
 
@@ -24,6 +25,9 @@ registerPower('iceSpikes', {
 
         // 4. AI is defensive/low: buy distance with a freeze
         if (hpLow && eyeDist > 130) s += 30;
+
+        if (eyeDist >= 110 && eyeDist <= 280) s += 25;
+        if (opponent.status.active('block', performance.now()) || opponent.status.active('blockLow', performance.now())) s += 18;
 
         // 5. Don't double-freeze an already frozen opponent
         if (opponent.status.active('frozen', performance.now())) return 0;

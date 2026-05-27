@@ -1,4 +1,4 @@
-import { executeAI } from '../../ai/behavior.js';
+import { executeAI, sustainAIMoveIntent } from '../../ai/behavior.js';
 import { getAIStats } from '../../ai/presets.js';
 import { AIStrategy } from '../../ai/strategy.js';
 import { AI } from '../../config/constants.js';
@@ -19,6 +19,7 @@ export class AISystem {
         [0, 1].forEach(i => {
             const fighter = fighters[i];
             if (!fighter) return;
+            sustainAIMoveIntent(fighter, now, scaledDt);
 
             // Ensure archetype is known for AI scoring
             if (i === 1 && monsterIntelligence && !fighter.archetype) {
@@ -27,7 +28,7 @@ export class AISystem {
             }
 
             this.aiTicks[i] += scaledDt;
-            const reactTime = (AI.REACT_BASE_MS + (100 - aiStats[i].reaction) * AI.REACT_SCALE) / 1000;
+            const reactTime = (AI.DECISION_INTERVAL_MS ?? 185) / 1000;
 
             if (this.aiTicks[i] >= reactTime && !fighter.status.active('stagger', now)) {
                 this.aiTicks[i] = 0;
@@ -62,7 +63,10 @@ export class AISystem {
                         oppJustWhiffed: (opponent.lastWhiffAt || 0) > 0 && now - opponent.lastWhiffAt < 400,
                         oppJustGotHit: (opponent.lastHitAt || 0) > 0 && now - opponent.lastHitAt < 600,
                         hitALot: (fighter.hitsTakenLast5Sec || 0) >= 3,
-                        canSeeOpponent: canSee
+                        canSeeOpponent: canSee,
+                        staminaRatio: fighter.stamina / (fighter.maxStamina || 1),
+                        staminaLow: fighter.stamina / (fighter.maxStamina || 1) <= (AI.STAMINA_LOW_RATIO ?? 0.3),
+                        staminaCritical: fighter.stamina / (fighter.maxStamina || 1) <= (AI.STAMINA_CRITICAL_RATIO ?? 0.16)
                     };
                     strategyData = fighter.aiStrategy.update(tempCtx, scaledDt);
                     fighter.aiCombatMode = strategyData.strategy; // Sync to fighter state

@@ -11,4 +11,4 @@ import './dragonRoar.js';
 import './spectralDash.js';
 import './flameShower.js';
 
-export { registerPower, getPower, getAllPowers, getValidPowerIds, scorePower, executePower, getSpawnEffect } from './registry.js';
+export { registerPower, getPower, getPowerStaminaCost, getAllPowers, getValidPowerIds, scorePower, executePower, getSpawnEffect } from './registry.js';

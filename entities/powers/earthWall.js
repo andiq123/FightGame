@@ -4,10 +4,11 @@ import { SKILL_DAMAGE, FIGHTER } from '../../config/constants.js';
 registerPower('earthWall', {
     name: 'Earth Wall',
     cooldown: 18000,
-    tip: 'Creates a physical barrier that blocks movement'
+    staminaCost: 28,
+    tip: 'Creates a protective barrier that blocks movement and incoming projectiles'
 }, {
     score: ({ dist, fighter, stats, rng, opponent, inboundThreat, hpLow, hpCritical, oppCornered, staminaRatio }) => {
-        if (dist < 90) return 0; // Not useful in melee
+        if (dist < 90 && !inboundThreat) return 0; // Not useful in melee unless it blocks a shot
 
         const hpRatio = fighter.hp / fighter.maxHp;
         let s = 25;
@@ -49,7 +50,8 @@ registerPower('earthWall', {
             height: 120,
             life: 6,
             type: 'earth',
-            ownerId: fighter.id
+            ownerId: fighter.id,
+            blocksProjectiles: true
         });
 
         return true;

@@ -375,6 +375,29 @@ export function idleFromRest(poseT, rest) {
   };
 }
 
+export function recoveryFromRest(poseT, rest) {
+  const phase = (poseT * 2.1) % (2 * Math.PI);
+  const breath = Math.sin(phase);
+  const brace = 0.5 + Math.sin(phase * 0.5) * 0.08;
+
+  return {
+    lShoulderAng: 1.18 + brace * 0.18,
+    rShoulderAng: 1.0 + brace * 0.16,
+    lElbowAng: -0.42 - brace * 0.08,
+    rElbowAng: -0.36 - brace * 0.08,
+    lHipAng: rest.lHipAng - 0.18,
+    rHipAng: rest.rHipAng + 0.08,
+    lKneeAng: rest.lKneeAng + 0.52,
+    rKneeAng: rest.rKneeAng + 0.42,
+    lFootAng: rest.lFootAng - 0.08,
+    rFootAng: rest.rFootAng + 0.05,
+    bob: -5 + breath * 1.8,
+    torsoTwist: breath * 0.025,
+    lean: -0.22,
+    headTilt: -0.08 + breath * 0.02
+  };
+}
+
 export function getHitReaction(poseT, damage, face, hitFromX, fighterX) {
   const impact = Math.min(1.85, Math.max(0.65, (damage || 5) / 10));
   const knockDir = Number.isFinite(hitFromX) && Number.isFinite(fighterX)

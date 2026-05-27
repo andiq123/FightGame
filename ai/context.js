@@ -2,6 +2,7 @@ import { getDistance, ARENA_BOUNDS } from '../engine/physics.js';
 import { castRay } from '../engine/raycast.js';
 import { getInboundThreat } from '../engine/projectileThreat.js';
 import { AI, FIGHTER } from '../config/constants.js';
+import { getPowerStaminaCost } from '../entities/powers/index.js';
 
 export function faceToward(fighter, opponent) {
     if (!fighter || !opponent) return 1;
@@ -58,7 +59,7 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
     // Ranges
     const inFireballRange = canSee && rayDist >= AI.FIREBALL_MIN && rayDist <= AI.FIREBALL_MAX && !oppAttacking;
     const inShurikenRange = canSee && rayDist >= AI.SHURIKEN_MIN && rayDist <= AI.SHURIKEN_MAX;
-    const rangedPowers = (fighter.powers || []).filter(p => ['fireball', 'shuriken'].includes(p));
+    const rangedPowers = (fighter.powers || []).filter(p => ['fireball', 'shuriken', 'iceSpikes', 'flameShower'].includes(p));
     const hasRangedPower = rangedPowers.length > 0;
 
     // Evasive Timer
@@ -70,8 +71,13 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
 
     const justGotUp = (fighter.lastStaggerEndAt || 0) > 0 && now - fighter.lastStaggerEndAt < AI.REGROUP_AFTER_STAGGER_MS;
     const hitALot = (fighter.hitsTakenLast5Sec || 0) >= 3;
-    const tired = fighter.stamina < (stats.reaction >= 95 ? 15 : (fighter.status.active('shocked', now) ? AI.TIRED_STAMINA + 20 : AI.TIRED_STAMINA)) || (!(stats.reaction >= 95) && fighter.stamina < AI.REGROUP_STAMINA_MIN && (fighter.hitsTakenLast5Sec || 0) >= 2);
+    const staminaRatio = fighter.stamina / (fighter.maxStamina || 1);
+    const staminaCritical = staminaRatio <= (AI.STAMINA_CRITICAL_RATIO ?? 0.16);
+    const staminaLow = staminaRatio <= (AI.STAMINA_LOW_RATIO ?? 0.3);
+    const staminaHigh = staminaRatio >= (AI.STAMINA_RECOVER_RATIO ?? 0.72);
+    const tired = staminaCritical || staminaLow || (fighter.status.active('shocked', now) && fighter.stamina < AI.TIRED_STAMINA + 20) || (fighter.stamina < AI.REGROUP_STAMINA_MIN && (fighter.hitsTakenLast5Sec || 0) >= 2);
     const energized = fighter.stamina >= AI.ENERGIZED_STAMINA && (fighter.hitsTakenLast5Sec || 0) <= 1;
+    const blockedMove = fighter.blockedMove?.until > now ? fighter.blockedMove : null;
 
     // Base Context Object
     const ctx = {
@@ -131,7 +137,8 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         hpCritical: fighter.hp / fighter.maxHp < 0.25,
         hpLow: fighter.hp / fighter.maxHp < 0.45,
         oppHpCritical: opponent.hp / opponent.maxHp < 0.25,
-        staminaRatio: fighter.stamina / fighter.maxStamina,
+        staminaRatio,
+        staminaCritical,
         isBurning: fighter.status.active('burning', now),
         isFrozen: fighter.status.active('frozen', now),
         isShocked: fighter.status.active('shocked', now),
@@ -140,7 +147,7 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         oppShocked: opponent.status.active('shocked', now),
 
         // Logic Flags
-        shouldRetreat: (fighter.hp / fighter.maxHp < (stats.reaction >= 95 ? 0.04 : AI.RETREAT_HP_RATIO)) || (fighter.status.active('burning', now) && fighter.hp < 60) || (fighter.stamina < (stats.reaction >= 95 ? 15 : AI.RETREAT_STAMINA)),
+        shouldRetreat: (fighter.hp / fighter.maxHp < (stats.reaction >= 95 ? 0.04 : AI.RETREAT_HP_RATIO)) || (fighter.status.active('burning', now) && fighter.hp < 60) || staminaCritical || (staminaLow && dist < (AI.STAMINA_RETREAT_DIST ?? 360)),
         timeInEvasiveState,
         retreatStopped: dist >= (AI.RETREAT_STOP_DIST ?? 320),
         evasiveTimeOver,
@@ -161,13 +168,17 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         nearestObstacle,
         inboundThreat: getInboundThreat(fighter, projectiles),
         archetype: fighter.archetype || 'hero',
+        strategy: fighter.aiCombatMode || 'neutral',
+        blockedMove,
+        blockedMoveDir: blockedMove?.dir || 0,
+        movementBlocked: blockedMove != null,
 
         // New Tactical Senses
         isSafe: nearestObstacle && ray.blocked && ray.hit && nearestObstacle.o.ownerId === fighter.id && nearestObstacle.d < 150,
         underPressure: (hitALot || (dist < 150 && oppAttacking)) && !oppStaggered,
-        staminaHigh: fighter.stamina / fighter.maxStamina > 0.85,
-        staminaMid: fighter.stamina / fighter.maxStamina > 0.45,
-        staminaLow: fighter.stamina / fighter.maxStamina < 0.25,
+        staminaHigh,
+        staminaMid: staminaRatio > 0.45,
+        staminaLow,
 
         // Helpers
         faceToward: () => faceToward(fighter, opponent),
@@ -175,15 +186,17 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
     };
 
     // Opponent Capability Checks (Power cooldowns)
-    const oppPowerReady = (pid) => opponent.powers?.includes(pid) && (opponent.powerCooldowns?.[pid] ?? 0) <= now && opponent.stamina >= 20;
+    const oppPowerReady = (pid) => opponent.powers?.includes(pid) && (opponent.powerCooldowns?.[pid] ?? 0) <= now && opponent.stamina >= getPowerStaminaCost(pid);
     ctx.oppHasFireball = oppPowerReady('fireball');
     ctx.oppHasShuriken = oppPowerReady('shuriken');
+    ctx.oppHasIce = oppPowerReady('iceSpikes');
+    ctx.oppHasFlameShower = oppPowerReady('flameShower');
     ctx.oppHasLightning = oppPowerReady('lightningCutter');
     ctx.oppHasShinra = oppPowerReady('shinraTensei');
     ctx.oppHasClone = oppPowerReady('cloneJutsu');
     ctx.oppHasHeal = oppPowerReady('heal');
 
-    const oppRangedReady = (ctx.oppHasFireball || ctx.oppHasShuriken) && canSee;
+    const oppRangedReady = (ctx.oppHasFireball || ctx.oppHasShuriken || ctx.oppHasIce || ctx.oppHasFlameShower) && canSee;
     const inOpponentFireballZone = canSee && rayDist >= AI.FIREBALL_MIN && rayDist <= AI.FIREBALL_MAX;
     const inOpponentShurikenZone = canSee && rayDist >= AI.SHURIKEN_MIN && rayDist <= AI.SHURIKEN_MAX;
 
@@ -201,6 +214,7 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
     const slideCost = (FIGHTER?.SLIDE_STAMINA ?? 18);
     ctx.canAffordDodge = fighter.stamina >= dashCost + 12;
     ctx.canAffordSlide = fighter.stamina >= slideCost + reserve;
+    ctx.cannotEvade = !!ctx.inboundThreat && !ctx.canAffordDodge && !ctx.canAffordSlide && !fighter.hasStamina(FIGHTER.JUMP_STAMINA ?? 14);
 
     ctx.hpLead = (fighter.hp / fighter.maxHp) - (opponent.hp / opponent.maxHp);
     ctx.oppHpRatio = opponent.hp / opponent.maxHp;

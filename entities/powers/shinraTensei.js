@@ -12,15 +12,12 @@ const REPULSE_DEFLECT_MS = 280;
 
 function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
   const dmg = blocking ? Math.round(SKILL_DAMAGE.SHINRA * 0.3) : SKILL_DAMAGE.SHINRA;
-  target.hp = Math.max(0, target.hp - dmg);
-  target.lastHitAt = now;
-  target.hitsTakenLast5Sec = (target.hitsTakenLast5Sec || 0) + 1;
-  caster.damageDealt += dmg;
+  const finalDmg = target.takeDamage(dmg, true, caster.x, now);
+  caster.damageDealt += finalDmg;
   const knockback = blocking ? REPULSE_KNOCKBACK * 0.4 : REPULSE_KNOCKBACK;
-  applyKnockback(target, knockback, caster.x, true);
+  applyKnockback(target, knockback, caster.x, true, false, false, now);
   target.status.set('stun', now + (blocking ? 100 : 200));
   target.status.set('hitFlash', now + 220);
-  target.hitLastDmg = dmg;
   target.hitFromX = caster.x;
   if (!target.status.active('stagger', now) && target.hp > 0) {
     target.pose = POSE.stagger;
@@ -30,15 +27,16 @@ function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
     target.pose = POSE.hit;
     target.poseTime = 0;
   }
-  hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg, shinra: true, block: blocking }));
+  hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg: finalDmg, shinra: true, block: blocking }));
 }
 
 registerPower('shinraTensei', {
   name: 'Shinra Tensei',
   cooldown: 8000,
+  staminaCost: 42,
   tip: 'Almighty Push – exploding circle repulse, ragdoll, deflects projectiles'
 }, {
-  score: ({ dist, inboundThreat, oppAttacking, fighter, opponent, stats, rng, cannotEvade, cornered, oppStaggered, oppRecovering, obstacles, oppHpCritical, oppHealing }) => {
+  score: ({ dist, inboundThreat, oppAttacking, fighter, opponent, stats, rng, cannotEvade, cornered, oppStaggered, oppRecovering, obstacles, clones, cloneDist, oppHpCritical, oppHealing }) => {
     const intelligence = stats.reaction / 100;
     if (dist > 125) return 0;
     if (!fighter.canUsePower('shinraTensei')) return 0;
@@ -51,8 +49,13 @@ registerPower('shinraTensei', {
     if (oppRecovering) s += 45 + (intelligence * 20);
 
     if (cannotEvade) s += 80;
+    if (inboundThreat?.heavy) s += 40;
     if (!fighter.hasStamina(30) && oppAttacking && dist < 100) s += 60;
     if (cornered && dist < 110) s += 50;
+    if (opponent.y < -30 && dist < 120) s += 35;
+
+    const enemyCloneNear = (cloneDist ?? Infinity) < 125 || (clones || []).some(c => c.ownerId !== fighter.id && Math.abs(c.x - fighter.x) < 125);
+    if (enemyCloneNear) s += 45;
 
     // Blast them mid-heal to deny the recovery
     if (oppHealing && dist < 120) s += 70;

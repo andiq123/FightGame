@@ -4,6 +4,7 @@ import { CLONE } from '../../config/constants.js';
 registerPower('cloneJutsu', {
   name: 'Clone Jutsu',
   cooldown: 16000,
+  staminaCost: 34,
   tip: 'Spectral clone chases & combos for 5s'
 }, {
   score: ({ dist, oppAttacking, opponent, stats, rng, fighter, clones, hpLow }) => {
@@ -17,6 +18,14 @@ registerPower('cloneJutsu', {
     // Low-HP distraction: create pressure cover while trying to escape/heal
     if (hpLow && myClones.length === 0 && dist > 80) {
       return 65 + rng() * 20;
+    }
+
+    if (dist >= 120 && dist <= 420) {
+      const risk = stats.riskTolerance / 100;
+      let s = 42 + risk * 24;
+      if (opponent.vx && Math.abs(opponent.vx) < 70) s += 14;
+      if (opponent.status.active('block', performance.now()) || opponent.status.active('blockLow', performance.now())) s += 20;
+      return s + rng() * 18;
     }
 
     const inRange = dist <= 115;

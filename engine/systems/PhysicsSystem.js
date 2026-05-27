@@ -3,6 +3,14 @@ import { spawnLandingDust } from '../../services/particleSystem.js';
 import { COMBAT_EXTRA, PHYSICS_EXTRA } from '../../config/constants.js';
 import { updateRagdoll } from '../ragdoll.js';
 
+function markMovementBlocked(fighter, dir, now, reason) {
+    if (!dir) return;
+    fighter.blockedMove = { dir, until: now + 520, reason };
+    if (fighter.aiMoveIntent?.dir === dir) fighter.aiMoveIntent = null;
+    fighter.status?.clear?.('aiState');
+    fighter.aiStateUntil = Math.min(fighter.aiStateUntil || now, now);
+}
+
 /**
  * PhysicsSystem handles spatial integration, collisions, and movement.
  */
@@ -110,8 +118,14 @@ export class PhysicsSystem {
                 }
 
                 // Push fighter out
-                if (f.x < o.x) f.x = o.x - halfW - margin;
-                else f.x = o.x + halfW + margin;
+                if (f.x < o.x) {
+                    f.x = o.x - halfW - margin;
+                    if (prevVx > 0 || f.aiMoveIntent?.dir === 1) markMovementBlocked(f, 1, now, 'obstacle');
+                }
+                else {
+                    f.x = o.x + halfW + margin;
+                    if (prevVx < 0 || f.aiMoveIntent?.dir === -1) markMovementBlocked(f, -1, now, 'obstacle');
+                }
                 f.vx = 0;
             }
         });

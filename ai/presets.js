@@ -1,20 +1,26 @@
 
 import { getValidPowerIds } from '../entities/powers/index.js';
 
+export const AI_INTELLIGENCE_MAX = 500;
+const BASE_AI_INTELLIGENCE_MAX = 100;
+
 export function getAIStats(intelligence) {
-  const i = Math.max(0, Math.min(100, intelligence)) / 100;
-  // Steeper curve for higher levels (Nightmare becomes much more extreme)
+  const raw = Math.max(0, Math.min(AI_INTELLIGENCE_MAX, intelligence));
+  const i = Math.min(raw, BASE_AI_INTELLIGENCE_MAX) / BASE_AI_INTELLIGENCE_MAX;
+  const overdrive = Math.max(0, raw - BASE_AI_INTELLIGENCE_MAX) / (AI_INTELLIGENCE_MAX - BASE_AI_INTELLIGENCE_MAX);
+  // Intelligence improves tactical choices only. Movement speed and decision cadence stay fixed elsewhere.
   const steep = Math.pow(i, 2.2);
   const linear = i;
+  const boost = Math.pow(overdrive, 0.85);
 
   return {
-    aggression: Math.round(5 + linear * 25 + steep * 65), // Nightmare ~ 95
-    defense: Math.round(10 + linear * 15 + steep * 73), // Nightmare ~ 98
-    reaction: Math.round(10 + linear * 10 + steep * 78), // Nightmare ~ 98
-    riskTolerance: Math.round(5 + linear * 45 + steep * 45), // Expert is high risk, Nightmare is calculated
-    comboTendency: Math.round(2 + linear * 20 + steep * 76), // Nightmare ~ 98 (consistent combos)
-    spacing: Math.round(10 + linear * 20 + steep * 68), // Nightmare ~ 98
-    parkourTendency: Math.round(10 + linear * 30 + steep * 58) // Nightmare ~ 98
+    aggression: Math.round(5 + linear * 25 + steep * 65 + boost * 45),
+    defense: Math.round(10 + linear * 15 + steep * 73 + boost * 50),
+    reaction: Math.round(10 + linear * 10 + steep * 78 + boost * 40),
+    riskTolerance: Math.round(5 + linear * 45 + steep * 45 + boost * 35),
+    comboTendency: Math.round(2 + linear * 20 + steep * 76 + boost * 50),
+    spacing: Math.round(10 + linear * 20 + steep * 68 + boost * 50),
+    parkourTendency: Math.round(10 + linear * 30 + steep * 58 + boost * 40)
   };
 }
 
@@ -57,7 +63,7 @@ export function loadSettings() {
     return {
       level1: clamp(loaded.level1, 1, 20, 1),
       hp1: clamp(loaded.hp1, 100, 5000, 200),
-      intelligence1: clamp(loaded.intelligence1, 0, 100, 48),
+      intelligence1: clamp(loaded.intelligence1, 0, AI_INTELLIGENCE_MAX, DEFAULT_SETTINGS.intelligence1),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
       monsterPowers: Array.isArray(loaded.monsterPowers)
         ? loaded.monsterPowers.filter(p => getValidPowerIds().includes(p))

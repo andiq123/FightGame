@@ -51,7 +51,7 @@ function processHit(attacker, defender, now, hitEffects) {
     defender.hitFromX = attacker.x;
     defender.pose = POSE.hit;
     defender.poseTime = 0;
-    applyKnockback(defender, hb.knockback * 0.5, attacker.x, false);
+    applyKnockback(defender, hb.knockback * 0.5, attacker.x, false, false, false, now);
     return;
   }
   if (defender.status.active('smoke', now) && secureRandom() < 0.5) {
@@ -102,7 +102,7 @@ function processHit(attacker, defender, now, hitEffects) {
   const afterwardDefender = defender.x > attacker.x ? 1 : -1;
   const heavy = hb.damage >= 14 || hb.kickLaunch;
 
-  applyKnockback(defender, hb.knockback, attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch);
+  applyKnockback(defender, hb.knockback, attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch, now);
   applyAttackerRecoil(attacker, hb.knockback, -afterwardDefender);
 
   const shouldStagger = !defender.status.active('stagger', now) && defender.hp > 0 &&

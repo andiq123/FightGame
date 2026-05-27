@@ -44,7 +44,7 @@ const PERSONAS = {
 export class AIStrategy {
     constructor(fighterId, intelligence) {
         this.fighterId = fighterId;
-        this.intelligence = intelligence; // 0-100
+        this.intelligence = intelligence; // tactical stat; may exceed 100 for overdrive AI
         this.persona = this.selectPersona(intelligence);
         this.currentStrategy = STRATEGY.NEUTRAL;
         this.strategyTimer = 0;
@@ -108,13 +108,24 @@ export class AIStrategy {
 
     shouldForceStrategyChange(ctx) {
         // Immediate overrides
+        if (ctx.staminaLow && this.currentStrategy !== STRATEGY.TURTLE && this.currentStrategy !== STRATEGY.ZONING) return true;
         if (ctx.cornered && ctx.dist < 140 && this.currentStrategy !== STRATEGY.TURTLE && this.currentStrategy !== STRATEGY.RUSH_DOWN) return true;
         if (ctx.oppCornered && this.currentStrategy !== STRATEGY.CORNER_TRAP) return true;
         return false;
     }
 
     pickStrategy(ctx) {
-        const { dist, hpLead, canSeeOpponent, oppCornered } = ctx;
+        const { dist, hpLead, canSeeOpponent, oppCornered, staminaLow, staminaCritical } = ctx;
+
+        if (staminaCritical) {
+            this.currentStrategy = STRATEGY.TURTLE;
+            return;
+        }
+
+        if (staminaLow) {
+            this.currentStrategy = dist > 240 ? STRATEGY.ZONING : STRATEGY.TURTLE;
+            return;
+        }
 
         if (oppCornered && this.mood.confidence > 0.4) {
             this.currentStrategy = STRATEGY.CORNER_TRAP;

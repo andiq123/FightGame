@@ -51,7 +51,7 @@ export class CombatSystem {
         tickProjectiles(world.projectiles, dt * world.gameSpeed);
         const projResult = processProjectileHits(
             world.projectiles, world.fighter1, world.fighter2, world.clones,
-            world.hitEffects, world.particles, now, dt * world.gameSpeed, secureRandom
+            world.hitEffects, world.particles, now, dt * world.gameSpeed, secureRandom, world.obstacles
         );
         world.projectiles = projResult.projectiles;
         world.clones = world.clones.filter(c => !projResult.hitClones.has(c));
@@ -67,18 +67,21 @@ export class CombatSystem {
         const scaledDt = dt * world.gameSpeed;
 
         world.clones = world.clones.filter(c => {
-            if (c.dissolveAt != null && now >= c.dissolveAt) {
-                spawnCloneDissolve(world.particles, c.x, getCloneDissolveY(), secureRandom);
+            if (c.removed || (c.dissolveAt != null && now >= c.dissolveAt)) {
+                this.finishCloneDissolve(c, world, secureRandom);
                 return false;
             }
 
-            const target = c.targetId === 0 ? world.fighter1 : world.fighter2;
-            c.facing = c.x < target.x ? 1 : -1;
-            const dist = Math.abs(c.x - target.x) || 0.01;
+            const targetInfo = this.getCloneTarget(c, world);
+            const target = targetInfo.entity;
+            const targetX = target.x;
+            c.targetKind = targetInfo.type;
+            c.facing = c.x < targetX ? 1 : -1;
+            const dist = Math.abs(c.x - targetX) || 0.01;
 
             // 1. Tactical Teleport
-            if (dist > CLONE.TELEPORT_DIST && now - (c.lastTeleportAt || 0) > CLONE.TELEPORT_COOLDOWN_MS) {
-                c.x = target.x - (c.facing * CLONE.TELEPORT_OFFSET); // Flank-warp
+            if (targetInfo.type === 'fighter' && dist > CLONE.TELEPORT_DIST && now - (c.lastTeleportAt || 0) > CLONE.TELEPORT_COOLDOWN_MS) {
+                c.x = targetX - (c.facing * CLONE.TELEPORT_OFFSET); // Flank-warp
                 c.lastTeleportAt = now;
                 c.attackWindupAt = 0; // Immediate reset
             }
@@ -86,7 +89,7 @@ export class CombatSystem {
             const windupActive = c.attackWindupAt && now - c.attackWindupAt < CLONE.WINDUP_MS;
             const chaseSpeed = dist < 200 ? CLONE.CHASE_SPEED_FAST : CLONE.CHASE_SPEED;
 
-            c.vx = windupActive ? 0 : (target.x - c.x) / dist * chaseSpeed;
+            c.vx = windupActive ? 0 : (targetX - c.x) / dist * chaseSpeed;
             c.vx = Math.max(-600, Math.min(600, c.vx));
             c.x += c.vx * scaledDt;
 
@@ -101,34 +104,108 @@ export class CombatSystem {
             const windupDone = c.attackWindupAt && now - c.attackWindupAt >= CLONE.WINDUP_MS;
 
             if (inRange && canHit && windupDone) {
-                this.applyCloneDamage(c, target, world, now);
+                if (targetInfo.type === 'clone') {
+                    this.applyCloneVsCloneDamage(c, target, world, now, secureRandom);
+                } else {
+                    this.applyCloneDamage(c, target, world, now);
+                }
                 c.comboStep = (c.comboStep + 1) % 3;
                 c.lastHitAt = now;
                 c.attackWindupAt = 0;
             }
 
             if (now - c.createdAt >= CLONE.DURATION_MS) {
-                spawnCloneDissolve(world.particles, c.x, getCloneDissolveY(), secureRandom);
+                this.finishCloneDissolve(c, world, secureRandom);
                 return false;
             }
             return true;
         });
+        world.clones = world.clones.filter(c => !c.removed);
+    }
+
+    getCloneTarget(clone, world) {
+        const enemyClone = this.getNearestEnemyClone(clone, world.clones);
+        if (enemyClone) return { type: 'clone', entity: enemyClone };
+
+        return {
+            type: 'fighter',
+            entity: clone.targetId === 0 ? world.fighter1 : world.fighter2
+        };
+    }
+
+    getNearestEnemyClone(clone, clones) {
+        let nearest = null;
+        let nearestDist = Infinity;
+
+        for (const candidate of clones) {
+            if (
+                candidate === clone ||
+                candidate.ownerId === clone.ownerId ||
+                candidate.removed ||
+                candidate.dissolveAt != null ||
+                candidate.hp <= 0
+            ) {
+                continue;
+            }
+
+            const dist = Math.abs(candidate.x - clone.x);
+            if (dist < nearestDist) {
+                nearest = candidate;
+                nearestDist = dist;
+            }
+        }
+
+        return nearest;
+    }
+
+    applyCloneVsCloneDamage(clone, targetClone, world, now, secureRandom) {
+        if (targetClone.removed || targetClone.hp <= 0) return;
+
+        const previousHp = targetClone.hp;
+        targetClone.hp = Math.max(0, targetClone.hp - clone.damage);
+        const dmg = previousHp - targetClone.hp;
+        (clone.ownerId === 0 ? world.fighter1 : world.fighter2).damageDealt += dmg;
+
+        const recoilDir = targetClone.x >= clone.x ? 1 : -1;
+        targetClone.vx = Math.max(-350, Math.min(350, (targetClone.vx || 0) * 0.25 + recoilDir * 160));
+        targetClone.facing = -recoilDir;
+        targetClone.hitFlashUntil = now + 140;
+
+        world.hitEffects.push(createHitEffect(targetClone.x, {
+            y: getCloneDissolveY(),
+            dmg,
+            ownerId: clone.ownerId,
+            cloneHit: true
+        }));
+
+        clone.lastHitAt = now;
+        clone.attackPoseUntil = now + 200;
+        clone.attackWindupAt = 0;
+
+        if (targetClone.hp <= 0) {
+            targetClone.dissolveAt = now;
+            targetClone.removed = true;
+            this.finishCloneDissolve(targetClone, world, secureRandom);
+        }
+    }
+
+    finishCloneDissolve(clone, world, secureRandom) {
+        if (clone.dissolveSpawned) return;
+        clone.dissolveSpawned = true;
+        spawnCloneDissolve(world.particles, clone.x, getCloneDissolveY(), secureRandom);
     }
 
     applyCloneDamage(clone, target, world, now) {
-        target.hp = Math.max(0, target.hp - clone.damage);
-        target.lastHitAt = now;
-        target.hitsTakenLast5Sec = (target.hitsTakenLast5Sec || 0) + 1;
-        (clone.ownerId === 0 ? world.fighter1 : world.fighter2).damageDealt += clone.damage;
+        const dmg = target.takeDamage(clone.damage, false, clone.x, now);
+        (clone.ownerId === 0 ? world.fighter1 : world.fighter2).damageDealt += dmg;
 
         target.status.set('stun', now + clone.stun);
         target.status.set('hitFlash', now + 140);
-        target.hitLastDmg = clone.damage;
         target.hitFromX = clone.x;
         target.pose = POSE.hit;
         target.poseTime = 0;
 
-        world.hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg: clone.damage }));
+        world.hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg }));
         clone.lastHitAt = now;
         clone.attackPoseUntil = now + 200;
         clone.attackWindupAt = 0;

@@ -5,6 +5,7 @@ import { getHitEffectY } from '../../core/coordinates.js';
 registerPower('heal', {
   name: 'Heal',
   cooldown: 20000,
+  staminaCost: 30,
   tip: 'Restore 20% HP, green aura'
 }, {
   score: ({ fighter, rng, dist, oppAttacking, clones, hpLow }) => {

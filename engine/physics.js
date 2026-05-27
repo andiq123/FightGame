@@ -114,8 +114,7 @@ export function applyKnockback(fighter, amount, fromX, heavy, upward = false, ki
   const dir = fighter.x > fromX ? 1 : -1;
   let mult = heavy ? PHYSICS.KNOCKBACK_HEAVY_MULT : PHYSICS.KNOCKBACK_LIGHT_MULT;
   if (kickLaunch && PHYSICS.KNOCKBACK_KICK_LAUNCH_MULT) mult = PHYSICS.KNOCKBACK_KICK_LAUNCH_MULT;
-  const stability = fighter.getStability ? fighter.getStability() : 1;
-  const horiz = dir * amount * mult * stability;
+  const horiz = dir * amount * mult;
   fighter.vx = clamp(fighter.vx + horiz, -760, 760);
   const upwardMult = upward ? PHYSICS.UPPERCUT_UPWARD : (heavy ? PHYSICS.KNOCKBACK_UPWARD : 0);
   if (upwardMult > 0) {

@@ -1,7 +1,7 @@
 import { getPower } from './powers/index.js';
 import { isRagdollSettled } from '../engine/ragdoll.js';
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, ATTACK_DATA } from './attacks.js';
-import { ARENA, PHYSICS, HP, COMBAT, FIGHTER, EQUIPMENT } from '../config/constants.js';
+import { ARENA, PHYSICS, HP, COMBAT, FIGHTER } from '../config/constants.js';
 import { StatusManager } from './components/StatusManager.js';
 import { ActionBuffer } from './components/ActionBuffer.js';
 
@@ -30,8 +30,6 @@ class Fighter {
     this.poseTime = 0;
     this.currentAttack = null;
     this.speedMult = 1;
-    this.shieldActive = false;
-    this.vampireUntil = 0; // Legacy, will be removed if no longer used by powers/index.js
     this.damageMult = 1;
     this.damageTakenMult = 1;
     this.staggerRagdoll = null;
@@ -53,7 +51,6 @@ class Fighter {
     this.lastWhiffAt = 0;
     this.lastLandingAttackType = null;
     this.isRunning = false;
-    this.weaponId = 'fists';
     this.poseHistory = [];
     this.attackTrail = [];
     this.passives = [];
@@ -79,23 +76,6 @@ class Fighter {
   canRun() {
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
     return this.stamina >= 10 && !this.status.active('frozen', now) && !this.status.active('deepFreeze', now) && !this.status.active('anchored', now);
-  }
-
-  setWeapon(weaponId) {
-    if (EQUIPMENT.WEAPONS[weaponId]) this.weaponId = weaponId;
-  }
-
-  getWeapon() {
-    return EQUIPMENT.WEAPONS[this.weaponId || 'fists'];
-  }
-
-  getWeight() {
-    const weapon = this.getWeapon();
-    return weapon.weight || 0;
-  }
-
-  getLifesteal() {
-    return this.getWeapon().lifesteal || 0;
   }
 
   canAct(now) {
@@ -310,8 +290,6 @@ class Fighter {
 
     this.stamina = Math.min(this.maxStamina, this.stamina + dt * (FIGHTER.STAMINA_REGEN_PER_SEC ?? 32));
 
-    // Apply Equipment Stats & Level Multipliers
-    const weapon = this.getWeapon();
     const isFrozen = this.status.active('frozen', now);
 
     this.speedMult = this.status.active('speedBoost', now) ? 1.4 : 1;
@@ -336,21 +314,8 @@ class Fighter {
       this.isRunning = false;
     }
 
-    this.damageMult = weapon.damage * this.levelDamageMult * (this.status.active('overcharge', now) ? 1.5 : 1);
-    this.damageTakenMult = (1 / this.levelDefenseMult) * (this.status.active('defenseBoost', now) ? 0.6 : 1);
-
-    if (this.status.active('speedMult', now) && now > this.status.get('speedMult')) {
-      this.status.clear('speedMult');
-    }
-    if (this.status.active('shield', now) && now > this.status.get('shield')) this.shieldActive = false;
-    if (this.status.active('damageMult', now) && now > this.status.get('damageMult')) {
-      // This is now handled by equipment, but clear the status if it expires
-      this.status.clear('damageMult');
-    }
-    if (this.status.active('damageTakenMult', now) && now > this.status.get('damageTakenMult')) {
-      // This is now handled by equipment, but clear the status if it expires
-      this.status.clear('damageTakenMult');
-    }
+    this.damageMult = this.levelDamageMult;
+    this.damageTakenMult = 1 / this.levelDefenseMult;
 
     // Elemental: Burning (DoT)
     if (this.status.active('burning', now)) {
@@ -361,16 +326,6 @@ class Fighter {
       }
     } else {
       this.lastBurnTick = 0;
-    }
-
-    // Equipment: Bleed (Katana DoT)
-    if (this.bleedTicks > 0) {
-      this.bleedInterval = (this.bleedInterval || 0) + dt * 1000;
-      if (this.bleedInterval >= 600) {
-        this.takeDamage(this.bleedDmg || 3, false, 0, now);
-        this.bleedTicks--;
-        this.bleedInterval = 0;
-      }
     }
 
     this.powers.forEach(p => {
@@ -431,22 +386,20 @@ class Fighter {
   getAttackHitbox(now) {
     if (!this.currentAttack) return null;
     const a = this.currentAttack;
-    const data = a.data; // Use data from currentAttack
+    const data = a.data;
     const elapsed = now - a.started;
     const activeStart = a.type === GRAB ? 0.25 : 0.3;
     const activeEnd = a.type === GRAB ? 0.6 : 0.75;
     if (elapsed < a.data.duration * activeStart || elapsed > a.data.duration * activeEnd) return null;
     const dir = a.dir != null ? a.dir : this.facing;
-    const weapon = this.getWeapon();
-    const rangeMult = weapon.range || 1;
-    const xOffset = (a.type === GRAB ? 35 : 55) * rangeMult;
-    const width = data.range * 0.6 * rangeMult;
+    const xOffset = a.type === GRAB ? 35 : 55;
+    const width = data.range * 0.6;
 
     return {
       x: this.x + xOffset * dir,
       w: width,
       damage: data.damage,
-      knockback: data.knockback * (weapon.knockback || 1),
+      knockback: data.knockback,
       stun: data.stun,
       high: data.high,
       type: a.type,
@@ -488,7 +441,6 @@ class Fighter {
     this.stamina = this.maxStamina;
     this.pose = POSE.idle;
     this.currentAttack = null;
-    this.shieldActive = false;
     this.damageMult = 1;
     this.damageTakenMult = 1;
     this.damageDealt = 0;

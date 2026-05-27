@@ -189,16 +189,6 @@ export const COMBAT_EXTRA = {
   FIGHTER_OVERLAP_PUSH: 25,
 };
 
-export const EQUIPMENT = {
-  WEAPONS: {
-    fists: { id: 'fists', name: 'Fists', range: 1, damage: 1, speed: 1, weight: 0, knockback: 1 },
-    katana: { id: 'katana', name: 'Katana', range: 1.4, damage: 1.25, speed: 1.15, weight: 0.15, knockback: 1.1, critChance: 0.2, bleedChance: 0.15, bleedDmg: 3, color: '#e0e0e0' },
-    staff: { id: 'staff', name: 'Staff', range: 1.85, damage: 0.95, speed: 1.05, weight: 0.2, knockback: 1.5, stunMult: 1.4, pushback: 1.4, color: '#8B6914' },
-    daggers: { id: 'daggers', name: 'Daggers', range: 0.85, damage: 0.8, speed: 1.6, weight: 0.05, knockback: 0.6, lifesteal: 0.15, comboExtend: 1.4, color: '#7B68EE' },
-    claymore: { id: 'claymore', name: 'Claymore', range: 1.7, damage: 1.65, speed: 0.6, weight: 0.55, knockback: 1.7, guardBreak: true, executeDmg: 1.3, color: '#708090' }
-  }
-};
-
 export const AI_STATE = {
   EVADING_PROJECTILE: 'evadingProjectile',
   SHINRA_DEFENSE: 'shinraDefense',

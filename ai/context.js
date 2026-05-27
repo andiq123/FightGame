@@ -160,7 +160,6 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         cloneDist: nearestClone?.dist ?? Infinity,
         nearestObstacle,
         inboundThreat: getInboundThreat(fighter, projectiles),
-        weapon: fighter.getWeapon(),
         archetype: fighter.archetype || 'hero',
 
         // New Tactical Senses

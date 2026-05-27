@@ -1,5 +1,5 @@
 import { Fighter } from './entities/fighter.js';
-import { HP, ARENA, RENDER, EFFECT_DURATION, EQUIPMENT } from './config/constants.js';
+import { HP, ARENA, RENDER, EFFECT_DURATION } from './config/constants.js';
 import { tickParticles, spawnHealParticles, spawnFireballLaunch, spawnClonePoof, spawnShinraTensei, spawnLightningCutter, spawnEarthDust, spawnVortex, spawnFrost, spawnDragonFire, spawnSpectralTrail, spawnDashDust, spawnLandingDust } from './services/particleSystem.js';
 import { updateHUD, getFighterDomId } from './services/hud.js';
 import { World } from './engine/core/World.js';
@@ -34,7 +34,6 @@ const hudEls = {
   stam1: document.getElementById('stam1'),
   stam2: document.getElementById('stam2'),
   rounds: document.getElementById('rounds'),
-  combo1: document.getElementById('combo1'),
   statusIcons1: document.getElementById('statusIcons1'),
   statusIcons2: document.getElementById('statusIcons2'),
   aiState1: document.getElementById('aiState1'),
@@ -93,18 +92,8 @@ function persistSettings() {
     intelligence1: parseInt(document.getElementById('intelligence1')?.value || 12, 10),
     gameSpeed: parseFloat(document.getElementById('gameSpeed')?.value || 1),
     powers1: p1,
-    weapon1: document.querySelector('#weapon1 .equip-btn.selected')?.dataset.id || 'fists',
     hp1: parseInt(document.getElementById('hpSet1')?.value || 100, 10),
   });
-}
-
-function syncWeaponFromUI() {
-  if (!world.fighter1) return;
-  const w1 = document.querySelector('#weapon1 .equip-btn.selected')?.dataset.id || 'fists';
-  world.fighter1.setWeapon(w1);
-
-  const l1 = parseInt(document.getElementById('level1')?.value || 1, 10);
-  syncLevel(0, l1);
 }
 
 import { getLevelStats, getAIStats } from './ai/presets.js';
@@ -245,7 +234,6 @@ function createFighters() {
   // Initialize Monster
   const m = AZURE_ASSASSIN;
   world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1, m.hp);
-  world.fighter2.setWeapon(m.weapon);
   world.fighter2.setPowers(m.powers);
   world.fighter2.level = m.level;
   world.fighter2.passives = m.passives || [];
@@ -257,7 +245,6 @@ function createFighters() {
   syncLevel(1, m.level);
 
   syncPowersFromUI();
-  syncWeaponFromUI();
 }
 
 function applySettings(settings) {
@@ -269,11 +256,6 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
-  uiManager?.buildEquipButtons('weapon1', EQUIPMENT.WEAPONS, settings.weapon1, () => {
-    if (running) syncWeaponFromUI();
-    persistSettings();
-  });
-
   const i1El = document.getElementById('intelligence1');
   if (i1El) i1El.value = intelligence1;
 

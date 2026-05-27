@@ -76,55 +76,6 @@ export class UIManager {
         this.updatePowerCount(container.closest('.powers'));
     }
 
-    buildEquipButtons(containerId, registry, selectedId, onEquipClick) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-        Object.entries(registry).forEach(([id, item]) => {
-            const btn = document.createElement('button');
-            btn.className = 'equip-btn';
-            btn.dataset.id = id;
-
-            const itemColor = item.color || item.trim;
-            if (itemColor && id !== 'none' && id !== 'fists') {
-                const dot = document.createElement('span');
-                dot.className = 'item-dot';
-                dot.style.background = itemColor;
-                btn.appendChild(dot);
-            }
-
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'item-name';
-            nameSpan.textContent = item.name;
-            btn.appendChild(nameSpan);
-
-            let lines = [];
-            if (item.damage && item.damage !== 1) lines.push(`Attack: ${Math.round(item.damage * 100)}%`);
-            if (item.range && item.range !== 1) lines.push(`Range: ${item.range}x`);
-            if (item.knockback && item.knockback !== 1) lines.push(`Knockback: ${Math.round(item.knockback * 100)}%`);
-            if (item.critChance) lines.push(`Crit Chance: ${Math.round(item.critChance * 100)}%`);
-            if (item.stunMult) lines.push(`Stun: +${Math.round((item.stunMult - 1) * 100)}%`);
-            if (item.lifesteal) lines.push(`Lifesteal: ${Math.round(item.lifesteal * 100)}%`);
-            if (item.guardBreak) lines.push('Guard Break');
-
-            if (lines.length > 0) {
-                const tooltip = document.createElement('div');
-                tooltip.className = 'equip-tooltip';
-                tooltip.innerHTML = lines.join('<br>');
-                btn.appendChild(tooltip);
-                btn.classList.add('has-tooltip');
-            }
-
-            if (id === selectedId) btn.classList.add('selected');
-            btn.addEventListener('click', () => {
-                container.querySelectorAll('.equip-btn').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                onEquipClick?.();
-            });
-            container.appendChild(btn);
-        });
-    }
-
     updatePowerCount(wrap) {
         if (!wrap) return;
         const sel = wrap.querySelectorAll('.power-btn.selected');

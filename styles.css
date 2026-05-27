@@ -116,35 +116,6 @@ body {
   transition: width 0.2s ease-out;
 }
 
-.combo-badge {
-  position: absolute;
-  bottom: -35px;
-  font-size: 18px;
-  font-weight: 900;
-  font-style: italic;
-  color: #fff;
-  text-shadow: 0 0 10px rgba(0, 242, 254, 0.8);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-10px);
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.combo-badge.active {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.f1 .combo-badge {
-  left: 5px;
-}
-
-.f2 .combo-badge {
-  right: 5px;
-  color: #ff4b2b;
-  text-shadow: 0 0 10px rgba(255, 75, 43, 0.8);
-}
-
 .status-icons {
   display: flex;
   gap: 8px;
@@ -571,35 +542,6 @@ body {
   }
 }
 
-.combo-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #ffc;
-  text-shadow: 0 0 8px rgba(255, 200, 100, 0.6);
-  opacity: 0;
-  transform: scale(0.8);
-  transition: opacity 0.15s, transform 0.15s;
-  pointer-events: none;
-}
-
-.combo-badge.visible {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.fighter-hud.f1 .combo-badge.visible {
-  color: #5dd4ed;
-  text-shadow: 0 0 10px rgba(93, 212, 237, 0.55);
-}
-
-.fighter-hud.f2 .combo-badge.visible {
-  color: #f08080;
-  text-shadow: 0 0 10px rgba(240, 128, 128, 0.55);
-}
-
 .countdown {
   position: absolute;
   inset: 0;
@@ -753,15 +695,13 @@ body {
   letter-spacing: 0;
 }
 
-.power-btns,
-.equip-btns {
+.power-btns {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
   gap: 8px;
 }
 
-.power-btn,
-.equip-btn {
+.power-btn {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -778,25 +718,17 @@ body {
   text-align: center;
 }
 
-.power-btn:hover,
-.equip-btn:hover {
+.power-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
-.power-btn.selected,
-.equip-btn.selected {
+.power-btn.selected {
   background: rgba(255, 255, 255, 0.12);
   border-color: #ffb86c;
   color: #fff;
   box-shadow: 0 0 15px rgba(255, 184, 108, 0.1);
-}
-
-.item-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 .power-btn.on-cooldown {
@@ -1148,116 +1080,6 @@ body {
   pointer-events: none;
 }
 
-.equipment-row {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.equipment-row label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  opacity: 0.9;
-}
-
-.equip-btns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.equip-btn {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #90a0b0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.2, 0, 0.2, 1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-size: 11px;
-  flex: 1 1 calc(50% - 5px);
-  min-width: 100px;
-}
-
-.equip-btn.has-tooltip {
-  position: relative;
-}
-
-.item-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-right: 6px;
-  box-shadow: 0 0 4px currentColor;
-}
-
-.item-name {
-  font-weight: 700;
-}
-
-.equip-tooltip {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(15, 18, 25, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.6;
-  color: #c8d0dc;
-  white-space: nowrap;
-  text-transform: none;
-  letter-spacing: 0;
-  z-index: 100;
-  pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-}
-
-.equip-tooltip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: rgba(15, 18, 25, 0.95);
-}
-
-.equip-btn.has-tooltip:hover .equip-tooltip {
-  display: block;
-}
-
-.equip-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
-}
-
-.equip-btn.selected {
-  background: rgba(61, 184, 212, 0.15);
-  border-color: rgba(61, 184, 212, 0.6);
-  color: #5dd4ed;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: border-color 0.2s, background 0.2s;
-}
-
 .jutsu-slot:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
@@ -1423,10 +1245,6 @@ body {
   font-size: 20px;
   letter-spacing: 3px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-}
-
-.hero-config-grid .equip-btns {
-  grid-template-columns: repeat(2, 1fr);
 }
 
 .hero-config-grid .power-btns {

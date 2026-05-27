@@ -61,9 +61,8 @@ export function getKickPhase(poseT, durationMs, attackType) {
   return phaseNorm(poseT, sec, w, s, f);
 }
 
-export function getWalkCycle(phase, face, weight = 0) {
+export function getWalkCycle(phase, face) {
   const swing = Math.sin(phase);
-  const wMult = 1 + weight * 0.75;
   const hipRot = swing * 0.28;
   const oppositeHip = Math.sin(phase + Math.PI) * 0.28;
 
@@ -82,14 +81,13 @@ export function getWalkCycle(phase, face, weight = 0) {
     rArm: -0.18 + swing * 0.34,
     lElbow: 0.34 + Math.abs(swing) * 0.18,
     rElbow: 0.34 + Math.abs(swing) * 0.18,
-    bob: Math.abs(Math.sin(phase * 2)) * 2.4 * wMult,
-    torsoTwist: -swing * 0.08 * face * wMult,
-    lean: 0.035 * face * wMult
+    bob: Math.abs(Math.sin(phase * 2)) * 2.4,
+    torsoTwist: -swing * 0.08 * face,
+    lean: 0.035 * face
   };
 }
 
-export function getRunCycle(phase, face, weight = 0) {
-  const wMult = 1 + weight * 0.7;
+export function getRunCycle(phase, face) {
   const swing = Math.sin(phase);
   const hipRot = swing * 0.56;
   const oppositeHip = Math.sin(phase + Math.PI) * 0.56;
@@ -109,13 +107,13 @@ export function getRunCycle(phase, face, weight = 0) {
     rArm: -0.34 + swing * 0.78,
     lElbow: 0.88 + Math.abs(swing) * 0.24,
     rElbow: 0.88 + Math.abs(swing) * 0.24,
-    bob: Math.abs(Math.sin(phase)) * 5.5 * wMult,
-    torsoTwist: -swing * 0.16 * face * wMult,
-    lean: 0.12 * face * wMult
+    bob: Math.abs(Math.sin(phase)) * 5.5,
+    torsoTwist: -swing * 0.16 * face,
+    lean: 0.12 * face
   };
 }
 
-export function punchExtension(phase, localT, face, attackType, weaponId = 'fists') {
+export function punchExtension(phase, localT, face, attackType) {
   if (phase === WINDUP) {
     const pull = easeOutCubic(localT);
     let twist = -0.35 * face * pull;
@@ -155,28 +153,6 @@ export function punchExtension(phase, localT, face, attackType, weaponId = 'fist
       lean = 0.42 * face * ext;
       twist = 0.35 * face * ext;
       forearmAng = -0.15 * face;
-    }
-
-    // Weapon Overrides
-    if (weaponId === 'katana') {
-      if (attackType === ATTACK.jab) { // Thrust
-        armAng = -Math.PI / 2 + ext * Math.PI * 0.75 * face;
-        forearmAng = ext * 0.1 * face;
-      } else { // Slash
-        armAng = -Math.PI / 2 + ext * Math.PI * 1.15 * face;
-        forearmAng = 0.05 * face;
-      }
-    } else if (weaponId === 'staff') {
-      armAng = -Math.PI / 2 + ext * Math.PI * 0.85 * face;
-      forearmAng = ext * 0.25 * face;
-    } else if (weaponId === 'claymore') {
-      armAng = -Math.PI / 2 + ext * Math.PI * 1.35 * face;
-      forearmAng = 0.15 * face;
-      twist *= 1.4;
-      lean *= 1.2;
-    } else if (weaponId === 'daggers') {
-      armAng = -Math.PI / 2 + ext * Math.PI * 0.7 * face;
-      forearmAng = ext * 0.6 * face;
     }
 
     return { arm: armAng, forearm: forearmAng, torsoTwist: twist, lean };
@@ -249,48 +225,16 @@ export function kickExtension(phase, localT, face, attackType) {
   };
 }
 
-export function idleFromRest(poseT, rest, weaponId = 'fists') {
+export function idleFromRest(poseT, rest) {
   const phase = (poseT * 1.2) % (2 * Math.PI);
   const breath = Math.sin(phase) * rest.breathAmplitude;
   const weight = Math.sin(phase * 0.55) * 0.04;
 
-  let lShoulderBase = rest.lShoulderAng;
-  let rShoulderBase = rest.rShoulderAng;
-  let lElbowBase = rest.lElbowAng;
-  let rElbowBase = rest.rElbowAng;
-
-  // Weapon-specific idle poses
-  if (weaponId === 'katana') {
-    // Lead hand near hip (iaido style), back hand ready
-    lShoulderBase = -0.45;
-    lElbowBase = 1.1;
-    rShoulderBase = 0.35;
-    rElbowBase = -0.65;
-  } else if (weaponId === 'staff') {
-    // Relaxed vertical hold
-    lShoulderBase = -0.65;
-    lElbowBase = 0.6;
-    rShoulderBase = 0.25;
-    rElbowBase = -0.3;
-  } else if (weaponId === 'claymore') {
-    // Heavier, lower stance, both hands down
-    lShoulderBase = -0.25;
-    lElbowBase = 1.35;
-    rShoulderBase = 0.1;
-    rElbowBase = -1.1;
-  } else if (weaponId === 'daggers') {
-    // Aggressive, tight guard, hands high
-    lShoulderBase = -0.95;
-    lElbowBase = 1.5;
-    rShoulderBase = 0.65;
-    rElbowBase = -1.4;
-  }
-
   return {
-    lShoulderAng: lShoulderBase - Math.sin(phase * 0.6) * 0.06,
-    rShoulderAng: rShoulderBase + Math.sin(phase * 0.6) * 0.06,
-    lElbowAng: lElbowBase + Math.sin(phase * 0.8) * 0.04,
-    rElbowAng: rElbowBase - Math.sin(phase * 0.8) * 0.04,
+    lShoulderAng: rest.lShoulderAng - Math.sin(phase * 0.6) * 0.06,
+    rShoulderAng: rest.rShoulderAng + Math.sin(phase * 0.6) * 0.06,
+    lElbowAng: rest.lElbowAng + Math.sin(phase * 0.8) * 0.04,
+    rElbowAng: rest.rElbowAng - Math.sin(phase * 0.8) * 0.04,
     lHipAng: rest.lHipAng + weight + Math.sin(phase * 0.5) * 0.04,
     rHipAng: rest.rHipAng - weight - Math.sin(phase * 0.5) * 0.04,
     lKneeAng: rest.lKneeAng + Math.sin(phase * 0.5) * 0.03,

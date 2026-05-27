@@ -1,15 +1,6 @@
 
 import { getValidPowerIds } from '../entities/powers/index.js';
 
-export const INTELLIGENCE_LEVELS = [
-  { value: 12, label: 'Novice' },
-  { value: 28, label: 'Amateur' },
-  { value: 48, label: 'Competent' },
-  { value: 68, label: 'Skilled' },
-  { value: 88, label: 'Expert' },
-  { value: 98, label: 'Nightmare' }
-];
-
 export function getAIStats(intelligence) {
   const i = Math.max(0, Math.min(100, intelligence)) / 100;
   // Steeper curve for higher levels (Nightmare becomes much more extreme)
@@ -50,7 +41,6 @@ export const DEFAULT_SETTINGS = {
   hp1: 200,
   intelligence1: 12, // User selected Hero AI level
   powers1: [],
-  weapon1: 'fists',
   gameSpeed: 1,
 };
 
@@ -68,7 +58,6 @@ export function loadSettings() {
       hp1: clamp(loaded.hp1, 100, 5000, 200),
       intelligence1: clamp(loaded.intelligence1, 0, 100, 48),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
-      weapon1: loaded.weapon1 || 'fists',
       gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1,
     };
   } catch {

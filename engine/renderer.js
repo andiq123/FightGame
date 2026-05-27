@@ -1,5 +1,5 @@
 import { POSE } from '../entities/fighter.js';
-import { ARENA, RENDER, COMBAT, FIGHTER, EQUIPMENT, CLONE } from '../config/constants.js';
+import { ARENA, RENDER, COMBAT, FIGHTER, CLONE } from '../config/constants.js';
 import {
   REST_STANCE,
   easeOutCubic,
@@ -278,8 +278,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   if (pose === POSE.walk || pose === POSE.run) {
     const cycleSpeed = pose === POSE.run ? 11.5 : 7.2;
     const phase = (poseT * cycleSpeed) % (2 * Math.PI);
-    const weight = fighter.getWeight();
-    const cycle = pose === POSE.run ? getRunCycle(phase, face, weight) : getWalkCycle(phase, face, weight);
+    const cycle = pose === POSE.run ? getRunCycle(phase, face) : getWalkCycle(phase, face);
 
     bob = cycle.bob;
     lean = cycle.lean;
@@ -293,7 +292,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lKneeOff = cycle.lKnee;
     rKneeOff = cycle.rKnee;
   } else if (pose === POSE.idle) {
-    const idle = idleFromRest(poseT, rest, fighter.weaponId);
+    const idle = idleFromRest(poseT, rest);
     bob = idle.bob;
     torsoTwist = idle.torsoTwist;
     lean = idle.lean;
@@ -349,7 +348,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   if (pose === POSE.punch && fighter.currentAttack) {
     const a = fighter.currentAttack;
     const { phase, localT } = getPunchPhase(poseT, a.data.duration, a.type);
-    const ext = punchExtension(phase, localT, face, a.type, fighter.weaponId);
+    const ext = punchExtension(phase, localT, face, a.type);
     lean = ext.lean;
     torsoTwist = ext.torsoTwist;
     headTilt = ext.headTilt || 0;
@@ -545,16 +544,6 @@ export function drawStickman(ctx, fighter, groundY, now) {
   ctx.ellipse(vX + face * 2, vY, 2.5, 1.2, headTilt, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
-
-  const joints = {
-    pelvisX, pelvisY, ribsX, ribsY, headX, headY,
-    lShX, lShY, rShX, rShY,
-    lElbowX, lElbowY, rElbowX, rElbowY,
-    lWristX, lWristY, rWristX, rWristY,
-    lHipX, rHipX, lKneeX, lKneeY, rKneeX, rKneeY,
-    lAnkleX, lAnkleY, rAnkleX, rAnkleY
-  };
-  drawWeapon(ctx, fighter, fighter.weaponId, joints);
 
   ctx.shadowColor = 'transparent';
   ctx.restore();
@@ -893,7 +882,7 @@ function drawAtmosphere(ctx, w, h, camX, now, world) {
 }
 
 export function drawHitEffect(ctx, h) {
-  const { x, y, t, block, shield, smoke, clash, counter, heavy, heal, shinra, lightning, fire, ice, dragon, shinraDeflect, splatter, splatterDir, splatterColor, extra } = h;
+  const { x, y, t, block, smoke, clash, counter, heavy, heal, shinra, lightning, fire, ice, dragon, shinraDeflect, splatter, splatterDir, splatterColor } = h;
   const a = Math.max(0, 1 - t * 1.4);
   if (a <= 0) return;
   ctx.save();
@@ -933,12 +922,6 @@ export function drawHitEffect(ctx, h) {
     ctx.fill();
     ctx.strokeStyle = 'rgba(140,200,240,0.9)';
     ctx.lineWidth = 3;
-    ctx.stroke();
-  } else if (shield) {
-    ctx.strokeStyle = 'rgba(120,210,255,0.88)';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(x, y, 36, 0, Math.PI * 2);
     ctx.stroke();
   } else if (smoke) {
     ctx.fillStyle = `rgba(90,95,105,${0.3 * a})`;
@@ -1018,16 +1001,6 @@ export function drawHitEffect(ctx, h) {
     ctx.beginPath();
     ctx.arc(x, y, 40, 0, Math.PI * 2);
     ctx.fill();
-  } else if (extra?.crit) {
-    ctx.font = 'bold 18px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = `rgba(255, 184, 108, ${a})`;
-    ctx.fillText('CRITICAL!', x, y - 45 - t * 15);
-  } else if (extra?.guardBreak) {
-    ctx.font = 'bold 16px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = `rgba(255, 85, 85, ${a})`;
-    ctx.fillText('GUARD BREAK!', x, y - 40 - t * 12);
   } else if (counter) {
     ctx.strokeStyle = `rgba(230,80,80,${a})`;
     ctx.lineWidth = 3;
@@ -1334,117 +1307,4 @@ function drawStickmanFigure(ctx, x, groundY, face, attackPose) {
   drawTaperedLimb(ctx, rShoulderX, rShoulderY, rElbowX, rElbowY, 4, 3);
   drawTaperedLimb(ctx, x - 8, pelvisY, x - 8 + legLen * 0.5, pelvisY + legLen, 5, 4);
   drawTaperedLimb(ctx, x + 8, pelvisY, x + 8 + legLen * 0.5 * face, pelvisY + legLen, 5, 4);
-}
-
-
-function drawWeapon(ctx, fighter, weaponId, joints) {
-  const weapon = EQUIPMENT.WEAPONS[weaponId];
-  if (!weapon || weaponId === 'fists') return;
-
-  const { lWristX, lWristY, rWristX, rWristY } = joints;
-  const face = fighter.facing || 1;
-  const isLeadLeft = face === -1;
-  const wx = isLeadLeft ? lWristX : rWristX;
-  const wy = isLeadLeft ? lWristY : rWristY;
-
-  let ang = face * 0.8;
-  if (fighter.pose === 'attack') {
-    ang = -face * 0.5;
-    if (weaponId === 'katana' || weaponId === 'claymore') ang = -face * 0.2;
-    if (weaponId === 'staff') ang = -face * 0.1;
-  }
-
-  ctx.save();
-  ctx.translate(wx, wy);
-  ctx.rotate(ang);
-
-  if (weaponId === 'katana') {
-    // Curved Blade
-    ctx.fillStyle = '#e0e0e0';
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, -2);
-    ctx.quadraticCurveTo(25, -4, 45, -1);
-    ctx.lineTo(45, 1);
-    ctx.quadraticCurveTo(25, 2, 0, 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // Tsuba (Guard)
-    ctx.fillStyle = '#222';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 3, 7, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Wrap Hilt
-    ctx.fillStyle = '#600';
-    ctx.fillRect(-12, -3, 12, 6);
-    ctx.strokeStyle = '#000';
-    for (let i = 0; i < 3; i++) {
-      ctx.strokeRect(-12 + i * 4, -3, 4, 6);
-    }
-  } else if (weaponId === 'staff') {
-    // Textured Wood Staff
-    ctx.fillStyle = '#6d4c41';
-    ctx.strokeStyle = '#3e2723';
-    ctx.lineWidth = 1.2;
-    ctx.fillRect(-35, -3, 70, 6);
-    ctx.strokeRect(-35, -3, 70, 6);
-    // End Caps
-    ctx.fillStyle = '#ffd700';
-    ctx.fillRect(-35, -3.5, 8, 7);
-    ctx.fillRect(27, -3.5, 8, 7);
-    // Center Grip
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(-8, -3.2, 16, 6.4);
-  } else if (weaponId === 'daggers') {
-    // Twin/Serrated Dagger
-    ctx.fillStyle = '#90a4ae';
-    ctx.strokeStyle = '#263238';
-    ctx.beginPath();
-    ctx.moveTo(0, -2);
-    ctx.lineTo(22, 0);
-    ctx.lineTo(0, 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // Guard
-    ctx.fillStyle = '#455a64';
-    ctx.fillRect(0, -6, 2, 12);
-    // Hilt
-    ctx.fillStyle = '#263238';
-    ctx.fillRect(-8, -2.5, 8, 5);
-  } else if (weaponId === 'claymore') {
-    // Massive Blade
-    const grad = ctx.createLinearGradient(0, -5, 0, 5);
-    grad.addColorStop(0, '#cfd8dc');
-    grad.addColorStop(0.5, '#eceff1');
-    grad.addColorStop(1, '#b0bec5');
-    ctx.fillStyle = grad;
-    ctx.strokeStyle = '#455a64';
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(0, -5, 58, 10);
-    ctx.strokeRect(0, -5, 58, 10);
-    // Fuller (Groove)
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(45, 0);
-    ctx.stroke();
-    // Large Crossguard
-    ctx.fillStyle = '#ffca28';
-    ctx.roundRect(0, -14, 5, 28, 2);
-    ctx.fill();
-    ctx.stroke();
-    // Heavy Hilt & Pommel
-    ctx.fillStyle = '#3e2723';
-    ctx.fillRect(-16, -3.5, 16, 7);
-    ctx.fillStyle = '#ffca28';
-    ctx.beginPath();
-    ctx.arc(-16, 0, 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.restore();
 }

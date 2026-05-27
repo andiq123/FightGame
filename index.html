@@ -93,15 +93,11 @@
                 <input type="number" id="hpSet1" min="100" max="5000" value="400">
               </div>
               <div class="form-row">
-                <label>AI</label>
-                <select id="intelligence1">
-                  <option value="12">Novice</option>
-                  <option value="28">Amateur</option>
-                  <option value="48" selected>Competent</option>
-                  <option value="68">Skilled</option>
-                  <option value="88">Expert</option>
-                  <option value="98">Nightmare</option>
-                </select>
+                <label for="intelligence1">AI Intelligence</label>
+                <div class="intelligence-control">
+                  <input type="range" id="intelligenceRange1" min="0" max="100" value="12" aria-label="Hero AI intelligence">
+                  <input type="number" id="intelligence1" min="0" max="100" value="12" inputmode="numeric" aria-label="Hero AI intelligence value">
+                </div>
               </div>
               <div class="form-row">
                 <label>Level</label>

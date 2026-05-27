@@ -42,6 +42,7 @@ class Fighter {
     this.lastComboTime = 0;
     this.roundsWon = 0;
     this.hitLastDmg = 0;
+    this.hitFromX = 0;
     this.lastStaggerEndAt = 0;
     this.lastHitAt = 0;
     this.hitsTakenLast5Sec = 0;
@@ -411,11 +412,13 @@ class Fighter {
     const finalDmg = Math.round(amount * this.damageTakenMult);
     this.hp = Math.max(0, this.hp - finalDmg);
     this.lastHitAt = now;
+    this.hitFromX = attackerX;
     this.hitsTakenLast5Sec = (this.hitsTakenLast5Sec || 0) + 1;
     this.hitLastDmg = finalDmg;
     this.status.set('hitFlash', now + (isHeavy ? 200 : 140));
     if (this.hp > 0 && isHeavy) {
       this.pose = POSE.hit;
+      this.poseTime = 0;
     }
 
     // Clear Deep Freeze on damage
@@ -462,6 +465,7 @@ class Fighter {
     this.lastComboTime = 0;
     this.lastHitLandAt = 0;
     this.lastLandingAttackType = null;
+    this.hitFromX = 0;
     this.isRunning = false;
     this.momentumAtAttackStart = 0;
     this.airAttack = false;

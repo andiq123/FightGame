@@ -53,6 +53,7 @@ registerPower('lightningCutter', {
     opponent.status.set('hitFlash', now + 180);
     opponent.status.set('shocked', now + 5000); // 5 seconds of electricity
     opponent.hitLastDmg = dmg;
+    opponent.hitFromX = fighter.x;
     const knockback = blocking ? KNOCKBACK * 0.35 : KNOCKBACK;
     applyKnockback(opponent, knockback, fighter.x, true);
     if (!blocking && !opponent.status.active('stagger', now) && opponent.hp > 0) {
@@ -62,6 +63,7 @@ registerPower('lightningCutter', {
       opponent.staggerRagdoll = createRagdoll(opponent.x, getRagdollOriginY(opponent), opponent.facing, opponent.vx, opponent.vy, fighter.x, false);
     } else {
       opponent.pose = POSE.hit;
+      opponent.poseTime = 0;
     }
     hitEffects.push(createHitEffect(opponent.x, { y: getHitEffectY(opponent.y), dmg, lightning: true, block: blocking }));
 

@@ -11,7 +11,8 @@ import {
   kickExtension,
   idleFromRest,
   getWalkCycle,
-  getRunCycle
+  getRunCycle,
+  getHitReaction
 } from './fightAnimations.js';
 
 export function drawDecals(ctx, decals, now) {
@@ -251,12 +252,11 @@ export function drawStickman(ctx, fighter, groundY, now) {
 
   // Procedural Lean & Weight
   const velX = fighter.vx || 0;
-  const accelX = fighter.ax || 0; // Use theoretical acceleration if available
-  let lean = (velX / 1000) * 0.45; // Lean into velocity
+  let lean = (rest.torsoLean || 0) * face + (velX / 1000) * 0.2; // Lean into velocity
   lean += (fighter.momentumAtAttackStart || 0) * 0.15; // Bracing for impact
 
   let bob = Math.abs(Math.sin(now / 150)) * (Math.abs(velX) / 400) * 4;
-  let torsoTwist = (velX / 1000) * 0.22;
+  let torsoTwist = (rest.torsoTwist || 0) * face + (velX / 1000) * 0.16;
   let headTilt = rest.headTilt || 0;
   headTilt += lean * 0.5; // Look where you're leaning
 
@@ -271,18 +271,24 @@ export function drawStickman(ctx, fighter, groundY, now) {
   let rForeArmAng = rest.rElbowAng || -0.6;
   let lLegAng = rest.lHipAng || 0.2;
   let rLegAng = rest.rHipAng || -0.2;
-  let lKneeOff = 0;
-  let rKneeOff = 0;
+  let lKneeOff = rest.lKneeAng || 0;
+  let rKneeOff = rest.rKneeAng || 0;
+  let lFootAng = rest.lFootAng || 0;
+  let rFootAng = rest.rFootAng || 0;
 
   // Basic Animation Logic
   if (pose === POSE.walk || pose === POSE.run) {
-    const cycleSpeed = pose === POSE.run ? 11.5 : 7.2;
+    const baseSpeed = pose === POSE.run ? 11.5 : 7.2;
+    const expectedSpeed = pose === POSE.run ? 500 : 230;
+    const speedRatio = Math.min(1.25, Math.max(0.55, Math.abs(velX) / expectedSpeed));
+    const cycleSpeed = baseSpeed * speedRatio;
     const phase = (poseT * cycleSpeed) % (2 * Math.PI);
     const cycle = pose === POSE.run ? getRunCycle(phase, face) : getWalkCycle(phase, face);
 
     bob = cycle.bob;
     lean = cycle.lean;
     torsoTwist = cycle.torsoTwist;
+    headTilt = cycle.headTilt ?? headTilt;
     lArmAng = cycle.lArm;
     rArmAng = cycle.rArm;
     lForeArmAng = cycle.lElbow;
@@ -291,17 +297,23 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rLegAng = cycle.rHip;
     lKneeOff = cycle.lKnee;
     rKneeOff = cycle.rKnee;
+    lFootAng = cycle.lFoot ?? lFootAng;
+    rFootAng = cycle.rFoot ?? rFootAng;
   } else if (pose === POSE.idle) {
     const idle = idleFromRest(poseT, rest);
     bob = idle.bob;
-    torsoTwist = idle.torsoTwist;
-    lean = idle.lean;
+    torsoTwist = idle.torsoTwist * face;
+    lean = idle.lean + (rest.torsoLean || 0) * face;
     lArmAng = idle.lShoulderAng;
     rArmAng = idle.rShoulderAng;
     lForeArmAng = idle.lElbowAng;
     rForeArmAng = idle.rElbowAng;
     lLegAng = idle.lHipAng;
     rLegAng = idle.rHipAng;
+    lKneeOff = idle.lKneeAng;
+    rKneeOff = idle.rKneeAng;
+    lFootAng = idle.lFootAng ?? lFootAng;
+    rFootAng = idle.rFootAng ?? rFootAng;
   } else if (pose === POSE.slide) {
     pelvisX = x + face * slideT * 22;
     lean = face * slideT * 0.28;
@@ -310,13 +322,21 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rLegAng = -0.4 * slideT;
     lKneeOff = 1.4 * slideT;
   } else if (pose === POSE.hit) {
-    const impact = Math.min(1.8, ((fighter.hitLastDmg || 5) / 12));
-    const hitDir = -face;
-    lean = hitDir * 0.45 * hitT * impact;
-    bob = Math.sin(hitT * Math.PI) * (8 * impact);
-    torsoTwist = -hitDir * 0.25 * hitT * impact;
-    lArmAng += 0.4 * hitT * impact;
-    rArmAng -= 0.4 * hitT * impact;
+    const hit = getHitReaction(poseT, fighter.hitLastDmg, face, fighter.hitFromX, fighter.x);
+    lean = hit.lean;
+    torsoTwist = hit.torsoTwist;
+    headTilt = hit.headTilt;
+    bob = hit.bob;
+    lArmAng = hit.lArm;
+    rArmAng = hit.rArm;
+    lForeArmAng = hit.lElbow;
+    rForeArmAng = hit.rElbow;
+    lLegAng = hit.lHip;
+    rLegAng = hit.rHip;
+    lKneeOff = hit.lKnee;
+    rKneeOff = hit.rKnee;
+    lFootAng = hit.lFoot;
+    rFootAng = hit.rFoot;
   } else if (pose === POSE.block) {
     lean = -face * 0.12 * blockT;
     bob = 4 * blockT;
@@ -351,15 +371,19 @@ export function drawStickman(ctx, fighter, groundY, now) {
     const ext = punchExtension(phase, localT, face, a.type);
     lean = ext.lean;
     torsoTwist = ext.torsoTwist;
-    headTilt = ext.headTilt || 0;
-    const chamberAng = -0.95, chamberElbow = 0.95;
-    if (face === 1) {
-      rArmAng = ext.arm; rForeArmAng = ext.forearm;
-      lArmAng = chamberAng; lForeArmAng = chamberElbow;
-    } else {
-      lArmAng = -ext.arm; lForeArmAng = -ext.forearm;
-      rArmAng = -chamberAng; rForeArmAng = -chamberElbow;
-    }
+    headTilt = ext.headTilt ?? headTilt;
+    rArmAng = ext.leadArm;
+    rForeArmAng = ext.leadForearm;
+    lArmAng = ext.rearArm;
+    lForeArmAng = ext.rearForearm;
+    rLegAng = ext.leadHip ?? rLegAng;
+    rKneeOff = ext.leadKnee ?? rKneeOff;
+    lLegAng = ext.rearHip ?? lLegAng;
+    lKneeOff = ext.rearKnee ?? lKneeOff;
+    rFootAng = ext.leadFoot ?? rFootAng;
+    lFootAng = ext.rearFoot ?? lFootAng;
+    pelvisX += ext.pelvisShift || 0;
+    bob += ext.bodyLift || 0;
   } else if (pose === POSE.kick && fighter.currentAttack) {
     const a = fighter.currentAttack;
     const { phase, localT } = getKickPhase(poseT, a.data.duration, a.type);
@@ -417,10 +441,12 @@ export function drawStickman(ctx, fighter, groundY, now) {
     stretchX -= 0.1 * impact * Math.sin(hitT * Math.PI);
   }
 
+  pelvisY -= bob;
+
   // Dual Bone Positioning
   const spineLen = 42 * squashY;
   const ribsX = pelvisX + (lean * 24 + torsoTwist * 10) * stretchX;
-  const ribsY = pelvisY - spineLen - bob;
+  const ribsY = pelvisY - spineLen;
   const headX = ribsX + (lean * 12 + headTilt * 6) * stretchX;
   const headY = ribsY - 18 * squashY;
 
@@ -479,19 +505,21 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rKneeY = pelvisY + Math.cos(rLegAng) * thighLen;
 
   const lAnkleX = lKneeX + Math.sin(lLegAng + lKneeOff) * calfLen * face;
-  const lAnkleY = lKneeY + Math.cos(lLegAng + lKneeOff);
+  const lAnkleY = lKneeY + Math.cos(lLegAng + lKneeOff) * calfLen;
   const rAnkleX = rKneeX + Math.sin(rLegAng + rKneeOff) * calfLen * face;
-  const rAnkleY = rKneeY + Math.cos(rLegAng + rKneeOff);
+  const rAnkleY = rKneeY + Math.cos(rLegAng + rKneeOff) * calfLen;
 
-  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
-  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
   drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
   drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
+  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
 
   // Feet
   const footLen = 14;
-  const lToeX = lAnkleX + footLen * face, lToeY = lAnkleY + 3;
-  const rToeX = rAnkleX + footLen * face, rToeY = rAnkleY + 3;
+  const lToeX = lAnkleX + Math.cos(lFootAng) * footLen * face;
+  const lToeY = lAnkleY + Math.sin(lFootAng) * footLen;
+  const rToeX = rAnkleX + Math.cos(rFootAng) * footLen * face;
+  const rToeY = rAnkleY + Math.sin(rFootAng) * footLen;
   drawAdvancedLimb(ctx, lAnkleX, lAnkleY, lToeX, lToeY, 4, 3, baseColor, strokeColor);
   drawAdvancedLimb(ctx, rAnkleX, rAnkleY, rToeX, rToeY, 4, 3, baseColor, strokeColor);
 

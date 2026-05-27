@@ -124,7 +124,9 @@ export class CombatSystem {
         target.status.set('stun', now + clone.stun);
         target.status.set('hitFlash', now + 140);
         target.hitLastDmg = clone.damage;
+        target.hitFromX = clone.x;
         target.pose = POSE.hit;
+        target.poseTime = 0;
 
         world.hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg: clone.damage }));
         clone.lastHitAt = now;

@@ -67,18 +67,20 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
       let dmg = p.damage;
       if (blocking) dmg = Math.round(dmg * (p.heavy ? 0.5 : 0.2));
 
-      targetFighter.takeDamage(dmg, p.heavy === true, attacker.x, now);
+      const fromX = p.x - ((p.vx || 0) > 0 ? 1 : -1) * 50;
+      targetFighter.takeDamage(dmg, p.heavy === true, fromX, now);
       attacker.damageDealt += dmg;
       targetFighter.status.set('stun', now + (p.stun || 80));
       targetFighter.status.set('hitFlash', now + (p.heavy ? 200 : 160));
       targetFighter.hitLastDmg = dmg;
+      targetFighter.hitFromX = fromX;
       targetFighter.pose = blocking ? POSE.block : POSE.hit;
+      if (!blocking) targetFighter.poseTime = 0;
 
       if (p.type === 'fireball' && !blocking) {
         targetFighter.status.set('burning', now + 4000);
       }
 
-      const fromX = p.x - ((p.vx || 0) > 0 ? 1 : -1) * 50;
       if (p.knockback && !blocking) applyKnockback(targetFighter, p.knockback, fromX, p.heavy);
 
       if (!blocking && p.heavy && !targetFighter.status.active('stagger', now) && targetFighter.hp > 0) {

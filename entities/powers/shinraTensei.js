@@ -21,12 +21,14 @@ function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
   target.status.set('stun', now + (blocking ? 100 : 200));
   target.status.set('hitFlash', now + 220);
   target.hitLastDmg = dmg;
+  target.hitFromX = caster.x;
   if (!target.status.active('stagger', now) && target.hp > 0) {
     target.pose = POSE.stagger;
     target.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
     target.staggerRagdoll = createRagdoll(target.x, getRagdollOriginY(target), target.facing, target.vx, target.vy, caster.x, false);
   } else if (!target.status.active('stagger', now)) {
     target.pose = POSE.hit;
+    target.poseTime = 0;
   }
   hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), dmg, shinra: true, block: blocking }));
 }

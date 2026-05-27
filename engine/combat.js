@@ -48,6 +48,9 @@ function processHit(attacker, defender, now, hitEffects) {
     const dmg = Math.round(hb.damage * getComboScale(attacker.comboCount) * 0.4);
     applyHitResult(attacker, defender, dmg, now, hitEffects, { hitFlash: 100, extra: { dmg } });
     defender.status.set('stun', now + hb.stun * 0.5);
+    defender.hitFromX = attacker.x;
+    defender.pose = POSE.hit;
+    defender.poseTime = 0;
     applyKnockback(defender, hb.knockback * 0.5, attacker.x, false);
     return;
   }
@@ -94,6 +97,7 @@ function processHit(attacker, defender, now, hitEffects) {
   defender.status.set('hitFlash', now + (counter > 1 ? COMBAT.HIT_FLASH_COUNTER_MS : COMBAT.HIT_FLASH_MS));
   defender.hitFromX = attacker.x;
   defender.pose = POSE.hit;
+  defender.poseTime = 0;
 
   const afterwardDefender = defender.x > attacker.x ? 1 : -1;
   const heavy = hb.damage >= 14 || hb.kickLaunch;

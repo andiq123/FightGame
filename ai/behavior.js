@@ -2,7 +2,7 @@ import { POSE } from '../entities/fighter.js';
 import { executePower } from '../entities/powers/index.js';
 import { faceToward, buildCtx } from './context.js';
 import { decideAction, recordJutsuUse, hasUrgentInterrupt } from './decide.js';
-import { PHYSICS } from '../config/constants.js';
+import { PHYSICS, SHARINGAN } from '../config/constants.js';
 import { getStaminaSpeedMultiplier } from '../engine/physics.js';
 
 export { faceToward };
@@ -185,12 +185,24 @@ const ACTION_HANDLERS = {
   jump(fighter, opponent, action, now) {
     if (!fighter.startJump(now)) {
       applyFallbackMove(fighter, opponent, faceToward(fighter, opponent), FALLBACK_JUMP_RATIO);
-    } else if (action.wallVault && action.dir) {
-      // Wall vault: leap HIGHER (to clear the wall) and carry forward to land
-      // on the other side.
-      fighter.vy = PHYSICS.WALL_VAULT_VY ?? -720;
-      fighter.vx = action.dir * PHYSICS.RUN_SPEED * (fighter.speedMult || 1);
+      return;
+    }
+    const speedMult = fighter.speedMult || 1;
+    if (action.wallVault && action.dir) {
+      // Wall vault: leap HIGHER (to clear the wall) and drive forward/back (in the
+      // requested direction) to land on the other side.
+      fighter.vy = PHYSICS.WALL_VAULT_VY ?? -820;
+      fighter.vx = action.dir * PHYSICS.RUN_SPEED * speedMult;
       fighter.facing = action.dir;
+    } else if (action.dir) {
+      // Directional hop: carry horizontal momentum forward or back per context,
+      // instead of jumping straight up. Keeps facing toward the opponent.
+      fighter.vx = action.dir * (PHYSICS.JUMP_FORWARD_VX ?? 340) * speedMult;
+      fighter.facing = faceToward(fighter, opponent);
+    }
+    // Sustain the air momentum so a stale move-intent doesn't cancel the arc.
+    if (action.dir) {
+      fighter.aiMoveIntent = { dir: action.dir, run: action.wallVault === true, idle: false, until: now + 380 };
     }
   },
   doubleJump(fighter, opponent, action, now) {
@@ -201,6 +213,18 @@ const ACTION_HANDLERS = {
   },
   slide(fighter, opponent, action, now) {
     fighter.startSlide(action.dir, now);
+  },
+  sharinganWarp(fighter, opponent, action, now) {
+    // Offensive blink: appear right next to the opponent, facing them, ready to hit.
+    const dir = opponent.x > fighter.x ? 1 : -1;
+    fighter.x = opponent.x - dir * (SHARINGAN.PURSUE_OFFSET ?? 56);
+    fighter.y = 0;
+    fighter.vx = 0;
+    fighter.facing = dir;
+    fighter.aiMoveIntent = null;
+    fighter.status.set('sharinganPursueCd', now + (SHARINGAN.PURSUE_CD_MS ?? 520));
+    fighter.status.set('invincible', now + 120);
+    fighter.needsDashDust = true; // reuse the dash poof as the warp puff
   },
   power(fighter, opponent, action, now, hitEffects, projectiles, clones) {
     if (fighter.usePower(action.powerId, now)) {

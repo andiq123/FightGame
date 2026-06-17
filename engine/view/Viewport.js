@@ -43,7 +43,8 @@ export class Viewport {
 
         const countdownZoom = world.roundState === 'countdown' ? 1 + 0.06 * Math.max(0, world.roundCountdown / 2.5) : 1;
         const dynamicZoom = world.dynamicZoom || 1.0;
-        const zoom = world.hitZoom * countdownZoom * dynamicZoom;
+        const cinematicZoom = world.cinematicZoom || 1.0; // slow-mo punch-in
+        const zoom = world.hitZoom * countdownZoom * dynamicZoom * cinematicZoom;
         const shakeX = (secureRandom() - 0.5) * world.screenShake;
         const shakeY = (secureRandom() - 0.5) * world.screenShake;
 

@@ -17,6 +17,7 @@ export const PHYSICS = {
   DODGE_DURATION_MS: 190,
   JUMP_VY: -620,         // normal jump apex ~125px — clears a standard wall
   WALL_VAULT_VY: -820,   // dedicated wall-vault leap, apex ~217px — clears any wall
+  JUMP_FORWARD_VX: 340,  // horizontal drive for a directional (forward/back) hop
   JUMP_SHORT_VY: -380,
   DOUBLE_JUMP_VY: -430,
   WALL_JUMP_VY: -420,
@@ -179,6 +180,22 @@ export const AI = {
     PUNISH_REACTION_MIN: 0.08,
   },
 };
+export const SHARINGAN = {
+  DURATION_MS: 7000,      // buff lasts 7s
+  COUNTER_CD_MS: 600,     // min gap between counter-warps (no infinite spam)
+  TELEPORT_OFFSET: 78,    // warp this far behind the attacker
+  TELEPORT_VX: 70,        // little drift toward the attacker's back
+  STAMINA_GAIN: 35,       // bonus stamina to fuel the counter
+  INVULN_MS: 240,         // brief safety during the warp
+  BLIND_MS: 1000,         // attacker loses track of you for 1s
+  REACQUIRE_CHANCE: 0.12, // per-decision chance the attacker "randomly looks" and finds you
+  // Offensive pursuit: while active, blink onto a distant/fleeing opponent to pressure.
+  PURSUE_CD_MS: 520,      // gap between offensive blinks (so it hits between warps)
+  PURSUE_RANGE: 130,      // warp in when the opponent is farther than this
+  PURSUE_OFFSET: 56,      // land this close to the opponent (inside attack range)
+  PURSUE_FLEE_VX: 180,    // opponent counts as "fleeing" above this run speed
+};
+
 export const PROJECTILE = { HIT_RADIUS: 38, FIREBALL_HIT_RADIUS: 55 };
 export const CLONE = {
   DURATION_MS: 5000,
@@ -192,7 +209,8 @@ export const CLONE = {
   CHASE_SPEED_FAST: 520,
   TELEPORT_DIST: 380,
   TELEPORT_COOLDOWN_MS: 2500,
-  TELEPORT_OFFSET: 70
+  TELEPORT_OFFSET: 70,
+  SHARINGAN_SEE_DIST: 160 // a sharingan-holder destroys an enemy clone within this range
 };
 export const EFFECT_DURATION = { HIT: 0.8, HEAL: 1.1, SKILL: 1, CLASH: 0.6 };
 export const RENDER = {
@@ -210,6 +228,16 @@ export const RENDER = {
   HIT_STOP_MS: 95,
   HIT_STOP_HEAVY_MS: 240,
   HIT_STOP_COUNTER_MS: 300,
+  // Cinematic slow-motion
+  SLOWMO_FACTOR: 0.3,        // sim runs at 30% speed during a beat
+  CINEMATIC_ZOOM_SPEED: 10,  // how fast the zoom eases in/out
+  SLOWMO_WARP_MS: 780,       // sharingan counter-warp — the headline beat
+  SLOWMO_WARP_ZOOM: 1.36,
+  SLOWMO_CRIT_MS: 300,
+  SLOWMO_CRIT_ZOOM: 1.2,
+  SLOWMO_COUNTER_MS: 260,
+  SLOWMO_COUNTER_ZOOM: 1.16,
+  SLOWMO_KO_ZOOM: 1.3,
 };
 export const COMBAT_EXTRA = {
   FIGHTER_OVERLAP_DIST: 45,

@@ -1,4 +1,4 @@
-import { resolveCombat, decayCombos, checkCloneHit } from '../combat.js';
+import { resolveCombat, decayCombos, checkCloneHit, trySharinganCounter } from '../combat.js';
 import { tickProjectiles, processProjectileHits } from '../projectileSystem.js';
 import { spawnCloneDissolve, spawnHitParticles } from '../../services/particleSystem.js';
 import { getCloneDissolveY, getHitEffectY } from '../../core/coordinates.js';
@@ -68,6 +68,17 @@ export class CombatSystem {
             c.facing = c.x < targetX ? 1 : -1;
             const dist = Math.abs(c.x - targetX) || 0.01;
 
+            // Sharingan vs clone: a fighter with the buff sees through an approaching
+            // enemy clone — it's destroyed and the fighter warps behind the REAL
+            // opponent for a clean attack.
+            if (targetInfo.type === 'fighter' && dist < (CLONE.SHARINGAN_SEE_DIST ?? 150)
+                && target.status.active('sharingan', now) && !target.status.active('sharinganCd', now)) {
+                const owner = c.ownerId === 0 ? world.fighter1 : world.fighter2;
+                if (owner) trySharinganCounter(target, owner, now, world.hitEffects);
+                this.finishCloneDissolve(c, world, secureRandom);
+                return false; // remove the clone
+            }
+
             // 1. Tactical Teleport
             if (targetInfo.type === 'fighter' && dist > CLONE.TELEPORT_DIST && now - (c.lastTeleportAt || 0) > CLONE.TELEPORT_COOLDOWN_MS) {
                 c.x = targetX - (c.facing * CLONE.TELEPORT_OFFSET); // Flank-warp
@@ -96,7 +107,7 @@ export class CombatSystem {
                 if (targetInfo.type === 'clone') {
                     this.applyCloneVsCloneDamage(c, target, world, now, secureRandom);
                 } else {
-                    this.applyCloneDamage(c, target, world, now);
+                    this.applyCloneDamage(c, target, world, now, secureRandom);
                 }
                 c.comboStep = (c.comboStep + 1) % 3;
                 c.lastHitAt = now;
@@ -184,7 +195,18 @@ export class CombatSystem {
         spawnCloneDissolve(world.particles, clone.x, getCloneDissolveY(), secureRandom);
     }
 
-    applyCloneDamage(clone, target, world, now) {
+    applyCloneDamage(clone, target, world, now, secureRandom = Math.random) {
+        // Sharingan sees through the illusion: instantly destroy the clone and warp
+        // behind the REAL owner for a clean counter (the clone's hit is negated).
+        if (target.status.active('sharingan', now) && !target.status.active('sharinganCd', now)) {
+            const owner = clone.ownerId === 0 ? world.fighter1 : world.fighter2;
+            if (owner) trySharinganCounter(target, owner, now, world.hitEffects);
+            clone.removed = true;
+            clone.dissolveAt = now;
+            this.finishCloneDissolve(clone, world, secureRandom);
+            return;
+        }
+
         const dmg = target.takeDamage(clone.damage, false, clone.x, now);
         (clone.ownerId === 0 ? world.fighter1 : world.fighter2).damageDealt += dmg;
 
@@ -203,6 +225,17 @@ export class CombatSystem {
     processHitEffects(world, secureRandom) {
         world.hitEffects.forEach(h => {
             if (h.t > 0.01) return; // Only process on first frame
+
+            // Cinematic slow-motion beats on the most dramatic moments.
+            if (h.sharinganWarp) {
+                world.triggerSlowMo(RENDER.SLOWMO_WARP_MS ?? 780, RENDER.SLOWMO_WARP_ZOOM ?? 1.36);
+                world.hitStopRemaining = Math.max(world.hitStopRemaining, 120);
+                world.screenShake = Math.min(22, world.screenShake + (RENDER.SHAKE_SKILL ?? 22));
+            } else if (h.crit) {
+                world.triggerSlowMo(RENDER.SLOWMO_CRIT_MS ?? 300, RENDER.SLOWMO_CRIT_ZOOM ?? 1.2);
+            } else if (h.counter) {
+                world.triggerSlowMo(RENDER.SLOWMO_COUNTER_MS ?? 260, RENDER.SLOWMO_COUNTER_ZOOM ?? 1.16);
+            }
 
             // Shatter Mechanic: Heavy hit on Frozen
             const target = h.ownerId === 0 ? world.fighter2 : world.fighter1;

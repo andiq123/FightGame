@@ -22,6 +22,8 @@ export function evadeProjectile(ctx) {
   const threat = ctx.inboundThreat;
   const { fighter, rng, skill } = ctx;
   if (!threat || !fighter.canAct(ctx.now)) return null;
+  // Sharingan: no need to dodge — let it hit and warp behind for the counter.
+  if (ctx.hasSharingan) return null;
 
   // Awareness: how far ahead a fighter can read a projectile scales with skill.
   // A novice only notices it at the last instant (and often too late to move).
@@ -46,8 +48,8 @@ export function evadeProjectile(ctx) {
       // 2. Duck under a high projectile.
       if (rng() < 0.45 + skill * 0.5) return { type: 'block', duration: 340, low: true, aiLabel: 'evadingProjectile' };
     } else if (fighter.hasStamina(JUMP_STAMINA)) {
-      // 3. Hop over a low projectile.
-      if (rng() < 0.45 + skill * 0.5) return { type: 'jump', aiLabel: 'evadingProjectile' };
+      // 3. Hop over a low projectile — leap aside (evade direction), not straight up.
+      if (rng() < 0.45 + skill * 0.5) return { type: 'jump', dir: threat.evadeDir, aiLabel: 'evadingProjectile' };
     }
     // 4. Sidestep with i-frames.
     if (ctx.canAffordDodge && rng() < 0.3 + skill * 0.5) {

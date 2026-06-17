@@ -1,5 +1,5 @@
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, COMBO_CHAINS } from '../entities/attacks.js';
-import { AI, FIGHTER } from '../config/constants.js';
+import { AI, FIGHTER, SHARINGAN } from '../config/constants.js';
 import { shouldPrioritizeRecovery, filterAffordableAttacks } from './staminaStrategy.js';
 import { pickPower, recordJutsuUse, CATEGORY } from './skills.js';
 import { evadeProjectile } from './evasion.js';
@@ -65,15 +65,17 @@ function buildAttackPool(ctx) {
   }
 
   let pool;
-  if (tired) {
+  if (tired && !ctx.hasSharingan) {
     pool = [ATTACK.jab, ATTACK.lowKick, ATTACK.frontKick];
   } else {
     pool = [ATTACK.jab, ATTACK.cross, ATTACK.frontKick, ATTACK.lowKick];
-    if (aggression > 0.3) pool.push(ATTACK.hook, ATTACK.uppercut);
-    if (aggression > 0.5 || isNightmare) pool.push(ATTACK.highKick, ATTACK.spinningKick);
+    if (aggression > 0.3 || ctx.hasSharingan) pool.push(ATTACK.hook, ATTACK.uppercut);
+    if (aggression > 0.5 || isNightmare || ctx.hasSharingan) pool.push(ATTACK.highKick, ATTACK.spinningKick);
     if (ctx.opponent.stamina < 40) pool.unshift(ATTACK.lowKick);
     if (ctx.oppFrozen) pool.push(ATTACK_POWER_PUNCH, ATTACK.spinningKick);
     if (ctx.oppBlockingALot && aggression > 0.4) pool.unshift(GRAB);
+    // Sharingan confidence: lead with committed heavy hitters.
+    if (ctx.hasSharingan) pool.unshift(ATTACK.hook, ATTACK.uppercut, ATTACK_POWER_PUNCH);
     if (comboNext != null) pool.unshift(comboNext);
   }
   return filterAffordableAttacks(ctx, pool, ctx.staminaLow ? 14 : 0);
@@ -85,6 +87,8 @@ function buildAttackPool(ctx) {
 function emergencyDefense(ctx) {
   const { oppAttacking, oppHeavyWindup, oppHitbox, dist, fighter, rng } = ctx;
   if (!(oppAttacking || oppHeavyWindup) || dist > AI.COMBAT_ENTER) return null;
+  // Sharingan: don't flinch — eat the hit, warp behind, and punish. Stay aggressive.
+  if (ctx.hasSharingan) return null;
 
   const heavy = oppHeavyWindup || (oppHitbox?.damage >= 12);
   const skill = ctx.skill;
@@ -133,6 +137,8 @@ function punishOpening(ctx) {
 }
 
 function recoverStamina(ctx) {
+  // Sharingan confidence: keep pressing unless genuinely exhausted.
+  if (ctx.hasSharingan && !ctx.staminaCritical) return null;
   if (!shouldPrioritizeRecovery(ctx)) return null;
   if (ctx.dist >= (AI.STAMINA_SAFE_REST_DIST ?? 330) || ctx.isSafe) return as({ type: 'recover' }, 'recharging');
   return as({ type: 'move', dir: -ctx.faceToward(), run: false, commitMs: 600 }, 'retreating');
@@ -152,6 +158,7 @@ function isSafeToHeal(ctx) {
 // smart fighter values its HP and takes safe windows to top up; a dumb one
 // rarely bothers. Selects any RECOVERY-category skill (future-proof).
 function recoverHealth(ctx) {
+  if (ctx.hasSharingan) return null; // protected & aggressive — don't stop to heal
   if (!ctx.hpLow && !ctx.hpCritical) return null;
   if (!isSafeToHeal(ctx)) return null;
   const { fighter, now } = ctx;
@@ -173,6 +180,7 @@ function recoverHealth(ctx) {
 // defensive escape (wall / teleport / clone), then create space.
 function survive(ctx) {
   if (!ctx.hpCritical) return null;
+  if (ctx.hasSharingan) return null; // counter-warp protects us — keep attacking, don't flee
   const power = pickPower(ctx, { tags: ['defense'], threshold: 34, emergency: true, allowRepeat: true });
   if (power) return as({ type: 'power', powerId: power }, 'defending');
   if (ctx.dist < 200) return as({ type: 'move', dir: -ctx.faceToward(), run: true, commitMs: 500 }, 'retreating');
@@ -217,8 +225,24 @@ function counterHeal(ctx) {
   return as({ type: 'move', dir: ctx.faceToward(), run: true, commitMs: 300 }, 'punishing');
 }
 
+// Sharingan offensive pursuit: while active, blink onto a distant or fleeing
+// opponent (repeatedly, on a short cooldown) to keep the pressure relentless.
+function sharinganPursue(ctx) {
+  if (!ctx.hasSharingan) return null;
+  const { fighter, opponent, dist, now } = ctx;
+  if (fighter.status.active('sharinganPursueCd', now)) return null;
+  const fleeing = Math.abs(opponent.vx || 0) > (SHARINGAN.PURSUE_FLEE_VX ?? 180)
+    && Math.sign(opponent.vx || 0) === Math.sign(opponent.x - fighter.x); // running away from us
+  if (dist > (SHARINGAN.PURSUE_RANGE ?? 130) || fleeing) {
+    return as({ type: 'sharinganWarp' }, 'pressuring');
+  }
+  return null;
+}
+
 function useOffensivePower(ctx) {
   const { dist, rng, isNightmare } = ctx;
+  // Sharingan: don't zone from afar — close the gap and brawl.
+  if (ctx.hasSharingan && dist > 130) return null;
   // Pick the skill class that fits the gap: zone from afar, burst up close, or
   // teleport in to close distance. Each power still self-scores within the class.
   const categories = dist > 180
@@ -227,28 +251,33 @@ function useOffensivePower(ctx) {
       ? [C.MELEE_BURST, C.MOVEMENT, C.SETUP]
       : null; // any category — let scoring decide in the mid-range
   const power = pickPower(ctx, { categories, threshold: isNightmare ? 44 : 56 });
-  // Smart fighters use jutsu at the right moment; weak ones rarely do.
-  if (power && (isNightmare || rng() < 0.35 + execSkill(ctx) * 0.6)) return as({ type: 'power', powerId: power }, 'combat');
+  // Smart fighters use jutsu at the right moment; weak ones rarely do. A
+  // sharingan-confident fighter commits to its openings freely.
+  if (power && (isNightmare || ctx.hasSharingan || rng() < 0.35 + execSkill(ctx) * 0.6)) return as({ type: 'power', powerId: power }, 'combat');
   return null;
 }
 
 function closeOrAttack(ctx) {
   const { inRange, fighter, dist, tired } = ctx;
   const toward = ctx.faceToward();
+  const confident = ctx.hasSharingan; // protected → press the attack, never back off
 
-  if (tired || (fighter.stamina < 15 && dist < 110)) {
+  if (!confident && (tired || (fighter.stamina < 15 && dist < 110))) {
     return as({ type: 'move', dir: -toward, run: false, commitMs: 400 }, 'retreating');
   }
   if (inRange && fighter.hasStamina(8)) {
-    // Low intelligence sometimes mistimes the hit, but mostly it just attacks
-    // poorly and gets blocked/punished — so keep this modest (no full freeze).
-    if (ctx.rng() < 0.3 * (1 - execSkill(ctx))) return as({ type: 'move', dir: toward, run: false, commitMs: 140 }, 'approaching');
+    // Low intelligence sometimes mistimes the hit — but a confident fighter commits.
+    if (!confident && ctx.rng() < 0.3 * (1 - execSkill(ctx))) return as({ type: 'move', dir: toward, run: false, commitMs: 140 }, 'approaching');
     const pool = buildAttackPool(ctx);
     if (pool.length) return as({ type: 'attack', attack: pick(pool, ctx.rng) }, 'combat');
   }
   if (!inRange) {
-    const run = shouldRun(ctx);
-    return as({ type: 'move', dir: toward, run, commitMs: run ? 560 : 380 }, 'approaching');
+    // Confident → close the gap eagerly: slide in from mid-range, else sprint.
+    if (confident && dist > 100 && dist < 240 && fighter.onGround() && ctx.canAffordSlide && ctx.rng() < 0.4) {
+      return as({ type: 'slide', dir: toward }, 'pressuring');
+    }
+    const run = confident || shouldRun(ctx);
+    return as({ type: 'move', dir: toward, run, commitMs: run ? 560 : 380 }, confident ? 'pressuring' : 'approaching');
   }
   return as({ type: 'move', dir: toward, run: false, commitMs: 240 }, 'pressuring');
 }
@@ -259,6 +288,7 @@ const CONSIDERATIONS = [
   punishOpening,
   counterHeal,
   counterClone,
+  sharinganPursue, // blink onto a fleeing/distant foe while sharingan is up
   recoverHealth,   // heal proactively when hurt & safe
   recoverStamina,
   survive,         // desperate escape when critical & unsafe

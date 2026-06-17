@@ -201,6 +201,9 @@ function handleRagdollPhase(world, dt, scaledDt, now) {
 
   if (world.ragdollPhase <= 0) applyPendingRoundEnd();
 
+  // Cinematic KO zoom-in while the loser ragdolls.
+  world.cinematicZoom += ((RENDER.SLOWMO_KO_ZOOM ?? 1.3) - world.cinematicZoom) * Math.min(1, dt * 5);
+
   world.hitEffects = world.hitEffects.filter(h => { h.t += dt; return h.t < MAX_HIT_EFFECT_T(h); });
   world.particles = tickParticles(world.particles, dt);
   world.screenShake *= 0.91;
@@ -361,6 +364,8 @@ function update(dt) {
 
   const scaledDt = dt * world.gameSpeed;
   if (world.roundState === 'countdown') {
+    world.cinematicZoom += (1 - world.cinematicZoom) * Math.min(1, dt * 8); // reset zoom between rounds
+    world.slowMoRemaining = 0;
     updateRoundState(now, scaledDt);
     if (world.fighter1 && world.fighter2) updateSmoothCamera(scaledDt);
     return;
@@ -372,10 +377,21 @@ function update(dt) {
     return;
   }
 
+  // Cinematic slow-motion: scale the whole sim down on a dramatic beat, while the
+  // zoom eases in/out in REAL time so the camera punches in smoothly.
+  const inSlowMo = world.slowMoRemaining > 0;
+  if (inSlowMo) world.slowMoRemaining -= dt * 1000;
+  if (world.slowMoRemaining <= 0) world.slowMoZoom = 1;
+  const slowFactor = inSlowMo ? (RENDER.SLOWMO_FACTOR ?? 0.3) : 1;
+  const zoomTarget = inSlowMo ? (world.slowMoZoom || 1) : 1;
+  world.cinematicZoom += (zoomTarget - world.cinematicZoom) * Math.min(1, dt * (RENDER.CINEMATIC_ZOOM_SPEED ?? 10));
+  const simDt = dt * slowFactor;
+  const simScaledDt = simDt * world.gameSpeed;
+
   // Simulation
 
-  world.fighter1.update(scaledDt, now);
-  world.fighter2.update(scaledDt, now);
+  world.fighter1.update(simScaledDt, now);
+  world.fighter2.update(simScaledDt, now);
 
   // Movement Visuals
   [world.fighter1, world.fighter2].forEach(f => {
@@ -389,25 +405,25 @@ function update(dt) {
     }
   });
 
-  aiSystem.update(world, dt, now, secureRandom, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
-  combatSystem.update(world, dt, now, secureRandom);
-  physicsSystem.update(world, dt, now, secureRandom);
+  aiSystem.update(world, simDt, now, secureRandom, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
+  combatSystem.update(world, simDt, now, secureRandom);
+  physicsSystem.update(world, simDt, now, secureRandom);
   maybeSpawnEnvironment(now);
 
-  // Effects & HUD
-  world.particles = tickParticles(world.particles, dt);
-  world.hitEffects.forEach(h => { h.t += dt; });
+  // Effects & HUD (effects slow with the sim during a cinematic beat)
+  world.particles = tickParticles(world.particles, simDt);
+  world.hitEffects.forEach(h => { h.t += simDt; });
   world.hitEffects = world.hitEffects.filter(h => h.t < MAX_HIT_EFFECT_T(h));
   world.screenShake *= 0.88;
   if (world.screenShake < 0.5) world.screenShake = 0;
   world.hitZoom = world.hitZoom * (RENDER.ZOOM_DECAY ?? 0.92) + (1 - (RENDER.ZOOM_DECAY ?? 0.92));
   if (world.hitZoom > 0.998) world.hitZoom = 1;
 
-  updateSmoothCamera(scaledDt);
+  updateSmoothCamera(simScaledDt);
   updateHUD(world.fighter1, world.fighter2, hudEls, MAX_ROUNDS, skillFeed);
 
   if (world.fighter1.hp <= 0 || world.fighter2.hp <= 0) {
-    handleRoundEndTransition(now, scaledDt);
+    handleRoundEndTransition(now, simScaledDt);
   }
 }
 

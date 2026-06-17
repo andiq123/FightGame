@@ -5,7 +5,35 @@ import { createRagdoll } from './ragdoll.js';
 import { createHitEffect } from '../core/hitEffectFactory.js';
 import { getRagdollOriginY, getHitEffectY } from '../core/coordinates.js';
 import { secureRandom } from '../utils.js';
-import { COMBAT, FIGHTER } from '../config/constants.js';
+import { COMBAT, FIGHTER, SHARINGAN } from '../config/constants.js';
+
+// Sharingan counter: a fighter with the buff negates a clean hit, warps BEHIND
+// the attacker (with bonus stamina) for a counter, and blinds the attacker's
+// awareness for a beat. Returns true if it fired (the hit is then voided).
+export function trySharinganCounter(defender, attacker, now, hitEffects) {
+  if (!defender.status.active('sharingan', now)) return false;
+  if (defender.status.active('sharinganCd', now)) return false;
+
+  const behindX = attacker.x - attacker.facing * SHARINGAN.TELEPORT_OFFSET;
+  defender.x = behindX;
+  defender.y = 0;
+  defender.vx = attacker.facing * SHARINGAN.TELEPORT_VX; // little drift toward the attacker's back
+  defender.facing = attacker.facing;                      // face the attacker
+  defender.currentAttack = null;
+  defender.pose = POSE.idle;
+  defender.poseTime = 0;
+  defender.stamina = Math.min(defender.maxStamina, defender.stamina + SHARINGAN.STAMINA_GAIN);
+  defender.status.set('invincible', now + SHARINGAN.INVULN_MS);
+  defender.status.set('sharinganCd', now + SHARINGAN.COUNTER_CD_MS);
+
+  // Blind the attacker — it thinks the defender is still in front of it.
+  attacker.status.set('sharinganBlind', now + SHARINGAN.BLIND_MS);
+  attacker.sharinganLastSeenX = attacker.x + attacker.facing * 120;
+  attacker.lastWhiffAt = now;
+
+  hitEffects.push(createHitEffect(behindX, { y: getHitEffectY(0), sharinganWarp: true }));
+  return true;
+}
 
 function applyHitResult(attacker, defender, dmg, now, hitEffects, options = {}) {
   const finalDmg = defender.takeDamage(dmg, options.heavy === true, attacker.x, now);
@@ -103,6 +131,9 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dodge: true }));
     return;
   }
+
+  // Sharingan: a clean hit is negated — the defender warps behind the attacker.
+  if (trySharinganCounter(defender, attacker, now, hitEffects)) return;
 
   const counter = defender.currentAttack && defender.getAttackHitbox(now) ? COMBAT.COUNTER_BONUS : 1;
   const comboScale = getComboScale(attacker.comboCount);

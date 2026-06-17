@@ -23,7 +23,8 @@ export const CATEGORY = {
   CONTROL: 'control',         // freeze / pull — lock the opponent down
   DEFENSE: 'defense',         // wall / repel — protection
   SETUP: 'setup',             // clone — pressure / decoy
-  RECOVERY: 'recovery'        // heal
+  RECOVERY: 'recovery',       // heal
+  BUFF: 'buff'                // self-buff — sharingan and future stance/aura skills
 };
 
 const C = CATEGORY;
@@ -39,7 +40,8 @@ const SKILLS = {
   iceSpikes:       { category: C.CONTROL },
   earthWall:       { category: C.DEFENSE, tags: ['evade', 'defense'] },   // wall blocks projectiles
   cloneJutsu:      { category: C.SETUP, tags: ['defense'] },
-  heal:            { category: C.RECOVERY }
+  heal:            { category: C.RECOVERY },
+  sharingan:       { category: C.BUFF, tags: ['defense'] } // activate when about to be hit
 };
 
 export function categoryOf(powerId) {

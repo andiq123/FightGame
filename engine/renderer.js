@@ -424,20 +424,21 @@ export function drawStickman(ctx, fighter, groundY, now) {
     // head) vs LOW block / crouch (compact, lowered, arms down across the body).
     const isLow = fighter.status?.active?.('blockLow', now);
     if (isLow) {
-      // Crouch: drop the centre of mass, fold the knees, tuck forearms low and
-      // forward so it clearly reads as ducking under / blocking low.
-      lean = face * 0.18 * blockT;
-      bob = -14 * blockT;                 // sink down
-      lLegAng = 0.34 * blockT;
-      rLegAng = -0.26 * blockT;
-      lKneeOff = 0.36 + 0.9 * blockT;     // deep knee bend
-      rKneeOff = 0.30 + 0.8 * blockT;
-      // Forearms angled down-and-forward, hands meeting low to guard the body.
-      lArmAng = -0.35 + blockT * 0.55;
-      rArmAng = -0.35 + blockT * 0.55;
-      lForeArmAng = -0.55 * blockT;
-      rForeArmAng = -0.7 * blockT;
-      headTilt = face * 0.12 * blockT;
+      // Deep crouch (horse stance): sink the centre of mass hard, splay the legs
+      // wide and fold the knees so the head drops ~40px and it clearly reads as
+      // ducking UNDER a high attack — the feet stay planted on the ground.
+      lean = face * 0.22 * blockT;
+      bob = -40 * blockT;                  // sink the pelvis low
+      lLegAng = 0.68 * blockT;             // wide leg splay
+      rLegAng = -0.68 * blockT;
+      lKneeOff = 0.36 + 1.06 * blockT;     // deep knee fold to keep feet grounded
+      rKneeOff = 0.30 + 1.02 * blockT;
+      // Forearms tucked low across the body to guard, head ducked down-forward.
+      lArmAng = -0.2 + blockT * 0.5;
+      rArmAng = -0.2 + blockT * 0.5;
+      lForeArmAng = -0.65 * blockT;
+      rForeArmAng = -0.85 * blockT;
+      headTilt = face * 0.18 * blockT;
     } else {
       // High guard: both fists driven UP and slightly FORWARD to cover the face,
       // shoulders raised, weight rocked back — a clear "I'm defending" silhouette.
@@ -752,6 +753,32 @@ export function drawStickman(ctx, fighter, groundY, now) {
   ctx.ellipse(vX + face * 2, vY, 2.5, 1.2, headTilt, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
+
+  // Sharingan: a glowing red eye while the buff is active.
+  if (fighter.status?.active?.('sharingan', now)) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.6 + 0.4 * Math.sin(now * 0.012);
+    const ex = vX + face * 2;
+    const glow = ctx.createRadialGradient(ex, vY, 0, ex, vY, 8);
+    glow.addColorStop(0, `rgba(255,45,45,${0.95 * pulse})`);
+    glow.addColorStop(0.6, `rgba(220,0,0,${0.35 * pulse})`);
+    glow.addColorStop(1, 'rgba(180,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(ex, vY, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff3030';
+    ctx.beginPath();
+    ctx.arc(ex, vY, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    // tiny tomoe dot
+    ctx.fillStyle = '#7a0000';
+    ctx.beginPath();
+    ctx.arc(ex + face * 1.2, vY - 0.8, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.shadowColor = 'transparent';
   ctx.restore();
@@ -1617,6 +1644,36 @@ export function drawHitEffect(ctx, h) {
       ctx.beginPath();
       ctx.moveTo(x + Math.cos(an) * inner, y + Math.sin(an) * inner);
       ctx.lineTo(x + Math.cos(an) * outer, y + Math.sin(an) * outer);
+      ctx.stroke();
+    }
+  }
+  if (h.sharingan) {
+    // Red awakening flash where the buff is cast.
+    const r = 20 + (1 - t) * 34;
+    const g = ctx.createRadialGradient(x, y - 40, 0, x, y - 40, r);
+    g.addColorStop(0, `rgba(255,50,50,${0.55 * a})`);
+    g.addColorStop(0.6, `rgba(210,0,0,${0.25 * a})`);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y - 40, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,70,70,${a})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  if (h.sharinganWarp) {
+    // Red after-image streaks at the warp destination.
+    ctx.strokeStyle = `rgba(255,45,45,${a})`;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      const an = (i / 6) * Math.PI * 2 + t * 0.8;
+      const inner = 6;
+      const outer = 12 + (1 - t) * 30;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(an) * inner, y - 40 + Math.sin(an) * inner);
+      ctx.lineTo(x + Math.cos(an) * outer, y - 40 + Math.sin(an) * outer);
       ctx.stroke();
     }
   }

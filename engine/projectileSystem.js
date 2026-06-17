@@ -6,6 +6,7 @@ import { getHitEffectY, getCloneDissolveY, getRagdollOriginY } from '../core/coo
 import { spawnHitParticles, spawnCloneDissolve } from '../services/particleSystem.js';
 import { ARENA_BOUNDS } from './physics.js';
 import { COMBAT, PROJECTILE } from '../config/constants.js';
+import { trySharinganCounter } from './combat.js';
 
 function getProjectileHitRadius(p) {
   return p.type === 'fireball' ? PROJECTILE.FIREBALL_HIT_RADIUS : PROJECTILE.HIT_RADIUS;
@@ -161,6 +162,9 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
       }
 
       if (targetFighter.status.active('invincible', now)) return Math.abs(p.x) < ARENA_BOUNDS + 150;
+
+      // Sharingan: warp behind the attacker instead of taking the projectile.
+      if (trySharinganCounter(targetFighter, attacker, now, hitEffects)) return false;
 
       const blocking = targetFighter.status.active('block', now);
       if (targetFighter.status.active('shinraTensei', now)) {

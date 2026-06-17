@@ -30,6 +30,11 @@ export class World {
         this.hitStopRemaining = 0;
         this.koSlowMo = 0;
 
+        // Cinematic slow-motion + zoom on dramatic beats (sharingan warp, crit…).
+        this.slowMoRemaining = 0; // ms of real time left
+        this.slowMoZoom = 1;      // zoom target while slow-mo is active
+        this.cinematicZoom = 1;   // eased current zoom
+
         this.screenShake = 0;
         this.hitZoom = 1;
         this.smoothCamX = 0;
@@ -55,6 +60,12 @@ export class World {
     addHitEffect(e) { this.hitEffects.push(e); }
     addObstacle(o) { this.obstacles.push(o); }
 
+    // Kick off a cinematic slow-motion beat (real-time ms) with a zoom-in target.
+    triggerSlowMo(ms, zoom = 1.25) {
+        this.slowMoRemaining = Math.max(this.slowMoRemaining || 0, ms);
+        this.slowMoZoom = Math.max(this.slowMoZoom || 1, zoom);
+    }
+
     clearTransientState() {
         this.hitEffects = [];
         this.particles = [];
@@ -66,6 +77,9 @@ export class World {
         this.ragdollPhase = 0;
         this.hitStopRemaining = 0;
         this.koSlowMo = 0;
+        this.slowMoRemaining = 0;
+        this.slowMoZoom = 1;
+        this.cinematicZoom = 1;
         this.screenShake = 0;
         this.hitZoom = 1;
         this.skyFocus = null;

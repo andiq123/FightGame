@@ -1,7 +1,7 @@
 import { getDistance, ARENA_BOUNDS } from '../engine/physics.js';
 import { castRay } from '../engine/raycast.js';
 import { getInboundThreat } from '../engine/projectileThreat.js';
-import { AI, FIGHTER } from '../config/constants.js';
+import { AI, FIGHTER, SHARINGAN } from '../config/constants.js';
 import { getPowerStaminaCost } from '../entities/powers/index.js';
 
 export function faceToward(fighter, opponent) {
@@ -12,7 +12,20 @@ export function faceToward(fighter, opponent) {
 }
 
 export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projectiles = [], obstacles = []) {
-    const dist = getDistance(fighter, opponent);
+    // Sharingan blind: a fighter who just got counter-warped loses track of where
+    // the opponent went for ~1s — positional reasoning uses the STALE last-seen
+    // spot — unless it "randomly looks" and reacquires this tick.
+    let perceivedOppX = opponent.x;
+    if (fighter.status.active('sharinganBlind', now)) {
+        if ((rng?.() ?? 1) < (SHARINGAN.REACQUIRE_CHANCE ?? 0.12)) {
+            fighter.status.clear('sharinganBlind');
+        } else {
+            perceivedOppX = fighter.sharinganLastSeenX ?? opponent.x;
+        }
+    }
+    const perceivedFace = () => perceivedOppX > fighter.x ? 1 : (perceivedOppX < fighter.x ? -1 : (fighter.facing || 1));
+
+    const dist = Math.abs(fighter.x - perceivedOppX);
 
     // Find nearest obstacle
     const nearestObstacle = (obstacles || []).reduce((best, o) => {
@@ -143,6 +156,9 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         isBurning: fighter.status.active('burning', now),
         isFrozen: fighter.status.active('frozen', now),
         isShocked: fighter.status.active('shocked', now),
+        // Sharingan active → protected (a clean hit warps us behind for a counter),
+        // so the AI plays confidently: presses the attack instead of defending.
+        hasSharingan: fighter.status.active('sharingan', now),
         oppBurning: opponent.status.active('burning', now),
         oppFrozen: opponent.status.active('frozen', now),
         oppShocked: opponent.status.active('shocked', now),
@@ -183,8 +199,9 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         staminaMid: staminaRatio > 0.45,
         staminaLow,
 
-        // Helpers
-        faceToward: () => faceToward(fighter, opponent),
+        // Helpers (use PERCEIVED position so a sharingan-blinded fighter looks/moves
+        // toward where it thinks the opponent is)
+        faceToward: perceivedFace,
         faceTowardClone: (c) => (fighter.x < c.x ? 1 : -1)
     };
 

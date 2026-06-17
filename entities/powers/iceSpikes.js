@@ -1,6 +1,7 @@
 import { registerPower } from './registry.js';
 import { SKILL_DAMAGE } from '../../config/constants.js';
 import { getSkillDamage } from '../../config/stats.js';
+import { trySharinganCounter } from '../../engine/combat.js';
 
 registerPower('iceSpikes', {
     name: 'Ice Spikes',
@@ -53,6 +54,7 @@ registerPower('iceSpikes', {
         }
 
         // Immediate logic for simulation stability
+        let countered = false;
         for (let i = 0; i < 5; i++) {
             const px = startX + dir * i * 60;
             const distToOpp = Math.abs(px - opponent.x);
@@ -66,7 +68,12 @@ registerPower('iceSpikes', {
             });
 
             // Damage logic (immediate or slightly windowed is better than setTimeout)
-            if (distToOpp < 50 && opponent.y >= -30) {
+            if (!countered && distToOpp < 50 && opponent.y >= -30) {
+                // Sharingan: warp away from the freeze instead of taking it.
+                if (trySharinganCounter(opponent, fighter, now, hitEffects)) {
+                    countered = true;
+                    continue;
+                }
                 const dmg = (SKILL_DAMAGE.ICE_SPIKES || 32) / 5;
                 opponent.takeDamage(getSkillDamage(fighter, dmg), false, fighter.x, now);
                 opponent.vx += dir * 150; // Small push

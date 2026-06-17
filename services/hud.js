@@ -77,7 +77,8 @@ const STATUS_ICONS = {
   burning: '🔥',
   shocked: '⚡',
   phased: '👻',
-  anchored: '⚓'
+  anchored: '⚓',
+  sharingan: '🔴'
 };
 
 export function updateStatusIcons(f1, f2, s1, s2, now) {

@@ -439,8 +439,44 @@ export function recoveryFromRest(poseT, rest) {
   };
 }
 
+// EVADE / dodge — a hard, expressive slip. A novice "step aside" reads as nothing;
+// this is a committed martial weave: explode off the trailing leg into a deep
+// lateral lean, counter-twist the shoulders, duck the head aside and sweep the
+// arms — then snap crisply back to guard. The motion is a sharp bell (fast burst
+// out, brief held extreme at the apex, quick recover) so the evade clearly POPS.
+export function getDodgePose(elapsedMs, durationMs, dir, face) {
+  const t = clamp01(elapsedMs / (durationMs || 190));
+  const d = dir || face || 1;                       // travel direction (±1)
+  const burst = easeOutBack(clamp01(t / 0.30), 1.1); // explosive launch w/ overshoot
+  const recover = easeInOutCubic(clamp01((t - 0.55) / 0.45));
+  const a = clamp01(burst) * (1 - recover);          // bell: peaks ~apex of the slip
+  const apex = Math.sin(clamp01(t) * Math.PI);       // extra accent at mid-dodge
+
+  return {
+    // Hard lateral lean + aggressive shoulder counter-twist = a dynamic weave.
+    lean: d * 0.62 * a,
+    torsoTwist: -d * 0.7 * a,
+    headTilt: d * 0.4 * a,                 // head ducks/snaps aside
+    bob: -22 * a - 6 * apex,               // sink LOW under the attack, then rise
+    pelvisShift: d * 22 * a,               // hips lead the slip (committed travel)
+    // Lead arm sweeps across to parry the line, rear arm flares out for balance.
+    lArm: lerp(REST_STANCE.lShoulderAng, 1.55, a),
+    rArm: lerp(REST_STANCE.rShoulderAng, -1.35, a),
+    lElbow: lerp(REST_STANCE.lElbowAng, -0.45, a),
+    rElbow: lerp(REST_STANCE.rElbowAng, -0.55, a),
+    // Drive off the trailing leg; lead leg reaches wide into the slip (deep coil).
+    lHip: lerp(REST_STANCE.lHipAng, -0.62 * d, a),
+    rHip: lerp(REST_STANCE.rHipAng, 0.62 * d, a),
+    lKnee: REST_STANCE.lKneeAng + 0.85 * a,
+    rKnee: REST_STANCE.rKneeAng + 0.6 * a,
+    lFoot: -0.24 * a,
+    rFoot: 0.24 * a,
+  };
+}
+
 export function getHitReaction(poseT, damage, face, hitFromX, fighterX) {
-  const impact = Math.min(1.85, Math.max(0.65, (damage || 5) / 10));
+  // Harder, more violent recoil — a hit should visibly SNAP the body.
+  const impact = Math.min(2.2, Math.max(0.8, (damage || 5) / 8.5));
   const knockDir = Number.isFinite(hitFromX) && Number.isFinite(fighterX)
     ? (fighterX >= hitFromX ? 1 : -1)
     : -face;

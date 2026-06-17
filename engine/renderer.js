@@ -1,5 +1,5 @@
 import { POSE } from '../entities/fighter.js';
-import { ARENA, RENDER, COMBAT, FIGHTER, CLONE } from '../config/constants.js';
+import { ARENA, RENDER, COMBAT, FIGHTER, CLONE, PHYSICS } from '../config/constants.js';
 import {
   REST_STANCE,
   easeOutCubic,
@@ -14,6 +14,7 @@ import {
   getWalkCycle,
   getRunCycle,
   getHitReaction,
+  getDodgePose,
   strikeImpactPulse
 } from './fightAnimations.js';
 
@@ -196,19 +197,43 @@ export function drawStickman(ctx, fighter, groundY, now) {
   // 0. Premium Visual Overlays
   // Spectral / After-image Trails
   if (fighter.status.active('invincible', now)) {
-    fighter.poseHistory.forEach((p, idx) => {
-      if (idx % 3 !== 0) return; // Only draw some frames
-      const alpha = 0.25 * (1 - idx / 10);
-      if (alpha <= 0.05) return;
-
-      ctx.save();
+    const hist = fighter.poseHistory || [];
+    const dir = fighter.dodgeDir || fighter.facing || 1;
+    const cy = groundY + fighter.y - 45;
+    // 1. Motion-blur ghost streaks — the fighter's OWN colour with a hot white
+    // core, stretched along the travel axis so the evade reads as a fast slip.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    hist.forEach((p, idx) => {
+      if (idx % 2 !== 0 || idx > 12) return;
+      const f = 1 - idx / 13;
+      const alpha = 0.5 * f;
+      if (alpha <= 0.04) return;
+      const gy = groundY + p.y - 45;
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#9c27b0'; // Spectral Purple
+      ctx.fillStyle = fighter.color;
       ctx.beginPath();
-      ctx.arc(p.x, groundY + p.y - 45, 18, 0, Math.PI * 2);
+      ctx.ellipse(p.x, gy, 26 * (0.6 + f * 0.6), 30, 0, 0, Math.PI * 2); // stretched along X
       ctx.fill();
-      ctx.restore();
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.fillStyle = '#ffffff';                                          // hot core
+      ctx.beginPath();
+      ctx.ellipse(p.x, gy, 11 * f, 16 * f, 0, 0, Math.PI * 2);
+      ctx.fill();
     });
+    // 2. Sharp speed lines trailing behind the slip — sells the "whoosh".
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = fighter.color;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    for (let i = -2; i <= 2; i++) {
+      const ly = cy + i * 13;
+      ctx.beginPath();
+      ctx.moveTo(fighter.x - dir * 10, ly);
+      ctx.lineTo(fighter.x - dir * (46 + Math.abs(i) * 8), ly);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // Combat Aura
@@ -403,6 +428,26 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lLegAng = 1.2 * slideT;
     rLegAng = -0.4 * slideT;
     lKneeOff = 1.4 * slideT;
+  } else if (pose === POSE.dodge) {
+    // Expressive EVADE: a committed lateral weave (see getDodgePose).
+    const dir = fighter.dodgeDir || face;
+    const elapsed = now - (fighter.dodgeStartAt ?? now);
+    const dodge = getDodgePose(elapsed, PHYSICS.DODGE_DURATION_MS ?? 190, dir, face);
+    lean = dodge.lean;
+    torsoTwist = dodge.torsoTwist;
+    headTilt = dodge.headTilt;
+    bob = dodge.bob;
+    pelvisX += dodge.pelvisShift;
+    lArmAng = dodge.lArm;
+    rArmAng = dodge.rArm;
+    lForeArmAng = dodge.lElbow;
+    rForeArmAng = dodge.rElbow;
+    lLegAng = dodge.lHip;
+    rLegAng = dodge.rHip;
+    lKneeOff = dodge.lKnee;
+    rKneeOff = dodge.rKnee;
+    lFootAng = dodge.lFoot;
+    rFootAng = dodge.rFoot;
   } else if (pose === POSE.hit) {
     const hit = getHitReaction(poseT, fighter.hitLastDmg, face, fighter.hitFromX, fighter.x);
     lean = hit.lean;
@@ -470,10 +515,10 @@ export function drawStickman(ctx, fighter, groundY, now) {
     const WINDUP = 0, STRIKE = 1;
     if (phase === STRIKE) {
       const snap = Math.sin(localT * Math.PI);
-      limbBulge = 0.45 * snap;
-      limbStretch = 10 * snap;
-      // Extra IMPACT stretch spike right on the contact frame (~50%).
-      limbStretch += 6 * strikeImpactPulse(localT);
+      limbBulge = 0.52 * snap;
+      limbStretch = 12 * snap;
+      // Extra IMPACT stretch spike right on the contact frame (~50%) — harder hit.
+      limbStretch += 10 * strikeImpactPulse(localT);
     }
 
     // ANTICIPATION: faint chamber-glow that builds through the windup so the

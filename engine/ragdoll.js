@@ -2,19 +2,36 @@ import { GROUND_Y } from './physics.js';
 import { ARENA, COMBAT } from '../config/constants.js';
 
 const GRAVITY = 1820;
-const AIR_DAMPING = 0.995;
-const GROUND_FRICTION = 0.84;
+const AIR_DAMPING = 0.992;
+const GROUND_FRICTION = 0.8;
 const GROUND_RESTITUTION = 0.15;
 const WALL_RESTITUTION = 0.25;
 const CONSTRAINT_ITERATIONS = 10;
 const CONSTRAINT_STIFFNESS = 0.58;
-const SETTLE_THRESHOLD = 0.95;
+const SETTLE_THRESHOLD = 1.2;
 const MAX_POINT_VEL = 3500;
 const WALL_MARGIN = 18;
+// Per-segment stiffness — a rigid spine that holds shape while the limbs flail.
+const SPINE_STIFF = 0.74;
+const ATTACH_STIFF = 0.7;
+const LIMB_STIFF = 0.5;
 
-function makePoint(x, y, vx = 0, vy = 0, mass = 1) {
+function makePoint(x, y, vx = 0, vy = 0, mass = 1, r = 0) {
   const dt = 0.016;
-  return { x, y, prevX: x - vx * dt, prevY: y - vy * dt, mass };
+  return { x, y, prevX: x - vx * dt, prevY: y - vy * dt, mass, r };
+}
+
+// Bake an angular velocity (spin) about the pelvis into every point so the body
+// tumbles as it launches — a hit imparts rotation, not just translation.
+function applySpin(points, pelvis, omega, dt) {
+  if (!omega) return;
+  for (const p of points) {
+    if (p === pelvis) continue;
+    const rx = p.x - pelvis.x;
+    const ry = p.y - pelvis.y;
+    p.prevX -= (-omega * ry) * dt; // tangential velocity = ω × r
+    p.prevY -= (omega * rx) * dt;
+  }
 }
 
 function spreadVelocity(vx, vy, hitDir, upward, side, isImpactSide) {
@@ -40,21 +57,28 @@ export function createRagdoll(x, y, facing, vx, vy, hitFromX = null, upwardHit =
   const hvR = hitDir === -1 ? 1.1 : 0.75;
   const hh = spreadVelocity(hv, vv, hitDir, upwardHit, -1, hitDir === 1);
   const hr = spreadVelocity(hv, vv, hitDir, upwardHit, 1, hitDir === -1);
-  const head = makePoint(x, y - headR - torsoH, hh.vx * 0.7, (upwardHit ? vv * 1.2 : hh.vy) * 0.8, 0.35); // Lighter head
-  const chest = makePoint(x, y - torsoH * 0.6, hv * 0.9, vv * 0.95, 1.2);
-  const pelvis = makePoint(x, y, vx, vy, 1.8); // Heavier pelvis for stability
-  const lShoulder = makePoint(x - 12, y - torsoH * 0.7, hv * hvL * 0.75, vv * 0.85, 0.4);
-  const rShoulder = makePoint(x + 12, y - torsoH * 0.7, hv * hvR * 0.75, vv * 0.85, 0.4);
-  const lElbow = makePoint(x - 12 - armLen * dir, y - torsoH * 0.4, hv * hvL * 0.5, vv * 0.7, 0.3);
-  const rElbow = makePoint(x + 12 + armLen * dir, y - torsoH * 0.4, hv * hvR * 0.5, vv * 0.7, 0.3);
-  const lHip = makePoint(x - 10, y, vx * 0.95, vy, 0.8);
-  const rHip = makePoint(x + 10, y, vx * 0.95, vy, 0.8);
-  const lKnee = makePoint(x - 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5);
-  const rKnee = makePoint(x + 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5);
-  const lFoot = makePoint(x - 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4);
-  const rFoot = makePoint(x + 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4);
+  const head = makePoint(x, y - headR - torsoH, hh.vx * 0.7, (upwardHit ? vv * 1.2 : hh.vy) * 0.8, 0.35, 13); // Lighter head
+  const chest = makePoint(x, y - torsoH * 0.6, hv * 0.9, vv * 0.95, 1.2, 11);
+  const pelvis = makePoint(x, y, vx, vy, 1.8, 11); // Heavier pelvis for stability
+  const lShoulder = makePoint(x - 12, y - torsoH * 0.7, hv * hvL * 0.75, vv * 0.85, 0.4, 5);
+  const rShoulder = makePoint(x + 12, y - torsoH * 0.7, hv * hvR * 0.75, vv * 0.85, 0.4, 5);
+  const lElbow = makePoint(x - 12 - armLen * dir, y - torsoH * 0.4, hv * hvL * 0.5, vv * 0.7, 0.3, 4);
+  const rElbow = makePoint(x + 12 + armLen * dir, y - torsoH * 0.4, hv * hvR * 0.5, vv * 0.7, 0.3, 4);
+  const lHip = makePoint(x - 10, y, vx * 0.95, vy, 0.8, 6);
+  const rHip = makePoint(x + 10, y, vx * 0.95, vy, 0.8, 6);
+  const lKnee = makePoint(x - 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5, 5);
+  const rKnee = makePoint(x + 10 + legLen * 0.4 * dir, y + legLen * 0.6, vx * 0.75, vy * 0.95, 0.5, 5);
+  const lFoot = makePoint(x - 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4, 4);
+  const rFoot = makePoint(x + 10 + legLen * 0.9 * dir, y + legLen * 1.2, vx * 0.6, vy * 0.85, 0.4, 4);
+  const points = [head, chest, pelvis, lShoulder, rShoulder, lElbow, rElbow, lHip, rHip, lKnee, rKnee, lFoot, rFoot];
+
+  // Launch spin: tumble in the hit direction, scaled by impact speed (capped).
+  const spinDir = hitDir || (vx > 0 ? 1 : -1);
+  const omega = spinDir * Math.min(4.0, 0.9 + Math.abs(vx) * 0.004);
+  applySpin(points, pelvis, omega, dt);
+
   return {
-    points: [head, chest, pelvis, lShoulder, rShoulder, lElbow, rElbow, lHip, rHip, lKnee, rKnee, lFoot, rFoot],
+    points,
     groundY: GROUND_Y + 6,
     leftBound: -ARENA.BOUNDS + WALL_MARGIN,
     rightBound: ARENA.BOUNDS - WALL_MARGIN,
@@ -143,17 +167,20 @@ function applyWall(p, leftBound, rightBound) {
 }
 
 function applyGround(p, groundY) {
-  if (p.y >= groundY) {
+  // Each joint rests on the floor at its own thickness, so the body lies on the
+  // ground naturally instead of every point sinking to a single line.
+  const floor = groundY - (p.r || 0);
+  if (p.y >= floor) {
     const velY = p.y - p.prevY;
-    p.y = groundY;
-    if (velY > 0) {
-      const bounce = -velY * GROUND_RESTITUTION;
-      p.prevY = p.y - bounce;
+    p.y = floor;
+    if (velY > 1.5) {
+      p.prevY = p.y + velY * GROUND_RESTITUTION; // real bounce
     } else {
-      p.prevY = Math.min(p.prevY, groundY);
+      p.prevY = floor; // tiny vertical motion → rest (kill vertical jitter)
     }
-    const vx = p.x - p.prevX;
-    p.prevX = p.x - vx * GROUND_FRICTION;
+    let vx = (p.x - p.prevX) * GROUND_FRICTION;
+    if (Math.abs(vx) < 1.3) vx = 0; // horizontal rest deadzone
+    p.prevX = p.x - vx;
   }
 }
 
@@ -216,19 +243,19 @@ export function updateRagdoll(ragdoll, dt, now, obstacles = []) {
   const [head, chest, pelvis, lSh, rSh, lEl, rEl, lHip, rHip, lKn, rKn, lFt, rFt] = points;
 
   for (let i = 0; i < CONSTRAINT_ITERATIONS; i++) {
-    // Basic Skeleton Constraints
-    constrainSegment(head, chest, 22);
-    constrainSegment(chest, pelvis, 28);
-    constrainSegment(chest, lSh, 10);
-    constrainSegment(chest, rSh, 10);
-    constrainSegment(lSh, lEl, 28);
-    constrainSegment(rSh, rEl, 28);
-    constrainSegment(pelvis, lHip, 10);
-    constrainSegment(pelvis, rHip, 10);
-    constrainSegment(lHip, lKn, 32);
-    constrainSegment(rHip, rKn, 32);
-    constrainSegment(lKn, lFt, 24);
-    constrainSegment(rKn, rFt, 24);
+    // Skeleton constraints — rigid spine/attachments, floppier limbs.
+    constrainSegment(head, chest, 22, SPINE_STIFF);
+    constrainSegment(chest, pelvis, 28, SPINE_STIFF);
+    constrainSegment(chest, lSh, 10, ATTACH_STIFF);
+    constrainSegment(chest, rSh, 10, ATTACH_STIFF);
+    constrainSegment(lSh, lEl, 28, LIMB_STIFF);
+    constrainSegment(rSh, rEl, 28, LIMB_STIFF);
+    constrainSegment(pelvis, lHip, 10, ATTACH_STIFF);
+    constrainSegment(pelvis, rHip, 10, ATTACH_STIFF);
+    constrainSegment(lHip, lKn, 32, LIMB_STIFF);
+    constrainSegment(rHip, rKn, 32, LIMB_STIFF);
+    constrainSegment(lKn, lFt, 24, LIMB_STIFF);
+    constrainSegment(rKn, rFt, 24, LIMB_STIFF);
 
     // Joint Angle Limits (The Euphoria Skeleton Feel)
     const f = facing || 1;

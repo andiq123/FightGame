@@ -1,7 +1,8 @@
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, COMBO_CHAINS } from '../entities/attacks.js';
-import { AI, FIGHTER, SHARINGAN } from '../config/constants.js';
+import { AI, FIGHTER, SHARINGAN, SKILL_AI } from '../config/constants.js';
+import { gate, sharp, MASTERY } from '../config/stats.js';
 import { shouldPrioritizeRecovery, filterAffordableAttacks } from './staminaStrategy.js';
-import { pickPower, recordJutsuUse, CATEGORY } from './skills.js';
+import { pickPower, recordJutsuUse, CATEGORY, skillGcdMs } from './skills.js';
 import { evadeProjectile } from './evasion.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,12 +21,14 @@ import { evadeProjectile } from './evasion.js';
 export { pickPower, recordJutsuUse };
 const C = CATEGORY;
 
-const GCD_MS = 700;
+// Linear novice→master interpolation by skill (0…1). Used for intelligence-scaled
+// skill tuning that isn't a 0→1 probability gate (e.g. the far-range skip chance).
+const lerpSkill = (skill, novice, master) => novice + (master - novice) * Math.max(0, Math.min(1, skill));
 
-// Effective skill for execution gates. Raising skill to a power widens the gap
+// Effective skill for execution gates — the sharpened curve widens the gap
 // between mid levels (e.g. 5 vs 10) so every intelligence step is decisive.
 function execSkill(ctx) {
-  return Math.pow(ctx.skill, 1.4);
+  return sharp(ctx.skill);
 }
 
 // Attach a HUD/label hint to an action without extra bookkeeping.
@@ -54,30 +57,42 @@ function shouldRun(ctx, threshold = AI.PREFERRED_DIST_MAX) {
   return ctx.dist > threshold || ctx.oppStaggered || ctx.oppRecovering || ctx.oppHpCritical || ctx.isNightmare;
 }
 
+// Light combo builders (small dizzy, never knock down — chain these) and the
+// hard FINISHERS (knock the opponent down) used to end a combo.
+const LIGHT_ATTACKS = [ATTACK.jab, ATTACK.cross, ATTACK.frontKick, ATTACK.lowKick, ATTACK.hook, ATTACK.uppercut];
+const FINISHERS = [ATTACK_POWER_PUNCH, ATTACK.highKick, ATTACK.spinningKick, ATTACK.axeKick];
+
 function buildAttackPool(ctx) {
-  const { fighter, tired, aggression, rng, isNightmare, frameAdvantage } = ctx;
+  const { fighter, tired, aggression, rng, isNightmare } = ctx;
+  const combo = fighter.comboCount;
   const comboNext = getNextComboAttack(fighter, rng);
 
-  // Guaranteed combo continuation when we have frame advantage.
-  if (fighter.comboCount >= 1 && comboNext != null && frameAdvantage >= 0) {
-    const c = filterAffordableAttacks(ctx, [comboNext], ctx.staminaLow ? 12 : 0);
+  // FINISH the combo: after stringing a few light hits, end with a hard knockdown.
+  // Don't open with one — build the combo first (2-3 lights), then close it out.
+  // A frozen opponent (can't escape) gets the finisher immediately.
+  const buildTarget = ctx.isExpert ? 3 : 2;
+  const readyToFinish = combo >= buildTarget || (combo >= 1 && ctx.oppFrozen);
+  if (!tired && readyToFinish && rng() < gate(ctx.skill, MASTERY.FINISH_COMBO)) {
+    const fin = filterAffordableAttacks(ctx, FINISHERS, ctx.staminaLow ? 8 : 0);
+    if (fin.length) return fin;
+  }
+
+  // Guaranteed chain continuation when we have frame advantage.
+  if (combo >= 1 && comboNext != null && ctx.frameAdvantage >= 0) {
+    const c = filterAffordableAttacks(ctx, [comboNext], ctx.staminaLow ? 10 : 0);
     if (c.length) return c;
   }
 
-  let pool;
-  if (tired && !ctx.hasSharingan) {
-    pool = [ATTACK.jab, ATTACK.lowKick, ATTACK.frontKick];
-  } else {
-    pool = [ATTACK.jab, ATTACK.cross, ATTACK.frontKick, ATTACK.lowKick];
-    if (aggression > 0.3 || ctx.hasSharingan) pool.push(ATTACK.hook, ATTACK.uppercut);
-    if (aggression > 0.5 || isNightmare || ctx.hasSharingan) pool.push(ATTACK.highKick, ATTACK.spinningKick);
-    if (ctx.opponent.stamina < 40) pool.unshift(ATTACK.lowKick);
-    if (ctx.oppFrozen) pool.push(ATTACK_POWER_PUNCH, ATTACK.spinningKick);
-    if (ctx.oppBlockingALot && aggression > 0.4) pool.unshift(GRAB);
-    // Sharingan confidence: lead with committed heavy hitters.
-    if (ctx.hasSharingan) pool.unshift(ATTACK.hook, ATTACK.uppercut, ATTACK_POWER_PUNCH);
-    if (comboNext != null) pool.unshift(comboNext);
+  // Otherwise BUILD the combo with fast light attacks (barely dizzy → chain more).
+  let pool = tired ? [ATTACK.jab, ATTACK.lowKick, ATTACK.frontKick] : [...LIGHT_ATTACKS];
+  if (ctx.opponent.stamina < 40) pool.unshift(ATTACK.lowKick);
+  // Mix-ups vs a guard: go LOW under a high block, or throw a turtling opponent.
+  if (ctx.oppBlocking) {
+    pool.unshift(ATTACK.lowKick, ATTACK.frontKick);
+    if (ctx.grabRange && rng() < gate(ctx.skill, MASTERY.PUNISH)) pool.unshift(GRAB);
   }
+  if (ctx.oppBlockingALot && aggression > 0.4) pool.unshift(GRAB);
+  if (comboNext != null) pool.unshift(comboNext);
   return filterAffordableAttacks(ctx, pool, ctx.staminaLow ? 14 : 0);
 }
 
@@ -85,21 +100,42 @@ function buildAttackPool(ctx) {
 // (evadeProjectile lives in ai/evasion.js and is first in the list below.)
 
 function emergencyDefense(ctx) {
-  const { oppAttacking, oppHeavyWindup, oppHitbox, dist, fighter, rng } = ctx;
+  const { oppAttacking, oppHeavyWindup, oppHitbox, opponent, dist, fighter, rng } = ctx;
   if (!(oppAttacking || oppHeavyWindup) || dist > AI.COMBAT_ENTER) return null;
   // Sharingan: don't flinch — eat the hit, warp behind, and punish. Stay aggressive.
   if (ctx.hasSharingan) return null;
 
   const heavy = oppHeavyWindup || (oppHitbox?.damage >= 12);
   const skill = ctx.skill;
-  const reaction = skill;
 
-  // Reacting to an attack is the core skill check, and it scales with raw skill so
-  // even a few intelligence levels noticeably improve defense. A maxed fighter
-  // blocks/dodges almost everything; a novice barely reacts at all.
-  const reactChance = heavy ? 0.16 + skill * 0.84 : 0.03 + skill * 0.95;
+  // SMART THREAT ASSESSMENT — true mastery is conserving actions, not flinching.
+  // A skilled fighter reads whether the attack will actually CONNECT: if the
+  // opponent is mis-spaced (out of their own reach — common vs a slidey novice),
+  // the master ignores the whiff and keeps pressing/punishing rather than wasting
+  // a stamina-costly dodge on a strike that misses anyway. A novice panics and
+  // defends against everything.
+  const oppReach = (oppHitbox?.range ?? opponent?.currentAttack?.data?.range ?? AI.ATTACK_RANGE) + 34;
+  if (dist > oppReach && rng() < sharp(skill)) return null;
+
+  // Reacting to an attack is the core skill check. At level 20 it reaches 1.0 —
+  // a master reads EVERYTHING (perfection); a novice barely registers it. Heavies
+  // are telegraphed, so they're read better than a fast jab.
+  const reactChance = heavy ? gate(skill, MASTERY.REACT_HEAVY) : gate(skill, MASTERY.REACT_LIGHT);
   if (rng() > reactChance) return null;
 
+  // NINJA DODGE — the PREFERRED close-combat evasion: a quick i-frame step that
+  // slips the incoming attack and leaves the attacker whiffing into a counter.
+  // Costs stamina (canAffordDodge), so even a perfect fighter must eventually
+  // block/eat when worn down — that attrition is what resolves mirror matches.
+  if (fighter.onGround() && ctx.canAffordDodge && rng() < gate(skill, MASTERY.DODGE_COMMIT)) {
+    // Mostly backstep out of range; sometimes slip THROUGH to flank (i-frames
+    // carry us past) — keeps the exchange flowing and unpredictable.
+    const toward = ctx.faceToward();
+    const dir = rng() < 0.35 ? toward : -toward;
+    return as({ type: 'dodge', dir }, 'evadingProjectile');
+  }
+
+  // Defensive jutsu (wall/teleport) if a dodge isn't on.
   const power = pickPower(ctx, {
     tags: ['defense'],
     threshold: heavy ? 40 : 60,
@@ -107,9 +143,7 @@ function emergencyDefense(ctx) {
   });
   if (power && (power !== 'earthWall' || dist > 95)) return as({ type: 'power', powerId: power }, 'defending');
 
-  if (fighter.onGround() && ctx.canAffordDodge && rng() < 0.2 + reaction * 0.45) {
-    return as({ type: 'dodge', dir: -ctx.faceToward() }, 'defending');
-  }
+  // Block fallback (less preferred than the dodge above).
   const highIncoming = oppHitbox?.high !== false;
   return as({ type: 'block', duration: heavy ? 340 : 240, low: !highIncoming }, 'defending');
 }
@@ -120,7 +154,7 @@ function punishOpening(ctx) {
   if (!opening || ctx.tired) return null;
 
   // Capitalizing on an opening is a skill: low intelligence lets punishes slip.
-  if (rng() > 0.22 + ctx.skill * 0.78) return null;
+  if (rng() > gate(ctx.skill, MASTERY.PUNISH)) return null;
 
   const power = pickPower(ctx, {
     categories: [C.MELEE_BURST, C.PROJECTILE, C.CONTROL],
@@ -162,9 +196,9 @@ function recoverHealth(ctx) {
   if (!ctx.hpLow && !ctx.hpCritical) return null;
   if (!isSafeToHeal(ctx)) return null;
   const { fighter, now } = ctx;
-  if (fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < GCD_MS) return null;
+  if (fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < skillGcdMs(ctx.skill)) return null;
   // Eagerness: always at critical, otherwise scales with intelligence.
-  const eager = ctx.hpCritical ? 0.95 : 0.45 + ctx.skill * 0.5;
+  const eager = ctx.hpCritical ? 0.95 : gate(ctx.skill, MASTERY.HEAL_EAGER);
   if (ctx.rng() > eager) return null;
   const power = pickPower(ctx, {
     categories: [C.RECOVERY],
@@ -203,7 +237,7 @@ function antiAir(ctx) {
 function counterClone(ctx) {
   const { nearestEnemyClone, cloneDist, dist, fighter } = ctx;
   if (!nearestEnemyClone) return null;
-  if (ctx.rng() > 0.12 + ctx.skill * 0.88) return null; // awareness scales with intelligence
+  if (ctx.rng() > gate(ctx.skill, MASTERY.COUNTER_CLONE)) return null; // awareness scales with intelligence
   if (cloneDist > 240) return null;                      // not worth diverting for a far decoy
   const dir = ctx.faceTowardClone(nearestEnemyClone);
   if (cloneDist <= AI.ATTACK_RANGE && fighter.hasStamina(6)) return as({ type: 'attack', attack: ATTACK.jab }, 'combat'); // pop it
@@ -215,7 +249,7 @@ function counterClone(ctx) {
 // hard (interrupt at range or rush in); weak ones let the heal go off.
 function counterHeal(ctx) {
   if (!ctx.oppHealing) return null;
-  if (ctx.rng() > 0.1 + ctx.skill * 0.9) return null;
+  if (ctx.rng() > gate(ctx.skill, MASTERY.COUNTER_HEAL)) return null;
   const power = pickPower(ctx, { categories: [C.PROJECTILE, C.MELEE_BURST, C.CONTROL], threshold: 28, finisher: true });
   if (power) return as({ type: 'power', powerId: power }, 'punishing');
   if (ctx.inRange && ctx.fighter.hasStamina(8)) {
@@ -239,21 +273,32 @@ function sharinganPursue(ctx) {
   return null;
 }
 
+// Bait / feint — a skilled ninja neutral game: hover just out of range to draw a
+// whiff, then punishOpening cashes in the counter. Only smart fighters do this.
+function bait(ctx) {
+  if (!ctx.isExpert || ctx.hasSharingan) return null;
+  const { dist, rng } = ctx;
+  if (dist < 95 || dist > 200 || ctx.staminaLow || ctx.oppAttacking || ctx.oppStaggered) return null;
+  // Don't bait a weaker/passive opponent — just go in and pressure.
+  if (ctx.oppHpCritical || ctx.oppRecovering) return null;
+  if (rng() < 0.05 + ctx.skill * 0.06) {
+    return as({ type: 'move', dir: -ctx.faceToward(), run: false, commitMs: 260 }, 'baiting');
+  }
+  return null;
+}
+
 function useOffensivePower(ctx) {
-  const { dist, rng, isNightmare } = ctx;
-  // Sharingan: don't zone from afar — close the gap and brawl.
-  if (ctx.hasSharingan && dist > 130) return null;
-  // Pick the skill class that fits the gap: zone from afar, burst up close, or
-  // teleport in to close distance. Each power still self-scores within the class.
-  const categories = dist > 180
-    ? [C.PROJECTILE, C.CONTROL]
-    : dist < 120
-      ? [C.MELEE_BURST, C.MOVEMENT, C.SETUP]
-      : null; // any category — let scoring decide in the mid-range
-  const power = pickPower(ctx, { categories, threshold: isNightmare ? 44 : 56 });
-  // Smart fighters use jutsu at the right moment; weak ones rarely do. A
-  // sharingan-confident fighter commits to its openings freely.
-  if (power && (isNightmare || ctx.hasSharingan || rng() < 0.35 + execSkill(ctx) * 0.6)) return as({ type: 'power', powerId: power }, 'combat');
+  const { rng, isNightmare, skill } = ctx;
+  // A novice often wastes a skill window and just shuffles forward; a master
+  // never does. (Intelligence decides how OFTEN skills get woven into the fight.)
+  if (rng() < lerpSkill(skill, SKILL_AI.FAR_SKIP_NOVICE, SKILL_AI.FAR_SKIP_MASTER)) return null;
+  // No category range-gating: every power's own score(ctx) already knows the
+  // range/situation it wants (fireball wants distance, clone/ice work up close).
+  // We just pick the best-scoring affordable one — threshold scales with skill.
+  const power = pickPower(ctx);
+  // Smart fighters weave jutsu constantly; weak ones rarely commit. Final gate
+  // reaches 1.0 at level 20 — a master always cashes in a worthwhile skill.
+  if (power && (isNightmare || ctx.hasSharingan || rng() < gate(execSkill(ctx), MASTERY.POWER_USE))) return as({ type: 'power', powerId: power }, 'combat');
   return null;
 }
 
@@ -272,9 +317,24 @@ function closeOrAttack(ctx) {
     if (pool.length) return as({ type: 'attack', attack: pick(pool, ctx.rng) }, 'combat');
   }
   if (!inRange) {
-    // Confident → close the gap eagerly: slide in from mid-range, else sprint.
-    if (confident && dist > 100 && dist < 240 && fighter.onGround() && ctx.canAffordSlide && ctx.rng() < 0.4) {
+    const skill = ctx.skill;
+    const rng = ctx.rng;
+    // Low intelligence mis-spaces — lunges with an attack from just out of range,
+    // so it WHIFFS (and gets punished). Smart fighters wait until they're in range.
+    if (dist < AI.ATTACK_RANGE + 50 && fighter.hasStamina(8) && rng() < (1 - execSkill(ctx)) * 0.38) {
+      const pool = buildAttackPool(ctx);
+      if (pool.length) return as({ type: 'attack', attack: pick(pool, rng) }, 'combat');
+    }
+    // Ninja approach — close with style, not just a walk:
+    //  · slide low into mid-range,  · leap the gap from far (directional hop).
+    if (confident && dist > 100 && dist < 240 && fighter.onGround() && ctx.canAffordSlide && rng() < 0.4) {
       return as({ type: 'slide', dir: toward }, 'pressuring');
+    }
+    if (fighter.onGround() && dist > 95 && dist < 200 && ctx.canAffordSlide && rng() < 0.1 + skill * 0.2) {
+      return as({ type: 'slide', dir: toward }, 'approaching');
+    }
+    if (fighter.onGround() && dist > 230 && fighter.hasStamina(FIGHTER.JUMP_STAMINA ?? 14) && rng() < 0.07 + skill * 0.12) {
+      return as({ type: 'jump', dir: toward }, 'approaching'); // leap forward over the gap
     }
     const run = confident || shouldRun(ctx);
     return as({ type: 'move', dir: toward, run, commitMs: run ? 560 : 380 }, confident ? 'pressuring' : 'approaching');
@@ -283,17 +343,23 @@ function closeOrAttack(ctx) {
 }
 
 const CONSIDERATIONS = [
-  evadeProjectile,
-  emergencyDefense,
-  punishOpening,
-  counterHeal,
+  evadeProjectile, // 1. survive incoming projectiles (defense first)
+  emergencyDefense,// 2. answer an incoming melee attack
+  survive,         // 3. desperate escape when critical & unsafe
+  recoverHealth,   // 4. heal when hurt & safe
+  counterHeal,     // 5. punish a healing/cloning opponent
   counterClone,
-  sharinganPursue, // blink onto a fleeing/distant foe while sharingan is up
-  recoverHealth,   // heal proactively when hurt & safe
-  recoverStamina,
-  survive,         // desperate escape when critical & unsafe
-  antiAir,
+  sharinganPursue, // 6. blink onto a fleeing/distant foe while sharingan is up
+  // Skill use is a PRIMARY part of a smart fighter's game — woven into melee AND
+  // neutral, NOT a last resort. It sits above the basic punish/approach/attack so
+  // masters actually USE jutsu (freeze→combo, clone, fireball) instead of always
+  // throwing a punch. Frequency scales hard with intelligence inside the function
+  // (far-skip, GCD, threshold, cooldown all interpolate novice→master).
   useOffensivePower,
+  punishOpening,   // basic-melee punish when no skill is the right call
+  recoverStamina,
+  antiAir,
+  bait,            // skilled neutral game — draw a whiff, then punish
   closeOrAttack
 ];
 
@@ -307,7 +373,7 @@ function avoidWall(ctx, action) {
   if (!obs || action.dir !== obs.dir || obs.d > 95) return action;
 
   // Awareness of the obstacle scales with intelligence.
-  if (ctx.rng() > 0.25 + ctx.skill * 0.7) return action;
+  if (ctx.rng() > gate(ctx.skill, MASTERY.WALL_AWARE)) return action;
 
   if (fighter.hasStamina(FIGHTER.JUMP_STAMINA ?? 14)) {
     return { type: 'jump', wallVault: true, dir: obs.dir, aiLabel: action.aiLabel || 'approaching' };

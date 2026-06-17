@@ -1,5 +1,20 @@
 import { scorePower } from '../entities/powers/index.js';
 import { scorePowerWithBudget } from './staminaStrategy.js';
+import { SKILL_AI } from '../config/constants.js';
+
+// Global cooldown between any two casts, scaled by intelligence: a master fires
+// jutsu ~5× more often than a novice. The single source for skill cadence.
+export function skillGcdMs(skill) {
+  const s = Math.max(0, Math.min(1, skill ?? 0));
+  return SKILL_AI.GCD_NOVICE_MS + (SKILL_AI.GCD_MASTER_MS - SKILL_AI.GCD_NOVICE_MS) * s;
+}
+
+// Score a skill must beat to be worth casting, scaled by intelligence: a master
+// casts readily (low bar), a novice only on a great opportunity (high bar).
+export function skillThreshold(skill) {
+  const s = Math.max(0, Math.min(1, skill ?? 0));
+  return SKILL_AI.THRESHOLD_NOVICE + (SKILL_AI.THRESHOLD_MASTER - SKILL_AI.THRESHOLD_NOVICE) * s;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skill categorization — the single source of truth for "what kind of jutsu is
@@ -58,15 +73,16 @@ export function withTag(tag) {
   return Object.keys(SKILLS).filter(id => SKILLS[id].tags?.includes(tag));
 }
 
-const GCD_MS = 700;
-
 // Pick the best affordable power for the situation. Each power scores itself
 // (see each power's score(ctx)); we add only the stamina-budget gate, the global
 // cooldown, and a repeat penalty. Filter via `categories`, `tags`, or `allowed`.
-export function pickPower(ctx, { categories = null, tags = null, allowed = null, threshold = 50, emergency = false, finisher = false, allowRepeat = false } = {}) {
+// `threshold` defaults to the intelligence-scaled bar (skillThreshold) so smart
+// fighters cast far more readily — pass an explicit number to override.
+export function pickPower(ctx, { categories = null, tags = null, allowed = null, threshold = null, emergency = false, finisher = false, allowRepeat = false } = {}) {
   const { fighter, now } = ctx;
   if (!fighter.powers?.length) return null;
-  if (!emergency && fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < GCD_MS) return null;
+  if (!emergency && fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < skillGcdMs(ctx.skill)) return null;
+  if (threshold == null) threshold = skillThreshold(ctx.skill);
 
   let allow = allowed;
   if (categories) allow = (allow || []).concat(inCategories(categories));

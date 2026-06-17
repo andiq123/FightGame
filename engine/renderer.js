@@ -1647,6 +1647,14 @@ export function drawHitEffect(ctx, h) {
       ctx.stroke();
     }
   }
+  if (h.miss) {
+    // Whiff — a faint grey swish so a mis-timed attack reads as a miss.
+    ctx.strokeStyle = `rgba(180,190,200,${0.5 * a})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y - 40, 18 + (1 - t) * 10, -0.7, 0.7);
+    ctx.stroke();
+  }
   if (h.sharingan) {
     // Red awakening flash where the buff is cast.
     const r = 20 + (1 - t) * 34;

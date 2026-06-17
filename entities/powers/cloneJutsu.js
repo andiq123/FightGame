@@ -3,7 +3,7 @@ import { CLONE } from '../../config/constants.js';
 
 registerPower('cloneJutsu', {
   name: 'Clone Jutsu',
-  cooldown: 16000,
+  cooldown: 12000,
   staminaCost: 34,
   tip: 'Spectral clone chases & combos for 5s'
 }, {

@@ -4,7 +4,7 @@ import { spawnSpectralTrail } from '../../services/particleSystem.js';
 
 registerPower('spectralDash', {
     name: 'Spectral Dash',
-    cooldown: 9000,
+    cooldown: 6500,
     staminaCost: 26,
     tip: 'Dash through the opponent'
 }, {

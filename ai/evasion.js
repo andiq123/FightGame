@@ -1,4 +1,5 @@
 import { FIGHTER } from '../config/constants.js';
+import { gate, MASTERY } from '../config/stats.js';
 import { pickPower } from './skills.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ export function evadeProjectile(ctx) {
   const tMs = threat.timeToImpact * 1000;
   const readWindowMs = 120 + skill * 560;
   if (tMs > readWindowMs) return null;                 // hasn't registered the threat yet
-  if (rng() > 0.2 + skill * 0.8) return null;          // sometimes fails to react at all
+  if (rng() > gate(skill, MASTERY.PROJECTILE_DODGE)) return null; // sometimes fails to react (→1.0 at lvl20)
 
   const grounded = fighter.onGround();
   const tooLateToMove = tMs < 90;                      // only block / teleport left
@@ -46,13 +47,13 @@ export function evadeProjectile(ctx) {
   if (grounded && !tooLateToMove) {
     if (threat.high) {
       // 2. Duck under a high projectile.
-      if (rng() < 0.45 + skill * 0.5) return { type: 'block', duration: 340, low: true, aiLabel: 'evadingProjectile' };
+      if (rng() < gate(skill, MASTERY.PROJECTILE_READ)) return { type: 'block', duration: 340, low: true, aiLabel: 'evadingProjectile' };
     } else if (fighter.hasStamina(JUMP_STAMINA)) {
       // 3. Hop over a low projectile — leap aside (evade direction), not straight up.
-      if (rng() < 0.45 + skill * 0.5) return { type: 'jump', dir: threat.evadeDir, aiLabel: 'evadingProjectile' };
+      if (rng() < gate(skill, MASTERY.PROJECTILE_READ)) return { type: 'jump', dir: threat.evadeDir, aiLabel: 'evadingProjectile' };
     }
     // 4. Sidestep with i-frames.
-    if (ctx.canAffordDodge && rng() < 0.3 + skill * 0.5) {
+    if (ctx.canAffordDodge && rng() < gate(skill, MASTERY.PROJECTILE_DODGE)) {
       return { type: 'dodge', dir: threat.evadeDir, aiLabel: 'evadingProjectile' };
     }
   }

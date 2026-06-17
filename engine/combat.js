@@ -6,6 +6,8 @@ import { createHitEffect } from '../core/hitEffectFactory.js';
 import { getRagdollOriginY, getHitEffectY } from '../core/coordinates.js';
 import { secureRandom } from '../utils.js';
 import { COMBAT, FIGHTER, SHARINGAN } from '../config/constants.js';
+import { PASSIVE } from '../config/passives.js';
+import { accuracyGate } from '../config/stats.js';
 
 // Sharingan counter: a fighter with the buff negates a clean hit, warps BEHIND
 // the attacker (with bonus stamina) for a counter, and blinds the attacker's
@@ -77,9 +79,26 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   const hb = attacker.getAttackHitbox(now);
   if (!hb || defender.status.active('invincible', now)) return;
 
+  // One hit per swing: a single attack resolves once, not every active frame.
+  // (Prevents stun-lock — combos must come from chained attacks, not one hitbox.)
+  const swing = attacker.currentAttack;
+  if (swing?.resolved) return;
+
   // 1. Accurate reach: must be in horizontal range AND vertical reach.
   if (!hitboxOverlap(hb, defender.x)) return;
   if (!withinVerticalReach(hb, attacker, defender)) return;
+
+  // 1b. Accuracy: a clumsy (low-intelligence) fighter mis-times/mis-spaces and
+  // WHIFFS a hit that should have landed — so a novice barely connects while a
+  // master lands almost everything. (skill 0.2 ≈ 9% accuracy, skill 1 = 100%.)
+  const atkSkill = attacker.aiSkill != null ? attacker.aiSkill : 1;
+  const accuracy = accuracyGate(atkSkill);
+  if (secureRandom() > accuracy) {
+    if (swing) swing.resolved = true;
+    attacker.lastWhiffAt = now;
+    hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), miss: true }));
+    return;
+  }
 
   // 2. Wall protection: a wall between the fighters eats the strike.
   const wall = wallBetween(attacker.x, defender.x, obstacles);
@@ -106,12 +125,14 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   const blockMistake = isBlockingHigh && lowAttack; // standing guard beaten by a low hit
 
   if (successfullyBlocked) {
+    if (swing) swing.resolved = true;
     attacker.stamina = Math.max(0, attacker.stamina - (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10));
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), block: true }));
     return;
   }
 
   if (blockMistake) {
+    if (swing) swing.resolved = true;
     const dmg = Math.round(hb.damage * getComboScale(attacker.comboCount) * 0.4);
     applyHitResult(attacker, defender, dmg, now, hitEffects, { hitFlash: 100, extra: { dmg } });
     defender.status.set('stun', now + hb.stun * 0.5);
@@ -122,18 +143,20 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
     return;
   }
   if (defender.status.active('smoke', now) && secureRandom() < 0.5) {
+    if (swing) swing.resolved = true;
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), smoke: true }));
     return;
   }
 
-  // Blur Passive: 15% automatic melee dodge
-  if (defender.hasPassive('blur') && secureRandom() < 0.15) {
+  // Blur Passive: automatic melee dodge
+  if (defender.hasPassive('blur') && secureRandom() < PASSIVE.BLUR_DODGE_CHANCE) {
+    if (swing) swing.resolved = true;
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dodge: true }));
     return;
   }
 
   // Sharingan: a clean hit is negated — the defender warps behind the attacker.
-  if (trySharinganCounter(defender, attacker, now, hitEffects)) return;
+  if (trySharinganCounter(defender, attacker, now, hitEffects)) { if (swing) swing.resolved = true; return; }
 
   const counter = defender.currentAttack && defender.getAttackHitbox(now) ? COMBAT.COUNTER_BONUS : 1;
   const comboScale = getComboScale(attacker.comboCount);
@@ -150,14 +173,20 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
 
   const dmg = Math.round(hb.damage * comboScale * counter * critMult * attacker.damageMult * defender.damageTakenMult * momentumMult);
 
+  if (swing) swing.resolved = true; // one hit per swing
   applyHitResult(attacker, defender, dmg, now, hitEffects);
   defender.hitsDecayAt = now + 5000;
   defender.status.set('stun', now + hb.stun);
 
-  // Status Clearance, Lifesteal & Passives
+  // Passives: lifesteal for the attacker, thorns reflect for the defender.
   if (attacker.hasPassive('vampirism')) {
-    attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.round(dmg * 0.15));
+    attacker.hp = Math.min(attacker.maxHp, attacker.hp + Math.round(dmg * PASSIVE.VAMPIRISM_LIFESTEAL));
     hitEffects.push(createHitEffect(attacker.x, { y: getHitEffectY(attacker.y), heal: true }));
+  }
+  if (defender.hasPassive('thorns') && attacker.hp > 0) {
+    const reflect = Math.max(1, Math.round(dmg * PASSIVE.THORNS_REFLECT));
+    attacker.takeDamage(reflect, false, defender.x, now);
+    hitEffects.push(createHitEffect(attacker.x, { y: getHitEffectY(attacker.y), dmg: reflect }));
   }
 
   attacker.comboCount++;
@@ -173,23 +202,32 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   defender.poseTime = 0;
 
   const afterwardDefender = defender.x > attacker.x ? 1 : -1;
-  const heavy = hb.damage >= 14 || hb.kickLaunch || isCrit;
+  const heavy = hb.knockdown || hb.kickLaunch;
 
-  applyKnockback(defender, hb.knockback * (isCrit ? 1.25 : 1), attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch, now);
+  applyKnockback(defender, hb.knockback, attacker.x, heavy, hb.type === ATTACK.uppercut || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch, now);
   applyAttackerRecoil(attacker, hb.knockback, -afterwardDefender);
 
+  // KNOCKDOWN: only a hard FINISHER (or a long combo) knocks the opponent down.
+  // Light combo hits just dizzy them — so you can chain more punches first.
+  const comboFinish = attacker.comboCount >= (COMBAT.COMBO_KNOCKDOWN ?? 6);
   const shouldStagger = !defender.status.active('stagger', now) && defender.hp > 0 &&
-    (dmg >= COMBAT.STAGGER_DAMAGE || isCrit || (counter > 1 && dmg >= COMBAT.STAGGER_COUNTER) || (attacker.comboCount >= 4 && dmg >= 9));
+    (hb.knockdown || hb.kickLaunch || comboFinish);
 
-  if (shouldStagger || hb.kickLaunch) {
+  if (shouldStagger) {
+    // Throw them in the direction they were hit (away from the attacker), with a
+    // strong push + a touch of lift, then activate the ragdoll carrying that force.
+    const knockDir = defender.x >= attacker.x ? 1 : -1;
+    const push = (COMBAT.KNOCKDOWN_PUSH ?? 420) + (hb.knockback || 0) * 1.6;
+    defender.vx = Math.max(-950, Math.min(950, defender.vx + knockDir * push));
+    defender.vy = Math.min(defender.vy, -(COMBAT.KNOCKDOWN_LIFT ?? 200));
     defender.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
     defender.currentAttack = null;
     defender.pose = POSE.stagger;
-    defender.staggerRagdoll = createRagdoll(defender.x, getRagdollOriginY(defender), defender.facing, defender.vx, defender.vy, attacker.x, hb.type === 6, now);
+    defender.staggerRagdoll = createRagdoll(defender.x, getRagdollOriginY(defender), defender.facing, defender.vx, defender.vy, attacker.x, hb.type === ATTACK.uppercut, now);
   }
 
   const punchDir = defender.x > attacker.x ? 1 : -1;
-  hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dmg, counter: counter > 1, crit: isCrit, heavy: hb.damage >= 9 || hb.kickLaunch || isCrit, splatter: true, splatterDir: punchDir, splatterColor: attacker.color }));
+  hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dmg, counter: counter > 1, crit: isCrit, heavy: hb.knockdown || hb.kickLaunch || isCrit, splatter: true, splatterDir: punchDir, splatterColor: attacker.color }));
 }
 
 export function resolveCombat(f1, f2, now, hitEffects, cloneHitByF1 = null, cloneHitByF2 = null, obstacles = []) {

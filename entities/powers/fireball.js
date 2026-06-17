@@ -3,7 +3,7 @@ import { SKILL_DAMAGE } from '../../config/constants.js';
 
 registerPower('fireball', {
   name: 'Fireball',
-  cooldown: 12000,
+  cooldown: 8000,
   staminaCost: 24,
   tip: 'Heavy projectile, ragdoll on hit'
 }, {

@@ -13,7 +13,7 @@ export const PHYSICS = {
   HIT_STOP_HEAVY_MS: 75,
   HIT_STOP_COUNTER_MS: 95,
   DODGE_PEAK_SPEED: 560,
-  DODGE_INVULN_MS: 120,
+  DODGE_INVULN_MS: 150,   // covers an incoming attack's active frames
   DODGE_DURATION_MS: 190,
   JUMP_VY: -620,         // normal jump apex ~125px — clears a standard wall
   WALL_VAULT_VY: -820,   // dedicated wall-vault leap, apex ~217px — clears any wall
@@ -34,8 +34,8 @@ export const PHYSICS = {
   RUN_SPEED_THRESH: 410,
   MOVE_BRAKE_PER_SEC: 2300,
   AIR_DRAG: 0.00055,
-  WALK_STAMINA_PER_SEC: 8,
-  RUN_STAMINA_PER_SEC: 26,
+  WALK_STAMINA_PER_SEC: 6,
+  RUN_STAMINA_PER_SEC: 16,
   MOVE_SPEED_MIN_RATIO: 0.18,
   MOVE_SPEED_MAX_RATIO: 1.08,
   RUN_STAMINA_MIN_RATIO: 0.28,
@@ -52,12 +52,12 @@ export const PHYSICS = {
   APEX_VY_HIGH: 90,
 };
 export const FIGHTER = {
-  STAMINA_REGEN_PER_SEC: 32,
+  STAMINA_REGEN_PER_SEC: 44,
   RECOVERY_STAMINA_REGEN_MULT: 1.65,
   POWER_BASE_COST: 20,
-  POWER_STAMINA_RESERVE: 38,
+  POWER_STAMINA_RESERVE: 20,
   POWER_FINISHER_RESERVE: 12,
-  ATTACK_STAMINA_MULT: 1.35,
+  ATTACK_STAMINA_MULT: 1.0,
   ATTACK_DAMAGE_STAMINA_MULT: 0.45,
   HEAVY_ATTACK_STAMINA_BONUS: 4,
   MOMENTUM_ATTACK_STAMINA_BONUS: 3,
@@ -75,7 +75,7 @@ export const FIGHTER = {
   DOUBLE_JUMP_STAMINA: 10,
   WALL_JUMP_STAMINA: 12,
   SLIDE_STAMINA: 18,
-  DASH_STAMINA: 20,
+  DASH_STAMINA: 14, // cheap enough to dodge often in a close-combat exchange
 };
 export const COMBAT = {
   COMBO_DECAY_MS: 1200,
@@ -94,6 +94,9 @@ export const COMBAT = {
   CRIT_MULT: 1.6,
   CANCEL_AFTER: 0.55,         // recovery cancels allowed after 55% of an attack
   CANCEL_HIT_WINDOW_MS: 280,  // hit-confirm combo-cancel window after a landed hit
+  COMBO_KNOCKDOWN: 6,         // a light-hit combo this long also knocks down
+  KNOCKDOWN_PUSH: 420,        // horizontal throw force on a knockdown finisher
+  KNOCKDOWN_LIFT: 200,        // upward pop on a knockdown
   HIT_FLASH_MS: 200,
   HIT_FLASH_COUNTER_MS: 250,
   RECOVERY_MS: 120,
@@ -139,8 +142,8 @@ export const AI = {
   RETREAT_HP_RATIO: 0.06,
   RETREAT_STAMINA: 12,
   RETREAT_STOP_DIST: 300,
-  STAMINA_CRITICAL_RATIO: 0.16,
-  STAMINA_LOW_RATIO: 0.3,
+  STAMINA_CRITICAL_RATIO: 0.12,
+  STAMINA_LOW_RATIO: 0.2,
   STAMINA_RECOVER_RATIO: 0.72,
   STAMINA_SAFE_REST_DIST: 330,
   STAMINA_RETREAT_DIST: 360,
@@ -179,6 +182,26 @@ export const AI = {
     PREPARE_CONDITION: 0.22,
     PUNISH_REACTION_MIN: 0.08,
   },
+};
+
+// ── Skill / jutsu usage — intelligence-scaled, all knobs in one place ─────────
+// A smart fighter weaves jutsu into the fight constantly; a novice hardly knows
+// how. Every value here interpolates novice → master by the caster's 0…1 skill
+// (see config/stats.js gate()), so level 20 is a relentless skill user and the
+// gap to lower levels is large. Tune skill behaviour HERE, not inline in the AI.
+export const SKILL_AI = {
+  GCD_NOVICE_MS: 1400,     // min gap between any two casts at intelligence 1
+  GCD_MASTER_MS: 260,      // ...at intelligence 20 (casts ~5× more often)
+  THRESHOLD_NOVICE: 80,    // a novice only casts on a golden opportunity
+  THRESHOLD_MASTER: 24,    // a master casts readily / proactively
+  PUNISH_THRESHOLD: 26,    // score needed to punish an opening with a skill
+  EMERGENCY_THRESHOLD: 34, // score needed for a defensive/escape skill
+  RANGE_FAR: 180,          // beyond → zone (projectile / control)
+  RANGE_CLOSE: 120,        // within → burst / movement / control / buff
+  FAR_SKIP_NOVICE: 0.85,   // chance a novice wastes a far-range skill window
+  FAR_SKIP_MASTER: 0.0,    // a master never skips a free zoning window
+  COOLDOWN_MULT_NOVICE: 1.25, // a novice's jutsu recharge slowly (clumsy chakra control)
+  COOLDOWN_MULT_MASTER: 0.5,  // a master cycles jutsu ~2.5× faster — skills define their game
 };
 export const SHARINGAN = {
   DURATION_MS: 7000,      // buff lasts 7s

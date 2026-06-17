@@ -1,8 +1,9 @@
 import { getPower, getPowerStaminaCost } from './powers/index.js';
 import { isRagdollSettled } from '../engine/ragdoll.js';
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, ATTACK_DATA } from './attacks.js';
-import { ARENA, PHYSICS, HP, COMBAT, FIGHTER } from '../config/constants.js';
-import { STAT, clampStat, powerProfile } from '../config/stats.js';
+import { ARENA, PHYSICS, HP, COMBAT, FIGHTER, SKILL_AI } from '../config/constants.js';
+import { STAT, clampStat, powerProfile, statT } from '../config/stats.js';
+import { PASSIVE } from '../config/passives.js';
 import { StatusManager } from './components/StatusManager.js';
 import { ActionBuffer } from './components/ActionBuffer.js';
 import {
@@ -89,6 +90,14 @@ class Fighter {
     if (power != null) this.power = clampStat(power);
     if (intelligence != null) this.intelligence = clampStat(intelligence);
     this.deriveFromPower();
+    // Intelligence also governs BODY CONTROL: a master (20) accelerates crisply
+    // and stops on a dime to strike; a novice (1) is sluggish to start and slides
+    // like ice — overshooting range and unable to plant a clean hit. 0…1.
+    this.moveAgility = statT(this.intelligence);
+    // ...and CHAKRA CONTROL: a master recharges jutsu far faster, so skills are
+    // central to its game; a novice's recharge slowly. Effective-cooldown factor.
+    this.skillCooldownMult = SKILL_AI.COOLDOWN_MULT_NOVICE
+      + (SKILL_AI.COOLDOWN_MULT_MASTER - SKILL_AI.COOLDOWN_MULT_NOVICE) * statT(this.intelligence);
     this.hp = this.maxHp;
   }
 
@@ -154,7 +163,7 @@ class Fighter {
     if (!this.canUsePower(powerId)) return false;
     const p = getPower(powerId);
     if (!p) return false;
-    this.powerCooldowns[powerId] = now + p.cooldown;
+    this.powerCooldowns[powerId] = now + p.cooldown * (this.skillCooldownMult ?? 1);
     spendStamina(this, getPowerStaminaCost(powerId));
     this.lastUsedPower = powerId;
     this.lastUsedAt = now;
@@ -375,6 +384,12 @@ class Fighter {
 
     this.speedMult = this.status.active('speedBoost', now) ? 1.4 : 1;
     if (this.status.active('phased', now)) this.speedMult *= 1.2; // Phased speed boost
+    if (this.hasPassive('swift')) this.speedMult *= PASSIVE.SWIFT_SPEED_MULT; // Swift passive
+
+    // Regeneration passive: slowly recover HP over time.
+    if (this.hasPassive('regen') && this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + PASSIVE.REGEN_HP_PER_SEC * dt);
+    }
 
     if (isFrozen) {
       this.speedMult *= 0.6; // 40% slow
@@ -484,12 +499,15 @@ class Fighter {
       stun: data.stun,
       high: data.high,
       type: a.type,
-      kickLaunch: data.kickLaunch === true
+      kickLaunch: data.kickLaunch === true,
+      knockdown: data.knockdown === true,
+      light: data.light === true
     };
   }
 
   takeDamage(amount, isHeavy = false, attackerX = 0, now = performance.now()) {
-    const finalDmg = Math.round(amount * this.damageTakenMult);
+    const ironSkin = this.hasPassive('ironSkin') ? (1 - PASSIVE.IRON_SKIN_REDUCTION) : 1;
+    const finalDmg = Math.round(amount * this.damageTakenMult * ironSkin);
     this.hp = Math.max(0, this.hp - finalDmg);
     this.lastHitAt = now;
     this.hitFromX = attackerX;

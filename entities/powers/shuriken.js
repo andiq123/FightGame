@@ -3,7 +3,7 @@ import { SKILL_DAMAGE } from '../../config/constants.js';
 
 registerPower('shuriken', {
   name: 'Shuriken',
-  cooldown: 6000,
+  cooldown: 4000,
   staminaCost: 16,
   tip: 'Spinning kunai, fast & metallic'
 }, {

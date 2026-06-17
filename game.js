@@ -7,6 +7,8 @@ import { Viewport } from './engine/view/Viewport.js';
 import { loadSettings, saveSettings } from './ai/presets.js';
 import { STAT, clampStat } from './config/stats.js';
 import { spawnRandomObstacle, ENV } from './config/environment.js';
+import { resumeAudio, startMusic, stopMusic, toggleMute, playSfx } from './services/audio.js';
+import { PASSIVES } from './config/passives.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -127,7 +129,9 @@ function persistSettings() {
     monsterIntelligence: monsterStats.intelligence,
     gameSpeed: world.gameSpeed || 1,
     powers1: getSelectedPowerIds('powers1'),
+    passives1: getSelectedPowerIds('passives1'),
     monsterPowers: getSelectedPowerIds('powers2'),
+    monsterPassives: getSelectedPowerIds('passives2'),
   });
 }
 
@@ -164,6 +168,8 @@ function updateRoundState(now, dt) {
 }
 
 function handleRoundEndTransition(now, dt) {
+  playSfx('crack'); // bone crack as the loser crumples
+  playSfx('ko');
   koSlowMo = 0.4;
   const rw = world.fighter1.hp <= 0 ? 2 : 1;
   world.roundHistory.push(rw);
@@ -219,6 +225,7 @@ function applyPendingRoundEnd() {
 
   if (winner.roundsWon >= 2) {
     running = false;
+    stopMusic();
     const d1 = world.fighter1.damageDealt || 0;
     const roundsText = world.roundHistory.map((rw, i) => `R${i + 1}: ${rw === 1 ? 'Hero' : AZURE_ASSASSIN.name}`).join(' · ');
     matchOverEl.innerHTML = `<div class="match-over-inner"><div class="match-over-title">${roundWinner === 1 ? 'Hero' : AZURE_ASSASSIN.name} Victory!</div><div class="match-over-sub">Best of 3</div><div class="match-over-rounds">${roundsText}</div><div class="match-over-stats">Total Damage: ${Math.round(d1)}</div><button type="button" class="match-over-replay" id="matchOverReplay">Back to Setup</button></div>`;
@@ -245,13 +252,15 @@ function createFighters() {
 
   world.fighter1 = new Fighter(0, color1, -ARENA.START_OFFSET, 1);
   world.fighter1.setStats(heroStats);
+  world.fighter1.passives = getSelectedPowerIds('passives1');
 
   // Initialize Monster (power/intelligence overridable, other traits fixed)
   const m = AZURE_ASSASSIN;
   world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1);
   world.fighter2.setPowers(getSelectedPowerIds('powers2'));
   world.fighter2.setStats(monsterStats);
-  world.fighter2.passives = m.passives || [];
+  const selectedPassives = getSelectedPowerIds('passives2');
+  world.fighter2.passives = selectedPassives.length ? selectedPassives : (m.passives || []);
   world.fighter2.scale = m.scale || 1;
 
   world.fighters = [world.fighter1, world.fighter2];
@@ -275,17 +284,23 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
+  uiManager?.buildPowerButtons('passives1', PASSIVES, settings.passives1 || [], (wrap) => {
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
   uiManager?.buildPowerButtons('powers2', POWERS, settings.monsterPowers || AZURE_ASSASSIN.powers, (wrap) => {
     if (running) syncPowersFromUI();
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
 
+  uiManager?.buildPowerButtons('passives2', PASSIVES, settings.monsterPassives || AZURE_ASSASSIN.passives, (wrap) => {
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+
   const speedEl = document.getElementById('gameSpeed');
   if (speedEl) speedEl.value = settings.gameSpeed || 1;
-
-  const passivesEl = document.getElementById('monsterPassives');
-  if (passivesEl) passivesEl.textContent = (AZURE_ASSASSIN.passives || []).join(', ') || 'none';
 }
 
 function initUI() {
@@ -308,6 +323,8 @@ function initUI() {
       createFighters();
       running = true;
       world.roundState = 'fighting';
+      resumeAudio();
+      startMusic();
     },
     onReset: () => fullReset(),
     onSettingsChange: () => persistSettings(),
@@ -327,6 +344,7 @@ function initUI() {
 
 function fullReset() {
   running = false;
+  stopMusic();
   world.reset();
   matchOverEl?.classList.remove('visible');
   countdownEl?.classList.remove('visible');
@@ -397,10 +415,12 @@ function update(dt) {
   [world.fighter1, world.fighter2].forEach(f => {
     if (f.needsDashDust) {
       spawnDashDust(world.particles, f.x, 810, f.facing, secureRandom);
+      playSfx('dash');
       f.needsDashDust = false;
     }
     if (f.needsLandingDust) {
       spawnLandingDust(world.particles, f.x, 810, 100, secureRandom);
+      playSfx('land');
       f.needsLandingDust = false;
     }
   });
@@ -427,16 +447,67 @@ function update(dt) {
   }
 }
 
+// Drive sound effects from world state (kept out of the pure simulation).
+let lastSkillSfxAt = 0;
+const SKILL_SFX = {
+  fireball: 'projectile', shuriken: 'projectile', flameShower: 'projectile',
+  iceSpikes: 'ice', heal: 'heal', cloneJutsu: 'clone', sharingan: 'sharinganActivate',
+  spectralDash: 'dash', earthWall: 'skill'
+};
+
+function observeAudio() {
+  // Impacts & effects — play once per effect (first time we see it).
+  world.hitEffects.forEach(h => {
+    if (h._sfx) return;
+    h._sfx = true;
+    if (h.sharingan) playSfx('sharinganActivate'); // dark horror awakening sting
+    else if (h.sharinganWarp || h.sharinganDash) playSfx('warp');
+    else if (h.crit) playSfx('crit');
+    else if (h.block || h.clash) playSfx('block');
+    else if (h.ice) playSfx('ice');
+    else if (h.fire || h.shinra) playSfx('fire');
+    else if (h.heal) playSfx('heal');
+    else if (h.dmg > 0) playSfx(h.heavy ? 'hitHeavy' : 'hit');
+  });
+
+  // Per-fighter: attack swings, jumps, and the bone-crack when a body goes limp.
+  [world.fighter1, world.fighter2].forEach(f => {
+    if (!f) return;
+    const atkId = f.currentAttack ? f.currentAttack.started : 0;
+    if (atkId && f._swingSfxId !== atkId) { f._swingSfxId = atkId; playSfx('swing'); }
+    const onG = f.onGround();
+    if (f._prevOnGround && !onG && (f.vy || 0) < -250) playSfx('jump');
+    f._prevOnGround = onG;
+    const hasRagdoll = !!f.staggerRagdoll;
+    if (hasRagdoll && !f._hadRagdoll) playSfx('crack'); // ragdoll just activated
+    f._hadRagdoll = hasRagdoll;
+  });
+
+  // Skill casts (from the skill feed).
+  if (skillFeed[0] && skillFeed[0].at !== lastSkillSfxAt) {
+    lastSkillSfxAt = skillFeed[0].at;
+    playSfx(SKILL_SFX[skillFeed[0].powerId] || 'skill');
+  }
+}
+
 function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
   lastTime = timestamp;
   update(dt);
+  if (running) observeAudio();
   viewport.render(world, performance.now());
   requestAnimationFrame(gameLoop);
 }
 
 // 4. Initialization Start
 initUI();
+// Unlock audio on the first user gesture (browser autoplay policy), and allow
+// muting with the M key.
+window.addEventListener('pointerdown', () => resumeAudio(), { once: true });
+window.addEventListener('keydown', (e) => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  if (e.key === 'm' || e.key === 'M') toggleMute();
+});
 window.addEventListener('resize', () => viewport.resize());
 lastTime = performance.now();
 requestAnimationFrame(gameLoop);

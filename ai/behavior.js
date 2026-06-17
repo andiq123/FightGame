@@ -2,8 +2,9 @@ import { POSE } from '../entities/fighter.js';
 import { executePower } from '../entities/powers/index.js';
 import { faceToward, buildCtx } from './context.js';
 import { decideAction, recordJutsuUse, hasUrgentInterrupt } from './decide.js';
-import { PHYSICS, SHARINGAN } from '../config/constants.js';
+import { PHYSICS, SHARINGAN, AI, COMBAT, FIGHTER } from '../config/constants.js';
 import { getStaminaSpeedMultiplier } from '../engine/physics.js';
+import { agilityProfile, gate, MASTERY } from '../config/stats.js';
 
 export { faceToward };
 
@@ -58,8 +59,11 @@ function applyLocomotion(fighter, dir, run, idle, now) {
   const nextPose = shouldRun ? POSE.run : POSE.walk;
   const speed = shouldRun ? PHYSICS.RUN_SPEED : PHYSICS.WALK_SPEED;
   const staminaSpeed = getStaminaSpeedMultiplier(fighter);
-  const targetVx = dir * speed * (fighter.speedMult || 1) * staminaSpeed;
-  const accel = shouldRun ? 0.72 : 0.62;
+  // Agility (intelligence) edge: a master reaches and holds top speed a touch
+  // faster and accelerates crisply; a novice is sluggish. All from one model.
+  const agi = agilityProfile(fighter.moveAgility ?? 0.5);
+  const targetVx = dir * speed * (fighter.speedMult || 1) * staminaSpeed * agi.speedMult;
+  const accel = Math.min(0.95, (shouldRun ? 0.72 : 0.62) * agi.accelMult);
   fighter.vx += (targetVx - fighter.vx) * accel;
 
   if (fighter.pose !== nextPose || fighter.moveDir !== dir) {
@@ -73,7 +77,10 @@ function applyIntentionalBrake(fighter, now, dt = DEFAULT_FRAME_DT) {
   if (!fighter.onGround() || !canUseLocomotion(fighter, now)) return false;
   if (![POSE.idle, POSE.walk, POSE.run, POSE.recover].includes(fighter.pose)) return false;
 
-  const brake = (PHYSICS.MOVE_BRAKE_PER_SEC ?? 2200) * Math.max(0.001, dt);
+  // Stopping is body control: a master halts almost instantly to plant a strike;
+  // a novice slides for a long way (low friction), overshooting the opponent.
+  const agi = agilityProfile(fighter.moveAgility ?? 0.5);
+  const brake = (PHYSICS.MOVE_BRAKE_PER_SEC ?? 2200) * agi.brakeMult * Math.max(0.001, dt);
   fighter.vx = moveTowardZero(fighter.vx, brake);
   fighter.isRunning = false;
 
@@ -249,8 +256,34 @@ const ACTION_HANDLERS = {
   }
 };
 
+// Reactive dodge-cancel: cancel attack-recovery into an i-frame dodge to slip an
+// incoming attack. Scales hard with skill — a master slips almost everything even
+// while pressing the attack; a novice can't and just eats it.
+function maybeDodgeCancel(fighter, opponent, stats, now, rng) {
+  if (fighter.staggerRagdoll || !fighter.onGround() || !opponent) return;
+  const skill = stats.skill ?? (stats.reaction ?? 50) / 100;
+  if (rng() > gate(skill, MASTERY.REACT_LIGHT)) return;           // reaction gate (→1.0 at lvl20)
+  if (Math.abs(fighter.x - opponent.x) > (AI.COMBAT_ENTER ?? 185)) return;
+  const oppHb = opponent.getAttackHitbox(now);
+  const oppHeavyWindup = opponent.currentAttack && !oppHb && (opponent.currentAttack.data?.damage || 0) >= 12;
+  if (!oppHb && !oppHeavyWindup) return;                          // no incoming attack
+  const cur = fighter.currentAttack;
+  const lateAttack = cur && (now - cur.started) >= cur.data.duration * (COMBAT.CANCEL_AFTER ?? 0.55);
+  if (!lateAttack && !fighter.status.active('recovery', now)) return; // can only cancel recovery, not active frames
+  if (!fighter.hasStamina(FIGHTER.DASH_STAMINA ?? 14)) return;
+  fighter.currentAttack = null;
+  fighter.status.clear('recovery');
+  fighter.startDash(opponent.x > fighter.x ? -1 : 1, now);
+}
+
 export function executeAI(fighter, opponent, stats, now, rng, hitEffects = [], projectiles = [], clones = [], world) {
+  // Expose this fighter's skill for combat accuracy (see engine/combat.js).
+  fighter.aiSkill = stats.skill ?? (stats.reaction ?? 50) / 100;
   if (!fighter.canAct(now)) {
+    // Reactive DODGE-CANCEL: even mid-recovery (after committing to an attack), a
+    // skilled fighter can cancel and slip an incoming attack. This is what lets a
+    // maxed fighter stay aggressive AND nearly untouchable.
+    maybeDodgeCancel(fighter, opponent, stats, now, rng);
     fighter.aiMoveIntent = null;
     return null;
   }

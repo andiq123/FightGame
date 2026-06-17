@@ -5,12 +5,12 @@ import { trySharinganCounter } from '../../engine/combat.js';
 
 registerPower('iceSpikes', {
     name: 'Ice Spikes',
-    cooldown: 10000,
+    cooldown: 7000,
     staminaCost: 30,
     tip: 'Trail of ice pillars that hits low'
 }, {
     score: ({ eyeDist, dist, stats, rng, opponent, fighter, oppHpCritical, hpLow }) => {
-        if (eyeDist < 85 || eyeDist > 360) return 0;
+        if (eyeDist < 50 || eyeDist > 360) return 0; // usable up close as a combo-starter freeze
 
         let s = 45;
 

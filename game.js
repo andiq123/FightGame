@@ -1,10 +1,11 @@
 import { Fighter } from './entities/fighter.js';
-import { HP, ARENA, RENDER, EFFECT_DURATION } from './config/constants.js';
+import { ARENA, RENDER, EFFECT_DURATION } from './config/constants.js';
 import { tickParticles, spawnHealParticles, spawnFireballLaunch, spawnClonePoof, spawnShinraTensei, spawnLightningCutter, spawnEarthDust, spawnVortex, spawnFrost, spawnDragonFire, spawnSpectralTrail, spawnDashDust, spawnLandingDust } from './services/particleSystem.js';
-import { updateHUD, getFighterDomId } from './services/hud.js';
+import { updateHUD } from './services/hud.js';
 import { World } from './engine/core/World.js';
 import { Viewport } from './engine/view/Viewport.js';
-import { AI_INTELLIGENCE_MAX, getLevelStats, loadSettings, saveSettings } from './ai/presets.js';
+import { loadSettings, saveSettings } from './ai/presets.js';
+import { STAT, clampStat } from './config/stats.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -46,7 +47,11 @@ const matchOverEl = document.getElementById('matchOver');
 const countdownEl = document.getElementById('countdown');
 
 let lastTime = 0;
-let intelligence1 = 12;
+// Two 1–20 levels per fighter (see config/stats.js): power drives HP/damage/
+// defense, intelligence drives the AI brain. Both hero and monster are editable.
+const STAT_KEYS = ['power', 'intelligence'];
+const heroStats = { power: STAT.DEFAULT, intelligence: STAT.DEFAULT };
+const monsterStats = { power: AZURE_ASSASSIN.power, intelligence: AZURE_ASSASSIN.intelligence };
 let running = false;
 let skillFeed = [];
 let koSlowMo = 0;
@@ -70,35 +75,42 @@ const SPAWN_EFFECTS = {
 };
 
 // 2. Helper Functions
-function getFighterHealth(fighterIndex) {
-  const inp = document.getElementById(getFighterDomId(fighterIndex, 'hpSet'));
-  const v = parseInt(inp?.value || HP.DEFAULT, 10);
-  return isNaN(v) ? HP.DEFAULT : Math.max(HP.MIN, Math.min(HP.MAX, v));
-}
-
 function getSelectedPowerIds(containerId) {
   return [...document.querySelectorAll(`#${containerId} .power-btn.selected`)].map(b => b.dataset.power);
 }
 
-function clampIntelligence(value, fallback = 48) {
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : Math.max(0, Math.min(AI_INTELLIGENCE_MAX, parsed));
+// Both fighters share one slider convention: <key>1 = hero, <key>2 = monster.
+const statsFor = (suffix) => (suffix === 1 ? heroStats : monsterStats);
+
+// Read the Power/Intelligence sliders for one fighter into its stats object.
+function readStatsFromUI(suffix) {
+  const stats = statsFor(suffix);
+  STAT_KEYS.forEach(key => {
+    const el = document.getElementById(`${key}${suffix}`);
+    if (el) stats[key] = clampStat(el.value, stats[key]);
+  });
+  updateStatHud(suffix);
 }
 
-function setHeroIntelligence(value) {
-  intelligence1 = clampIntelligence(value, intelligence1);
-  const inputEl = document.getElementById('intelligence1');
-  const rangeEl = document.getElementById('intelligenceRange1');
-  if (inputEl) inputEl.value = intelligence1;
-  if (rangeEl) rangeEl.value = intelligence1;
-  if (hudEls.aiLevel1) hudEls.aiLevel1.textContent = `AI ${intelligence1}`;
+// Push a stats object back onto its sliders + value labels.
+function applyStatsToUI(suffix) {
+  const stats = statsFor(suffix);
+  STAT_KEYS.forEach(key => {
+    const slider = document.getElementById(`${key}${suffix}`);
+    const valEl = document.getElementById(`${key}Val${suffix}`);
+    if (slider) slider.value = stats[key];
+    if (valEl) valEl.textContent = stats[key];
+  });
+  updateStatHud(suffix);
 }
 
-function syncStatsFromUI(fighterIndex, value) {
-  if (fighterIndex !== 0) return;
-  const inputEl = document.getElementById('intelligence1');
-  const rangeEl = document.getElementById('intelligenceRange1');
-  setHeroIntelligence(value ?? inputEl?.value ?? rangeEl?.value);
+function updateStatHud(suffix) {
+  const stats = statsFor(suffix);
+  const lvlEl = document.getElementById(`hudLevel${suffix}`);
+  if (lvlEl) lvlEl.textContent = `PWR ${stats.power}`;
+  if (suffix === 1 && hudEls.aiLevel1) hudEls.aiLevel1.textContent = `INT ${stats.intelligence}`;
+  const fighter = suffix === 1 ? world.fighter1 : world.fighter2;
+  if (fighter) fighter.setStats(stats);
 }
 
 function syncPowersFromUI() {
@@ -110,31 +122,14 @@ function syncPowersFromUI() {
 
 function persistSettings() {
   saveSettings({
-    level1: parseInt(document.getElementById('level1')?.value || 1, 10),
-    intelligence1,
+    power: heroStats.power,
+    intelligence: heroStats.intelligence,
+    monsterPower: monsterStats.power,
+    monsterIntelligence: monsterStats.intelligence,
     gameSpeed: world.gameSpeed || 1,
     powers1: getSelectedPowerIds('powers1'),
     monsterPowers: getSelectedPowerIds('powers2'),
-    hp1: parseInt(document.getElementById('hpSet1')?.value || 100, 10),
   });
-}
-
-function syncLevel(fighterIndex, level) {
-  const fighter = fighterIndex === 0 ? world.fighter1 : world.fighter2;
-  const stats = getLevelStats(level);
-
-  if (fighter) {
-    fighter.level = level;
-    fighter.maxHp = stats.hp;
-    fighter.hp = stats.hp; // Reset HP to max on level sync
-    fighter.levelDamageMult = stats.damageMult;
-    fighter.levelDefenseMult = stats.defenseMult;
-  }
-
-  const valEl = document.getElementById(`levelVal${fighterIndex + 1}`);
-  if (valEl) valEl.textContent = level;
-  const hudEl = document.getElementById(`hudLevel${fighterIndex + 1}`);
-  if (hudEl) hudEl.textContent = `Lvl ${level}`;
 }
 
 function getCameraX() {
@@ -163,7 +158,6 @@ function updateRoundState(now, dt) {
   if (world.roundCountdown <= 0) {
     world.roundState = 'fighting';
     countdownEl?.classList.remove('visible');
-    if (world.fighter1) world.fighter1.maxHp = getFighterHealth(0);
     world.fighter1?.resetForRound(-ARENA.START_OFFSET, 1);
     world.fighter2?.resetForRound(ARENA.START_OFFSET, -1);
     world.smoothCamX = getCameraX();
@@ -231,8 +225,6 @@ function applyPendingRoundEnd() {
   } else {
     world.roundState = 'countdown';
     world.roundCountdown = 2.5;
-    if (world.fighter1) world.fighter1.maxHp = getFighterHealth(0);
-    if (world.fighter2) world.fighter2.maxHp = world.fighter2.maxHp;
     if (countdownEl) {
       countdownEl.textContent = 'ROUND ' + (world.roundHistory.length + 1);
       countdownEl.classList.add('visible');
@@ -247,30 +239,33 @@ function applyPendingRoundEnd() {
 }
 
 function createFighters() {
-  const hp1 = getFighterHealth(0);
   const color1 = document.getElementById('color1')?.value || '#3db8d4';
 
-  world.fighter1 = new Fighter(0, color1, -ARENA.START_OFFSET, 1, hp1);
+  world.fighter1 = new Fighter(0, color1, -ARENA.START_OFFSET, 1);
+  world.fighter1.setStats(heroStats);
 
-  // Initialize Monster
+  // Initialize Monster (power/intelligence overridable, other traits fixed)
   const m = AZURE_ASSASSIN;
-  const monsterPowers = getSelectedPowerIds('powers2');
-  world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1, m.hp);
-  world.fighter2.setPowers(monsterPowers);
-  world.fighter2.level = m.level;
+  world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1);
+  world.fighter2.setPowers(getSelectedPowerIds('powers2'));
+  world.fighter2.setStats(monsterStats);
   world.fighter2.passives = m.passives || [];
   world.fighter2.scale = m.scale || 1;
 
   world.fighters = [world.fighter1, world.fighter2];
 
-  // Correctly sync monster level and multipliers
-  syncLevel(1, m.level);
-
+  updateStatHud(1);
+  updateStatHud(2);
   syncPowersFromUI();
 }
 
 function applySettings(settings) {
-  setHeroIntelligence(settings.intelligence1 ?? 12);
+  heroStats.power = clampStat(settings.power, heroStats.power);
+  heroStats.intelligence = clampStat(settings.intelligence, heroStats.intelligence);
+  monsterStats.power = clampStat(settings.monsterPower, AZURE_ASSASSIN.power);
+  monsterStats.intelligence = clampStat(settings.monsterIntelligence, AZURE_ASSASSIN.intelligence);
+  applyStatsToUI(1);
+  applyStatsToUI(2);
   world.gameSpeed = settings.gameSpeed || 1;
 
   uiManager?.buildPowerButtons('powers1', POWERS, settings.powers1, (wrap) => {
@@ -283,49 +278,24 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
-  const hp1 = document.getElementById('hpSet1');
-  if (hp1) hp1.value = settings.hp1 || HP.DEFAULT;
 
   const speedEl = document.getElementById('gameSpeed');
   if (speedEl) speedEl.value = settings.gameSpeed || 1;
 
-  if (settings.level1) {
-    const l1El = document.getElementById('level1');
-    if (l1El) l1El.value = settings.level1;
-    syncLevel(0, settings.level1);
-  }
-
-  syncLevel(1, AZURE_ASSASSIN.level);
-  renderMonsterStats();
-}
-
-function renderMonsterStats() {
-  const setText = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
-  };
-  setText('monsterStatId', AZURE_ASSASSIN.id);
-  setText('monsterStatName', AZURE_ASSASSIN.name);
-  setText('monsterStatHp', AZURE_ASSASSIN.hp);
-  setText('monsterStatAi', AZURE_ASSASSIN.intelligence);
-  setText('monsterStatLevel', AZURE_ASSASSIN.level);
-  setText('monsterStatScale', AZURE_ASSASSIN.scale);
-  setText('monsterStatColor', AZURE_ASSASSIN.color);
-  setText('monsterStatPassives', (AZURE_ASSASSIN.passives || []).join(', ') || 'none');
-  setText('monsterStatPowers', AZURE_ASSASSIN.powers.join(', '));
-  const swatch = document.getElementById('monsterColorSwatch');
-  if (swatch) swatch.style.background = AZURE_ASSASSIN.color;
+  const passivesEl = document.getElementById('monsterPassives');
+  if (passivesEl) passivesEl.textContent = (AZURE_ASSASSIN.passives || []).join(', ') || 'none';
 }
 
 function initUI() {
   uiManager = new UIManager({
     onHeroConfirmed: () => {
-      syncStatsFromUI(0);
+      readStatsFromUI(1);
       persistSettings();
     },
     onStart: () => {
       if (running) return;
-      syncStatsFromUI(0);
+      readStatsFromUI(1);
+      readStatsFromUI(2);
       persistSettings();
       matchOverEl?.classList.remove('visible');
       countdownEl?.classList.remove('visible');
@@ -338,8 +308,7 @@ function initUI() {
     },
     onReset: () => fullReset(),
     onSettingsChange: () => persistSettings(),
-    onStatsSync: (idx, value) => { syncStatsFromUI(idx, value); persistSettings(); },
-    onLevelChange: (idx, lvl) => { syncLevel(idx, lvl); persistSettings(); },
+    onStatChange: (suffix) => { readStatsFromUI(suffix); persistSettings(); },
     onSpeedChange: (speed) => {
       world.gameSpeed = speed;
       uiManager.updateSpeedUI(speed);
@@ -409,7 +378,7 @@ function update(dt) {
     }
   });
 
-  aiSystem.update(world, dt, now, secureRandom, intelligence1, AZURE_ASSASSIN.intelligence, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
+  aiSystem.update(world, dt, now, secureRandom, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
   combatSystem.update(world, dt, now, secureRandom);
   physicsSystem.update(world, dt, now, secureRandom);
 

@@ -1,5 +1,56 @@
 # Architecture & Design Principles
 
+## Fighter attributes (config/stats.js)
+
+A fighter has exactly **two** configurable levels, both on the same **1–20**
+scale, defined once in `config/stats.js` and used everywhere. Both the hero and
+the monster use the same two knobs (the monster's defaults are overridable).
+
+| Level | Governs | 1 → 20 (linear) |
+|---|---|---|
+| `power` | HP **and** melee damage, defense, jutsu damage | HP 200→2000; dmg ×1.0→×2.5; taken ×1.0→×0.5; skill ×1.0→×2.5 |
+| `intelligence` | AI decision quality (the only brain knob) | reaction 360ms→60ms; skill gates 0→1; lvl 16+ expert, lvl 20 nightmare |
+
+Two fighters with the same `power` are physically identical (same HP, attack,
+defense, skill damage); same `intelligence` → identical decisions.
+
+**Intelligence is decisive.** Its primary lever is reaction time: a fighter
+re-decides every ~520ms at level 1 vs ~55ms at level 20 (`reactionIntervalMs`),
+so a slow brain literally eats combos it never sees. On top of that, the defense
+and punish gates in `ai/decide.js` scale with raw skill (so even a few levels
+sharply improve blocking/punishing), while mid-range separation uses
+`execSkill = skill^1.4`. Measured head-to-head (equal Power, both sides
+averaged): 20 vs 1 ≈ 100%, 20 vs 5 ≈ 98%, 10 vs 5 ≈ 81%, 5 vs 1 ≈ 71%,
+10 vs 10 ≈ 50%. A maxed fighter is essentially untouchable by a novice.
+
+**Skill counters scale with intelligence** (`ai/decide.js`): a smart fighter
+*knows* the right answer to each jutsu, a dumb one doesn't. Clones are one-hit
+decoys — `counterClone` makes a high-IQ fighter go pop them (awareness
+`0.12 + skill·0.88`) while a low-IQ fighter ignores them and gets harassed.
+`counterHeal` makes a smart fighter interrupt a healing opponent. Projectiles
+(`evadeProjectile`) and walls (obstacle pre-processing) are likewise countered
+only when skill is high enough. Mappings are
+linear so every step is felt; intelligence adds tier flags so 20 ("nightmare")
+feels distinct from 19. `Fighter.setStats({power, intelligence})` recomputes
+everything via `deriveFromPower()`; `getSkillDamage(fighter, base)` applies the
+power multiplier at each skill's damage site. The AI reads each fighter's own
+`fighter.intelligence`.
+
+## AI: one brain, not three
+
+The AI is a single utility-based decider (`ai/decide.js`). Each decision tick:
+1. `ai/context.js` builds sensing data **once** (vision raycast, projectile
+   threat, frame advantage, ranges, stamina/HP flags).
+2. `decideAction(ctx)` walks a flat, priority-ordered list of considerations
+   (evade → defend → punish → recover → survive → anti-air → clone → power →
+   close/attack) and returns the first action that fires.
+3. `ai/behavior.js` executes the action and briefly commits to it so the AI
+   doesn't jitter; an urgent threat (`hasUrgentInterrupt`) breaks the commit.
+
+Powers score themselves via each power's own `score(ctx)` — there is **no**
+separate jutsu-profile table, strategy/mood layer, or state machine. `pickPower`
+only adds a stamina-budget gate, the global cooldown, and a repeat penalty.
+
 ## SOLID
 
 ### Single Responsibility (SRP)
@@ -43,7 +94,9 @@ services/hud.js         - updateHUD, updatePowerCooldownUI, updateJutsuHUD
 services/particleSystem.js - spawn*, tickParticles
 engine/                 - physics, combat, renderer, ragdoll, projectileThreat, raycast
 entities/               - fighter, attacks, powers/
-ai/                     - behavior, stateMachine, presets
+ai/                     - context (sensing), decide (single utility brain),
+                          behavior (action execution + locomotion),
+                          staminaStrategy, presets
 game.js                 - minimal orchestrator
 ```
 

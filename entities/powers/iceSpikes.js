@@ -1,5 +1,6 @@
 import { registerPower } from './registry.js';
 import { SKILL_DAMAGE } from '../../config/constants.js';
+import { getSkillDamage } from '../../config/stats.js';
 
 registerPower('iceSpikes', {
     name: 'Ice Spikes',
@@ -67,7 +68,7 @@ registerPower('iceSpikes', {
             // Damage logic (immediate or slightly windowed is better than setTimeout)
             if (distToOpp < 50 && opponent.y >= -30) {
                 const dmg = (SKILL_DAMAGE.ICE_SPIKES || 32) / 5;
-                opponent.takeDamage(dmg, false, fighter.x, now);
+                opponent.takeDamage(getSkillDamage(fighter, dmg), false, fighter.x, now);
                 opponent.vx += dir * 150; // Small push
                 opponent.status.set('frozen', now + 3000); // 3 seconds freeze
                 opponent.status.set('deepFreeze', now + 2000); // 2 seconds deep freeze (breaks on hit)

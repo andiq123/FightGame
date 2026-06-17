@@ -18,7 +18,7 @@
     <canvas id="canvas"></canvas>
     <header class="hud-top">
       <div class="fighter-hud f1">
-        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">Lvl 1</span><span class="hud-ai-level" id="hudAiLevel1">AI 12</span><span class="hud-health" id="hudHealth1">200 / 200</span></span>
+        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">S5 D5 P5 I5</span><span class="hud-ai-level" id="hudAiLevel1">AI 5</span><span class="hud-health" id="hudHealth1">200 / 200</span></span>
         <div class="bar-wrap">
           <div class="hp-track">
             <div class="hp-fill" id="hp1"></div>
@@ -37,7 +37,7 @@
         <div class="vs">VS</div>
       </div>
       <div class="fighter-hud f2">
-        <span class="hud-label">Azure Assassin <span class="hud-level" id="hudLevel2">Lvl 1</span><span class="hud-health" id="hudHealth2">1800 / 1800</span></span>
+        <span class="hud-label">Azure Assassin <span class="hud-level" id="hudLevel2">S16 D15 P18 I20</span><span class="hud-health" id="hudHealth2">1800 / 1800</span></span>
         <div class="bar-wrap">
           <div class="hp-track">
             <div class="hp-fill" id="hp2"></div>
@@ -54,12 +54,10 @@
     </header>
     <div class="arena-hud">
       <div class="jutsu-hud jutsu-f1">
-        <div class="jutsu-queue" id="jutsuQueue1"></div>
         <div class="jutsu-slots" id="jutsuSlots1"></div>
       </div>
       <div class="jutsu-feed" id="jutsuFeed"></div>
       <div class="jutsu-hud jutsu-monster">
-        <div class="jutsu-queue" id="jutsuQueue2"></div>
         <div class="jutsu-slots" id="jutsuSlots2"></div>
       </div>
     </div>
@@ -89,24 +87,22 @@
           <p class="selection-sub">Configure your hero before entering the fray</p>
 
           <div class="hero-config-grid">
-            <div class="config-section">
-              <div class="form-row">
-                <label>HP</label>
-                <input type="number" id="hpSet1" min="100" max="5000" value="400">
-              </div>
-              <div class="form-row">
-                <label for="intelligence1">AI Intelligence</label>
-                <div class="intelligence-control">
-                  <input type="range" id="intelligenceRange1" min="0" max="500" step="1" value="12" aria-label="Hero AI intelligence">
-                  <input type="number" id="intelligence1" min="0" max="500" step="1" value="12" inputmode="numeric" aria-label="Hero AI intelligence value">
+            <div class="config-section stat-card">
+              <div class="stat-row">
+                <div class="stat-head">
+                  <label class="stat-name" for="power1">Power Level</label>
+                  <span class="stat-value" id="powerVal1">5</span>
                 </div>
+                <input type="range" class="stat-range" id="power1" min="1" max="20" step="1" value="5" aria-label="Hero power level">
+                <p class="stat-desc">HP, attack damage, defense &amp; jutsu power</p>
               </div>
-              <div class="form-row">
-                <label>Level</label>
-                <div class="level-slider-wrap">
-                  <input type="range" id="level1" min="1" max="20" value="1">
-                  <span class="level-val" id="levelVal1">1</span>
+              <div class="stat-row">
+                <div class="stat-head">
+                  <label class="stat-name" for="intelligence1">Intelligence Level</label>
+                  <span class="stat-value" id="intelligenceVal1">5</span>
                 </div>
+                <input type="range" class="stat-range" id="intelligence1" min="1" max="20" step="1" value="5" aria-label="Hero intelligence level">
+                <p class="stat-desc">Reaction speed &amp; combat decision-making</p>
               </div>
             </div>
 
@@ -129,48 +125,27 @@
       <div class="hero-screen-inner">
         <div class="hero-panel">
           <h2 class="selection-title">Azure Assassin</h2>
-          <p class="selection-sub">Review the enemy build before the fight starts</p>
+          <p class="selection-sub">Defaults shown below — override the enemy build before the fight starts</p>
 
           <div class="monster-config-grid">
-            <div class="config-section monster-stats-panel">
-              <div class="monster-stat-grid">
-                <div class="monster-stat">
-                  <span>ID</span>
-                  <strong id="monsterStatId">assassin</strong>
+            <div class="config-section stat-card">
+              <div class="stat-row">
+                <div class="stat-head">
+                  <label class="stat-name" for="power2">Power Level</label>
+                  <span class="stat-value" id="powerVal2">18</span>
                 </div>
-                <div class="monster-stat">
-                  <span>Name</span>
-                  <strong id="monsterStatName">Azure Assassin</strong>
-                </div>
-                <div class="monster-stat">
-                  <span>HP</span>
-                  <strong id="monsterStatHp">1800</strong>
-                </div>
-                <div class="monster-stat">
-                  <span>AI</span>
-                  <strong id="monsterStatAi">98</strong>
-                </div>
-                <div class="monster-stat">
-                  <span>Level</span>
-                  <strong id="monsterStatLevel">20</strong>
-                </div>
-                <div class="monster-stat">
-                  <span>Scale</span>
-                  <strong id="monsterStatScale">1.12</strong>
-                </div>
-                <div class="monster-stat">
-                  <span>Color</span>
-                  <strong><i class="monster-color-swatch" id="monsterColorSwatch"></i><span id="monsterStatColor">#00008b</span></strong>
-                </div>
-                <div class="monster-stat">
-                  <span>Passives</span>
-                  <strong id="monsterStatPassives">vampirism, blur</strong>
-                </div>
-                <div class="monster-stat monster-stat-wide">
-                  <span>Default Jutsu</span>
-                  <strong id="monsterStatPowers">spectralDash, cloneJutsu, lightningCutter</strong>
-                </div>
+                <input type="range" class="stat-range" id="power2" min="1" max="20" step="1" value="18" aria-label="Enemy power level">
+                <p class="stat-desc">HP, attack damage, defense &amp; jutsu power</p>
               </div>
+              <div class="stat-row">
+                <div class="stat-head">
+                  <label class="stat-name" for="intelligence2">Intelligence Level</label>
+                  <span class="stat-value" id="intelligenceVal2">20</span>
+                </div>
+                <input type="range" class="stat-range" id="intelligence2" min="1" max="20" step="1" value="20" aria-label="Enemy intelligence level">
+                <p class="stat-desc">Reaction speed &amp; combat decision-making</p>
+              </div>
+              <p class="stat-note">Passives: <span id="monsterPassives">vampirism, blur</span></p>
             </div>
 
             <div class="config-section">

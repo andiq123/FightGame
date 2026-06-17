@@ -1,6 +1,7 @@
 import { registerPower } from './registry.js';
 import { POSE } from '../fighter.js';
 import { applyKnockback } from '../../engine/physics.js';
+import { getSkillDamage } from '../../config/stats.js';
 import { createRagdoll } from '../../engine/ragdoll.js';
 import { createHitEffect } from '../../core/hitEffectFactory.js';
 import { getRagdollOriginY, getHitEffectY } from '../../core/coordinates.js';
@@ -12,7 +13,7 @@ const REPULSE_DEFLECT_MS = 280;
 
 function applyShinraToTarget(caster, target, now, hitEffects, blocking) {
   const dmg = blocking ? Math.round(SKILL_DAMAGE.SHINRA * 0.3) : SKILL_DAMAGE.SHINRA;
-  const finalDmg = target.takeDamage(dmg, true, caster.x, now);
+  const finalDmg = target.takeDamage(getSkillDamage(caster, dmg), true, caster.x, now);
   caster.damageDealt += finalDmg;
   const knockback = blocking ? REPULSE_KNOCKBACK * 0.4 : REPULSE_KNOCKBACK;
   applyKnockback(target, knockback, caster.x, true, false, false, now);

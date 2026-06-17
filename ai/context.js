@@ -93,8 +93,9 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
 
         // Core Attributes
         intelligence: stats.reaction,
-        isNightmare: stats.reaction >= 95,
-        isExpert: stats.reaction >= 85,
+        skill: stats.skill ?? (stats.reaction ?? 50) / 100, // 0…1 mastery from intelligence level
+        isNightmare: stats.isNightmare === true,
+        isExpert: stats.isExpert === true || stats.isNightmare === true,
 
         // Tactical Data
         frameAdvantage,

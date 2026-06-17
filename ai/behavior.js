@@ -1,9 +1,11 @@
 import { POSE } from '../entities/fighter.js';
 import { executePower } from '../entities/powers/index.js';
-import { evaluateState, getStateAction, faceToward } from './stateMachine.js';
-import { recordJutsuUse } from './jutsuTactics.js';
-import { AI, PHYSICS, AI_STATE } from '../config/constants.js';
+import { faceToward, buildCtx } from './context.js';
+import { decideAction, recordJutsuUse, hasUrgentInterrupt } from './decide.js';
+import { PHYSICS } from '../config/constants.js';
 import { getStaminaSpeedMultiplier } from '../engine/physics.js';
+
+export { faceToward };
 
 const FALLBACK_ATTACK_RATIO = 0.7;
 const FALLBACK_JUMP_RATIO = 0.5;
@@ -111,32 +113,18 @@ export function sustainAIMoveIntent(fighter, now, dt = DEFAULT_FRAME_DT) {
   return applyIntentionalBrake(fighter, now, dt);
 }
 
-function persistState(fighter, state, now) {
-  fighter.aiState = state;
+// Commit briefly to the chosen action so the AI doesn't jitter by re-deciding
+// every tick. Only moves/recovers need a hold — attacks and powers are gated by
+// their own pose locks. Urgent threats interrupt the commit (see executeAI).
+function commitAction(fighter, action, now) {
+  fighter.aiState = action.aiLabel || fighter.aiState || 'approaching';
   fighter.aiStateEnteredAt = now;
-
-  let dur = {
-    [AI_STATE.COMBAT]: AI.STATE_COMBAT_MS ?? 360,
-    [AI_STATE.APPROACHING]: AI.STATE_APPROACH_MS ?? 520,
-    [AI_STATE.PUNISHING]: AI.STATE_PUNISH_MS ?? 280,
-    [AI_STATE.DEFENDING]: AI.STATE_DEFEND_MS ?? 240,
-    [AI_STATE.EVADING_PROJECTILE]: 180,
-    [AI_STATE.SHINRA_DEFENSE]: 180,
-    [AI_STATE.REGROUPING]: 700,
-    [AI_STATE.RETREATING]: 620,
-    [AI_STATE.PREPARING]: 500,
-    [AI_STATE.BAITING]: 520,
-    [AI_STATE.PRESSURING]: 460,
-    [AI_STATE.RECHARGING]: 760
-  }[state] ?? AI.STATE_MIN_MS;
-
-  dur = Math.round(dur);
-
-  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'pressure') dur = Math.min(700, dur + 120);
-  if (state === AI_STATE.COMBAT && fighter.aiCombatMode === 'spacing') dur = Math.max(260, dur - 80);
-
+  let dur = 0;
+  if (action.type === 'move') dur = action.commitMs || 360;
+  else if (action.type === 'recover') dur = 220;
+  else if (action.type === 'block') dur = action.duration || 200;
   fighter.aiStateUntil = now + dur;
-  fighter.status.set('aiState', now + dur);
+  if (dur > 0) fighter.status.set('aiState', now + dur);
 }
 
 function actionKey(action) {
@@ -242,35 +230,37 @@ export function executeAI(fighter, opponent, stats, now, rng, hitEffects = [], p
   }
 
   // Cache tactical intelligence for repetition and combo scoring.
-  fighter.aiIntelligence = stats.reaction ?? 50; // Intelligence Decoupling
+  fighter.aiIntelligence = stats.reaction ?? 50;
 
-  const state = evaluateState(fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
-  if (fighter.status.active('aiState', now)) {
+  // One context build per decision — sensing (vision, threats, frame advantage).
+  const ctx = buildCtx(fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
+
+  // Honor the brief action commit unless something urgent demands a re-decide.
+  if (fighter.status.active('aiState', now) && !hasUrgentInterrupt(ctx)) {
     continueMoveIntent(fighter, now);
     return null;
   }
 
-  let action = getStateAction(state, fighter, opponent, stats, now, rng, clones, projectiles, world.obstacles);
+  let action = decideAction(ctx);
   if (!action) return null;
 
   const comboStat = (stats.comboTendency || 50) / 100;
   const intelligence = fighter.aiIntelligence / 100;
 
-  // Relax repetition penalty for high intelligence/combo levels (allows multi-hit strings)
+  // Anti-repetition: break up a string of identical attacks/powers (relaxed for
+  // high combo/intelligence so multi-hit chains still flow).
   const repeatThreshold = 0.58 + (1 - comboStat) * 0.22 - (intelligence * 0.15);
   const maxSame = comboStat > 0.6 ? 3 : 2;
-
   if (isRepeating(fighter, action, maxSame) && (action.type === 'attack' || action.type === 'power') && rng() < repeatThreshold) {
     const toward = faceToward(fighter, opponent);
-    // Don't just stand there, move if repeating too much
-    action = { type: 'move', dir: toward === 1 ? -1 : 1, run: false };
+    action = { type: 'move', dir: toward === 1 ? -1 : 1, run: false, aiLabel: 'approaching' };
   }
 
   recordAction(fighter, action);
 
   const handler = ACTION_HANDLERS[action.type];
   if (handler) {
-    persistState(fighter, state, now); // Persist ONLY if we take a valid action
+    commitAction(fighter, action, now);
     if (action.type === 'power') {
       action.world = world;
       if (!handler(fighter, opponent, action, now, hitEffects, projectiles, clones)) return null;

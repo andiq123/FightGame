@@ -1,5 +1,6 @@
 import { registerPower } from './registry.js';
 import { SKILL_DAMAGE } from '../../config/constants.js';
+import { getSkillDamage } from '../../config/stats.js';
 import { spawnDragonFire } from '../../services/particleSystem.js';
 
 registerPower('dragonRoar', {
@@ -47,7 +48,7 @@ registerPower('dragonRoar', {
                 opponent.status.set('burning', performance.now() + 4000); // REFRESH
             }
 
-            opponent.takeDamage(dmg, true, fighter.x, performance.now());
+            opponent.takeDamage(getSkillDamage(fighter, dmg), true, fighter.x, performance.now());
             if (!opponent.status.active('stagger', performance.now())) {
                 opponent.status.set('stagger', performance.now() + 1500);
             }

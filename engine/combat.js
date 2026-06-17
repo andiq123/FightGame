@@ -9,6 +9,7 @@ import { COMBAT, FIGHTER } from '../config/constants.js';
 
 function applyHitResult(attacker, defender, dmg, now, hitEffects, options = {}) {
   const finalDmg = defender.takeDamage(dmg, options.heavy === true, attacker.x, now);
+  attacker.damageDealt = (attacker.damageDealt || 0) + finalDmg; // count melee toward damage stat
   if (options.extra) {
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), ...options.extra }));
   }

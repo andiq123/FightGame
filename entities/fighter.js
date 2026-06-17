@@ -2,6 +2,7 @@ import { getPower, getPowerStaminaCost } from './powers/index.js';
 import { isRagdollSettled } from '../engine/ragdoll.js';
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, ATTACK_DATA } from './attacks.js';
 import { ARENA, PHYSICS, HP, COMBAT, FIGHTER } from '../config/constants.js';
+import { STAT, clampStat, powerProfile } from '../config/stats.js';
 import { StatusManager } from './components/StatusManager.js';
 import { ActionBuffer } from './components/ActionBuffer.js';
 import {
@@ -28,9 +29,11 @@ class Fighter {
     this.facing = facing;
     this.vx = 0;
     this.vy = 0;
-    this.level = 1;
-    this.levelDamageMult = 1;
-    this.levelDefenseMult = 1;
+    // Two 1–20 levels (see config/stats.js). `power` drives HP + the physical
+    // multipliers below; `intelligence` drives the AI brain. Kept in sync via
+    // setStats().
+    this.power = STAT.DEFAULT;
+    this.intelligence = STAT.DEFAULT;
     this.maxHp = Math.max(HP.MIN, Math.min(HP.MAX, maxHp));
     this.hp = this.maxHp;
     this.stamina = FIGHTER.DEFAULT_MAX_STAMINA;
@@ -39,8 +42,9 @@ class Fighter {
     this.poseTime = 0;
     this.currentAttack = null;
     this.speedMult = 1;
-    this.damageMult = 1;
-    this.damageTakenMult = 1;
+    this.damageMult = 1;       // melee dealt   — derived from power
+    this.damageTakenMult = 1;  // melee taken   — derived from power
+    this.powerMult = 1;        // skill damage  — derived from power
     this.staggerRagdoll = null;
     this.doubleJumpUsed = false;
     this.wallJumpCooldown = 0;
@@ -64,7 +68,6 @@ class Fighter {
     this.impactFrictionUntil = 0;
     this.aiMoveIntent = null;
     this.aiJutsuHistory = [];
-    this.aiJutsuQueue = [];
     this.blockedMove = null;
     this.poseHistory = [];
     this.attackTrail = [];
@@ -79,6 +82,23 @@ class Fighter {
   setPowers(powerIds) {
     this.powers = powerIds || [];
     this.powers.forEach(p => this.powerCooldowns[p] = 0);
+  }
+
+  // Set the two 1–20 levels and recompute everything derived from power.
+  setStats({ power, intelligence } = {}) {
+    if (power != null) this.power = clampStat(power);
+    if (intelligence != null) this.intelligence = clampStat(intelligence);
+    this.deriveFromPower();
+    this.hp = this.maxHp;
+  }
+
+  // HP, melee damage, defense and skill damage all derive from `power`.
+  deriveFromPower() {
+    const p = powerProfile(this.power);
+    this.maxHp = p.hp;
+    this.damageMult = p.damageMult;
+    this.damageTakenMult = p.damageTakenMult;
+    this.powerMult = p.skillMult;
   }
 
   onGround() { return this.y >= -3; }
@@ -349,9 +369,6 @@ class Fighter {
       this.isRunning = false;
     }
 
-    this.damageMult = this.levelDamageMult;
-    this.damageTakenMult = 1 / this.levelDefenseMult;
-
     // Elemental: Burning (DoT)
     if (this.status.active('burning', now)) {
       if (!this.lastBurnTick) this.lastBurnTick = now;
@@ -479,12 +496,11 @@ class Fighter {
     this.staggerRagdoll = null;
     this.doubleJumpUsed = false;
     this.wallJumpCooldown = 0;
+    this.deriveFromPower(); // keep power/intelligence across rounds (re-derives maxHp + mults)
     this.hp = this.maxHp;
     this.stamina = this.maxStamina;
     this.pose = POSE.idle;
     this.currentAttack = null;
-    this.damageMult = 1;
-    this.damageTakenMult = 1;
     this.damageDealt = 0;
     this.comboCount = 0;
     this.aiState = null;
@@ -492,7 +508,6 @@ class Fighter {
     this.aiStateEnteredAt = 0;
     this.aiActionHistory = [];
     this.aiJutsuHistory = [];
-    this.aiJutsuQueue = [];
     this.dodgeDir = undefined;
     this.dodgeStartAt = undefined;
     this.lastLeftGroundAt = 0;

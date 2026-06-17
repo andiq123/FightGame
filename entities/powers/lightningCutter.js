@@ -1,6 +1,7 @@
 import { registerPower } from './registry.js';
 import { POSE } from '../fighter.js';
 import { applyKnockback } from '../../engine/physics.js';
+import { getSkillDamage } from '../../config/stats.js';
 import { createRagdoll } from '../../engine/ragdoll.js';
 import { createHitEffect } from '../../core/hitEffectFactory.js';
 import { getRagdollOriginY, getHitEffectY } from '../../core/coordinates.js';
@@ -49,7 +50,7 @@ registerPower('lightningCutter', {
     if (dist > RANGE) return false;
     const blocking = opponent.status.active('block', now) || opponent.status.active('blockLow', now);
     const dmg = blocking ? Math.round(DAMAGE * 0.35) : DAMAGE;
-    const finalDmg = opponent.takeDamage(dmg, true, fighter.x, now);
+    const finalDmg = opponent.takeDamage(getSkillDamage(fighter, dmg), true, fighter.x, now);
     fighter.damageDealt += finalDmg;
     opponent.status.set('stun', now + (blocking ? STUN * 0.5 : STUN));
     opponent.status.set('hitFlash', now + 180);

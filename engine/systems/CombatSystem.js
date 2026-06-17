@@ -23,25 +23,14 @@ export class CombatSystem {
         const cloneHitByF1 = checkCloneHit(world.fighter1, world.clones, 1, now);
         const cloneHitByF2 = checkCloneHit(world.fighter2, world.clones, 0, now);
 
+        // A clone is a decoy — any clean melee hit pops it instantly.
         if (cloneHitByF1) {
-            const dmg = hb1 ? hb1.damage : 15;
-            cloneHitByF1.hp -= dmg;
-            if (cloneHitByF1.hp <= 0) {
-                spawnCloneDissolve(world.particles, cloneHitByF1.x, getCloneDissolveY(), secureRandom);
-                world.clones = world.clones.filter(c => c !== cloneHitByF1);
-            } else {
-                spawnHitParticles(world.particles, cloneHitByF1.x, getCloneDissolveY(), hb1?.damage >= 10, secureRandom);
-            }
+            spawnCloneDissolve(world.particles, cloneHitByF1.x, getCloneDissolveY(), secureRandom);
+            world.clones = world.clones.filter(c => c !== cloneHitByF1);
         }
         if (cloneHitByF2) {
-            const dmg = hb2 ? hb2.damage : 15;
-            cloneHitByF2.hp -= dmg;
-            if (cloneHitByF2.hp <= 0) {
-                spawnCloneDissolve(world.particles, cloneHitByF2.x, getCloneDissolveY(), secureRandom);
-                world.clones = world.clones.filter(c => c !== cloneHitByF2);
-            } else {
-                spawnHitParticles(world.particles, cloneHitByF2.x, getCloneDissolveY(), hb2?.damage >= 10, secureRandom);
-            }
+            spawnCloneDissolve(world.particles, cloneHitByF2.x, getCloneDissolveY(), secureRandom);
+            world.clones = world.clones.filter(c => c !== cloneHitByF2);
         }
 
         // 3. Resolve Main Combat

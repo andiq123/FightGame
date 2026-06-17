@@ -13,11 +13,12 @@ export class UIManager {
             startGameBtn: document.getElementById('startGameBtn'),
             stopGameBtn: document.getElementById('stopGameBtn'),
             speedBtns: document.querySelectorAll('.speed-control button, .quick-speed-btn'),
-            hp1: document.getElementById('hpSet1'),
-            intel1: document.getElementById('intelligence1'),
-            intelRange1: document.getElementById('intelligenceRange1'),
-            level1: document.getElementById('level1'),
-            levelVal1: document.getElementById('levelVal1')
+            // Power/Intelligence sliders for both fighters: suffix 1 = hero, 2 = monster.
+            statSliders: [1, 2].flatMap(suffix => ['power', 'intelligence'].map(key => ({
+                suffix,
+                slider: document.getElementById(`${key}${suffix}`),
+                val: document.getElementById(`${key}Val${suffix}`)
+            }))).filter(s => s.slider)
         };
     }
 
@@ -37,12 +38,11 @@ export class UIManager {
 
         elements.stopGameBtn?.addEventListener('click', () => callbacks.onReset?.());
 
-        elements.hp1?.addEventListener('input', () => callbacks.onSettingsChange?.());
-        elements.intel1?.addEventListener('input', () => callbacks.onStatsSync?.(0, elements.intel1.value));
-        elements.intel1?.addEventListener('change', () => callbacks.onStatsSync?.(0, elements.intel1.value));
-        elements.intelRange1?.addEventListener('input', () => callbacks.onStatsSync?.(0, elements.intelRange1.value));
-        elements.level1?.addEventListener('input', () => {
-            callbacks.onLevelChange?.(0, parseInt(elements.level1.value, 10));
+        elements.statSliders.forEach(({ slider, val, suffix }) => {
+            slider.addEventListener('input', () => {
+                if (val) val.textContent = slider.value;
+                callbacks.onStatChange?.(suffix);
+            });
         });
 
 

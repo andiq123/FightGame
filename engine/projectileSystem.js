@@ -157,7 +157,7 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
         return false;
       }
 
-      let dmg = p.damage;
+      let dmg = Math.round(p.damage * (attacker?.powerMult ?? 1)); // Power attribute scales skill damage
       if (blocking) dmg = Math.round(dmg * (p.heavy ? 0.5 : 0.2));
 
       const fromX = p.x - ((p.vx || 0) > 0 ? 1 : -1) * 50;

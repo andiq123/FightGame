@@ -77,7 +77,7 @@ function getComboScale(comboCount) {
 
 function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   const hb = attacker.getAttackHitbox(now);
-  if (!hb || defender.status.active('invincible', now)) return;
+  if (!hb) return;
 
   // One hit per swing: a single attack resolves once, not every active frame.
   // (Prevents stun-lock — combos must come from chained attacks, not one hitbox.)
@@ -88,11 +88,24 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   if (!hitboxOverlap(hb, defender.x)) return;
   if (!withinVerticalReach(hb, attacker, defender)) return;
 
+  // 1a. EVADED: the strike would have connected, but the defender slipped it.
+  // An UNTOUCHABLE defender (e.g. One Strike) auto-slips everything; an i-frame
+  // dodge slips a normal hit — BUT a PERFECT-STRIKE attacker is inevitable, his
+  // blow lands through a dodge (only an untouchable defender can avoid it).
+  const untouchableSlip = defender.traits?.untouchable && secureRandom() < (COMBAT.UNTOUCHABLE_EVADE ?? 0.99);
+  const dodgeSlip = defender.status.active('invincible', now) && !attacker.traits?.perfectStrike;
+  if (untouchableSlip || dodgeSlip) {
+    if (swing) swing.resolved = true;
+    attacker.lastWhiffAt = now;
+    hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), evaded: true }));
+    return;
+  }
+
   // 1b. Accuracy: a clumsy (low-intelligence) fighter mis-times/mis-spaces and
   // WHIFFS a hit that should have landed — so a novice barely connects while a
-  // master lands almost everything. (skill 0.2 ≈ 9% accuracy, skill 1 = 100%.)
+  // master lands almost everything. A PERFECT-STRIKE character never misses.
   const atkSkill = attacker.aiSkill != null ? attacker.aiSkill : 1;
-  const accuracy = accuracyGate(atkSkill);
+  const accuracy = attacker.traits?.perfectStrike ? 1 : accuracyGate(atkSkill);
   if (secureRandom() > accuracy) {
     if (swing) swing.resolved = true;
     attacker.lastWhiffAt = now;
@@ -126,7 +139,7 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
 
   if (successfullyBlocked) {
     if (swing) swing.resolved = true;
-    attacker.stamina = Math.max(0, attacker.stamina - (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10));
+    if (!attacker.traits?.tireless) attacker.stamina = Math.max(0, attacker.stamina - (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10));
     hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), block: true }));
     return;
   }
@@ -171,7 +184,13 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   const isCrit = secureRandom() < (COMBAT.CRIT_CHANCE ?? 0.15);
   const critMult = isCrit ? (COMBAT.CRIT_MULT ?? 1.6) : 1;
 
-  const dmg = Math.round(hb.damage * comboScale * counter * critMult * attacker.damageMult * defender.damageTakenMult * momentumMult);
+  // "Serious punch": a slow-charged heavy from a seriousPunch character lands for
+  // a near-lethal multiple — the whole point of the One Strike archetype.
+  const seriousMult = (attacker.traits?.seriousPunch && (hb.knockdown || hb.kickLaunch))
+    ? (COMBAT.SERIOUS_PUNCH_MULT ?? 6)
+    : 1;
+
+  const dmg = Math.round(hb.damage * comboScale * counter * critMult * attacker.damageMult * defender.damageTakenMult * momentumMult * seriousMult);
 
   if (swing) swing.resolved = true; // one hit per swing
   applyHitResult(attacker, defender, dmg, now, hitEffects);
@@ -210,7 +229,9 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   // KNOCKDOWN: only a hard FINISHER (or a long combo) knocks the opponent down.
   // Light combo hits just dizzy them — so you can chain more punches first.
   const comboFinish = attacker.comboCount >= (COMBAT.COMBO_KNOCKDOWN ?? 6);
-  const shouldStagger = !defender.status.active('stagger', now) && defender.hp > 0 &&
+  // Unbreakable characters (e.g. One Strike) are never knocked down or staggered.
+  const shouldStagger = !defender.traits?.unbreakable &&
+    !defender.status.active('stagger', now) && defender.hp > 0 &&
     (hb.knockdown || hb.kickLaunch || comboFinish);
 
   if (shouldStagger) {

@@ -2,7 +2,7 @@ import { resolveCombat, decayCombos, checkCloneHit, trySharinganCounter } from '
 import { tickProjectiles, processProjectileHits } from '../projectileSystem.js';
 import { spawnCloneDissolve, spawnHitParticles } from '../../services/particleSystem.js';
 import { getCloneDissolveY, getHitEffectY } from '../../core/coordinates.js';
-import { CLONE, RENDER } from '../../config/constants.js';
+import { CLONE, RENDER, COMBAT } from '../../config/constants.js';
 import { createHitEffect } from '../../core/hitEffectFactory.js';
 import { POSE } from '../../entities/fighter.js';
 
@@ -196,6 +196,16 @@ export class CombatSystem {
     }
 
     applyCloneDamage(clone, target, world, now, secureRandom = Math.random) {
+        // Untouchable (e.g. One Strike) / i-frame dodge slips clone strikes too —
+        // this trait avoids EVERYTHING (melee, projectiles AND clones).
+        if (target.status.active('invincible', now) ||
+            (target.traits?.untouchable && secureRandom() < (COMBAT.UNTOUCHABLE_EVADE ?? 1))) {
+            world.hitEffects.push(createHitEffect(target.x, { y: getHitEffectY(target.y), evaded: true }));
+            clone.lastHitAt = now;
+            clone.attackPoseUntil = now + 200;
+            clone.attackWindupAt = 0;
+            return;
+        }
         // Sharingan sees through the illusion: instantly destroy the clone and warp
         // behind the REAL owner for a clean counter (the clone's hit is negated).
         if (target.status.active('sharingan', now) && !target.status.active('sharinganCd', now)) {

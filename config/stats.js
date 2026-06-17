@@ -49,20 +49,23 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 export const INT_CURVE = 1.9;
 export const gate = (skill, floor) => floor + (1 - floor) * Math.pow(clamp01(skill), INT_CURVE);
 export const sharp = (skill, exp = INT_CURVE) => Math.pow(clamp01(skill), exp);
-// Accuracy is the headline intelligence stat. A LOW floor (novice almost never
-// connects) plus a moderate exponent keeps EVERY level distinct — int8 lands far
-// more than int4, int15 far more than int10 — rising to a perfect 1.0 at lvl 20.
-export const accuracyGate = (skill) => MASTERY.ACCURACY_FLOOR + (1 - MASTERY.ACCURACY_FLOOR) * Math.pow(clamp01(skill), 2.2);
+// Accuracy has a DECENT floor: even a clumsy novice connects often (low-level
+// fights are sloppy brawls where blows TRADE, not endless whiffing). The real
+// intelligence differentiator is EVASION (dodge/reaction below), which ramps from
+// near-zero at the low end up to a flawless slip at level 20.
+export const accuracyGate = (skill) => MASTERY.ACCURACY_FLOOR + (1 - MASTERY.ACCURACY_FLOOR) * Math.pow(clamp01(skill), 1.6);
 
 // Per-behaviour novice floors. Each gate hits 1.0 at intelligence 20 (perfection).
-// Lower floor = a wider gulf between a novice and a master for that skill.
+// Lower floor = a wider gulf between a novice and a master for that skill. The
+// EVASION gates (react/dodge) are floored very LOW so a novice barely evades and
+// evasion only becomes formidable at high intelligence — never at the beginning.
 export const MASTERY = {
-  REACT_HEAVY: 0.10,    // read & answer a telegraphed heavy in time
-  REACT_LIGHT: 0.02,    // read & answer a fast jab in time (novice almost never)
-  DODGE_COMMIT: 0.10,   // slip with an i-frame dodge vs a plain block
-  PROJECTILE_DODGE: 0.12, // weave a projectile rather than eat/block it
-  PROJECTILE_READ: 0.20,  // jump/duck a projectile on read
-  ACCURACY_FLOOR: 0.02, // hit-chance floor — a novice almost never connects
+  REACT_HEAVY: 0.06,    // read & answer a telegraphed heavy in time
+  REACT_LIGHT: 0.015,   // read & answer a fast jab in time (novice almost never)
+  DODGE_COMMIT: 0.05,   // slip with an i-frame dodge vs a plain block
+  PROJECTILE_DODGE: 0.10, // weave a projectile rather than eat/block it
+  PROJECTILE_READ: 0.18,  // jump/duck a projectile on read
+  ACCURACY_FLOOR: 0.45, // even a novice lands ~45% — low fights TRADE blows
   PUNISH: 0.08,         // capitalize on an opening (whiff / stagger / recovery)
   COUNTER_HEAL: 0.06,   // recognize & punish a healing opponent
   COUNTER_CLONE: 0.08,  // recognize a clone decoy and pop it

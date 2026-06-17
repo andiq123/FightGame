@@ -10,6 +10,7 @@ import {
   punchExtension,
   kickExtension,
   idleFromRest,
+  relaxedIdle,
   recoveryFromRest,
   getWalkCycle,
   getRunCycle,
@@ -391,10 +392,11 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lFootAng = cycle.lFoot ?? lFootAng;
     rFootAng = cycle.rFoot ?? rFootAng;
   } else if (pose === POSE.idle) {
-    const idle = idleFromRest(poseT, rest);
+    const idle = fighter.traits?.chill ? relaxedIdle(poseT, rest) : idleFromRest(poseT, rest);
     bob = idle.bob;
     torsoTwist = idle.torsoTwist * face;
     lean = idle.lean + (rest.torsoLean || 0) * face;
+    if (idle.headTilt != null) headTilt = idle.headTilt * face;
     lArmAng = idle.lShoulderAng;
     rArmAng = idle.rShoulderAng;
     lForeArmAng = idle.lElbowAng;
@@ -667,6 +669,34 @@ export function drawStickman(ctx, fighter, groundY, now) {
     ctx.restore();
   }
 
+  // ── CAPE (caped style) — flows behind the body and billows with motion/lean ──
+  if (fighter.style === 'caped') {
+    const capeColor = fighter.capeColor || '#e23b3b';
+    const neckX = ribsX - face * 3;
+    const neckY = ribsY - 1;
+    const vx = fighter.vx || 0;
+    // Trails opposite to facing; billows out harder when moving or leaning.
+    const billow = -face * (12 + Math.min(46, Math.abs(vx) * 0.07)) - lean * 16 * face;
+    const flutter = Math.sin(now * 0.006 + fighter.id) * 5;
+    const len = 54;
+    ctx.save();
+    ctx.fillStyle = capeColor;
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(neckX - 11 * face, neckY);
+    ctx.quadraticCurveTo(neckX + billow * 0.5 - 16 * face, neckY + len * 0.55, neckX + billow - 18 * face, neckY + len + flutter);
+    ctx.quadraticCurveTo(neckX + billow * 0.85, neckY + len * 0.92 + flutter * 0.6, neckX + billow * 0.7 + 18 * face, neckY + len - flutter);
+    ctx.quadraticCurveTo(neckX + billow * 0.4 + 16 * face, neckY + len * 0.5, neckX + 11 * face, neckY);
+    ctx.closePath();
+    ctx.fill();
+    // Inner shade for depth.
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+  }
+
   // 3. Render Fighter Body
   ctx.lineCap = 'round';
   ctx.shadowColor = shadowColor;
@@ -785,19 +815,33 @@ export function drawStickman(ctx, fighter, groundY, now) {
   ctx.strokeStyle = strokeColor;
   ctx.stroke();
 
-  // Visor
-  ctx.fillStyle = "#0c0c0c";
   const vX = headX + face * 6;
   const vY = headY - 2;
-  ctx.beginPath();
-  ctx.ellipse(vX, vY, 7, 3.5, headTilt, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = fighter.color;
-  ctx.globalAlpha = 0.7;
-  ctx.beginPath();
-  ctx.ellipse(vX + face * 2, vY, 2.5, 1.2, headTilt, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  if (fighter.style === 'caped') {
+    // Bald, bored face: no visor — two small flat eyes and an unimpressed mouth.
+    // Reads as the deadpan "this is boring" expression of the archetype.
+    ctx.fillStyle = '#101012';
+    ctx.beginPath(); ctx.arc(headX + face * 3, vY - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(headX + face * 8, vY - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#101012';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(headX + face * 3, vY + 5);
+    ctx.lineTo(headX + face * 8, vY + 5); // flat, deadpan mouth
+    ctx.stroke();
+  } else {
+    // Visor
+    ctx.fillStyle = "#0c0c0c";
+    ctx.beginPath();
+    ctx.ellipse(vX, vY, 7, 3.5, headTilt, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = fighter.color;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.ellipse(vX + face * 2, vY, 2.5, 1.2, headTilt, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
   // Sharingan: a glowing red eye while the buff is active.
   if (fighter.status?.active?.('sharingan', now)) {
@@ -1692,13 +1736,24 @@ export function drawHitEffect(ctx, h) {
       ctx.stroke();
     }
   }
-  if (h.miss) {
-    // Whiff — a faint grey swish so a mis-timed attack reads as a miss.
-    ctx.strokeStyle = `rgba(180,190,200,${0.5 * a})`;
+  if (h.miss || h.evaded) {
+    // A faint swish for the whiff...
+    ctx.strokeStyle = `rgba(180,190,200,${0.45 * a})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(x, y - 40, 18 + (1 - t) * 10, -0.7, 0.7);
     ctx.stroke();
+    // ...plus a bold floating "MISS" — styled like CRIT but cool cyan, rising up.
+    const rise = (1 - a) * 14;
+    const my = y - 52 - rise;
+    ctx.font = '800 22px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(0,0,0,${0.6 * a})`;
+    ctx.strokeText('MISS', x, my);
+    ctx.fillStyle = `rgba(120,220,255,${a})`;
+    ctx.fillText('MISS', x, my);
   }
   if (h.sharingan) {
     // Red awakening flash where the buff is cast.

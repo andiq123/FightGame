@@ -97,6 +97,8 @@ export const COMBAT = {
   COMBO_KNOCKDOWN: 6,         // a light-hit combo this long also knocks down
   KNOCKDOWN_PUSH: 420,        // horizontal throw force on a knockdown finisher
   KNOCKDOWN_LIFT: 200,        // upward pop on a knockdown
+  SERIOUS_PUNCH_MULT: 6,      // 'seriousPunch' character heavy-hit damage multiple
+  UNTOUCHABLE_EVADE: 1.0,     // 'untouchable' character auto-slips EVERY hit (melee + projectile)
   HIT_FLASH_MS: 200,
   HIT_FLASH_COUNTER_MS: 250,
   RECOVERY_MS: 120,

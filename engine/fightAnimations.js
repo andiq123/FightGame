@@ -416,6 +416,34 @@ export function idleFromRest(poseT, rest) {
   };
 }
 
+// Bored, untouchable, hands-down stance — the One Strike vibe. Guard completely
+// dropped, weight cocked on one hip, a slow relaxed sway and a lazy head tilt.
+// Reads instantly as "this guy isn't even trying".
+export function relaxedIdle(poseT, rest) {
+  const phase = (poseT * 0.8) % (2 * Math.PI); // slow, unbothered tempo
+  const breath = Math.sin(phase);
+  const sway = Math.sin(phase * 0.5);
+  return {
+    // Arms hang loose and low — no guard at all.
+    lShoulderAng: 1.46 + breath * 0.05,
+    rShoulderAng: 1.52 + breath * 0.05,
+    lElbowAng: 0.14 + sway * 0.06,
+    rElbowAng: 0.20 - sway * 0.06,
+    // Casual wide stance, weight rolling lazily between hips.
+    lHipAng: -0.26 + sway * 0.05,
+    rHipAng: 0.34 + sway * 0.05,
+    lKneeAng: 0.16,
+    rKneeAng: 0.30,
+    lFootAng: -0.08,
+    rFootAng: 0.06,
+    bob: breath * 1.6,
+    weightLead: 0.5 + sway * 0.06,
+    torsoTwist: sway * 0.05,
+    lean: -0.05 + sway * 0.02,    // relaxed slouch back
+    headTilt: 0.08 + sway * 0.04, // lazy bored head tilt
+  };
+}
+
 export function recoveryFromRest(poseT, rest) {
   const phase = (poseT * 2.1) % (2 * Math.PI);
   const breath = Math.sin(phase);

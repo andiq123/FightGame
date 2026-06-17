@@ -163,6 +163,13 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
 
       if (targetFighter.status.active('invincible', now)) return Math.abs(p.x) < ARENA_BOUNDS + 150;
 
+      // Untouchable (e.g. One Strike): slips projectiles too — ~99% auto-MISS,
+      // exactly like melee, so this trait truly avoids EVERYTHING.
+      if (targetFighter.traits?.untouchable && rng() < (COMBAT.UNTOUCHABLE_EVADE ?? 0.99)) {
+        hitEffects.push(createHitEffect(targetFighter.x, { y: getHitEffectY(targetFighter.y), evaded: true }));
+        return false; // projectile whiffs past and is consumed
+      }
+
       // Sharingan: warp behind the attacker instead of taking the projectile.
       if (trySharinganCounter(targetFighter, attacker, now, hitEffects)) return false;
 
@@ -192,7 +199,7 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
 
       if (p.knockback && !blocking) applyKnockback(targetFighter, p.knockback, fromX, p.heavy, false, false, now);
 
-      if (!blocking && p.heavy && !targetFighter.status.active('stagger', now) && targetFighter.hp > 0) {
+      if (!blocking && p.heavy && !targetFighter.traits?.unbreakable && !targetFighter.status.active('stagger', now) && targetFighter.hp > 0) {
         targetFighter.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
         targetFighter.currentAttack = null;
         targetFighter.pose = POSE.stagger;

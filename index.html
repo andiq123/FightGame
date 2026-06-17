@@ -37,7 +37,7 @@
         <div class="vs">VS</div>
       </div>
       <div class="fighter-hud f2">
-        <span class="hud-label">Azure Assassin <span class="hud-level" id="hudLevel2">PWR 18</span><span class="hud-ai-level" id="hudAiLevel2">INT 20</span><span class="hud-health" id="hudHealth2">1800 / 1800</span></span>
+        <span class="hud-label"><span id="hudName2">Azure Assassin</span> <span class="hud-level" id="hudLevel2">PWR 18</span><span class="hud-ai-level" id="hudAiLevel2">INT 20</span><span class="hud-health" id="hudHealth2">1800 / 1800</span></span>
         <div class="bar-wrap">
           <div class="hp-track">
             <div class="hp-fill" id="hp2"></div>
@@ -115,6 +115,10 @@
                 <label>Passives <span class="power-count">(0)</span></label>
                 <div class="power-btns" id="passives1"></div>
               </div>
+              <div class="powers">
+                <label>Traits <span class="power-count">(0)</span></label>
+                <div class="power-btns" id="traits1"></div>
+              </div>
             </div>
 
           </div>
@@ -128,8 +132,10 @@
     <div class="monster-screen hidden" id="monsterScreen">
       <div class="hero-screen-inner">
         <div class="hero-panel">
-          <h2 class="selection-title">Azure Assassin</h2>
-          <p class="selection-sub">Defaults shown below — override the enemy build before the fight starts</p>
+          <h2 class="selection-title" id="monsterTitle">Azure Assassin</h2>
+          <p class="selection-sub" id="monsterBlurb">Defaults shown below — override the enemy build before the fight starts</p>
+
+          <div class="char-picker" id="monsterPicker"></div>
 
           <div class="monster-config-grid">
             <div class="config-section stat-card">
@@ -159,6 +165,10 @@
               <div class="powers">
                 <label>Passives <span class="power-count">(0)</span></label>
                 <div class="power-btns" id="passives2"></div>
+              </div>
+              <div class="powers">
+                <label>Traits <span class="power-count">(0)</span></label>
+                <div class="power-btns" id="traits2"></div>
               </div>
             </div>
           </div>

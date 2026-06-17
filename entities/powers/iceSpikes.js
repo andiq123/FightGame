@@ -69,6 +69,11 @@ registerPower('iceSpikes', {
 
             // Damage logic (immediate or slightly windowed is better than setTimeout)
             if (!countered && distToOpp < 50 && opponent.y >= -30) {
+                // Untouchable (e.g. One Strike) / i-frame dodge slips the freeze too.
+                if (opponent.status.active('invincible', now) || opponent.traits?.untouchable) {
+                    countered = true;
+                    continue;
+                }
                 // Sharingan: warp away from the freeze instead of taking it.
                 if (trySharinganCounter(opponent, fighter, now, hitEffects)) {
                     countered = true;

@@ -79,7 +79,8 @@ export class UIManager {
             const btn = document.createElement('button');
             btn.className = 'power-btn';
             btn.dataset.power = id;
-            btn.title = p.tip || p.name;
+            btn.title = p.tip || p.name;           // accessibility / fallback
+            if (p.tip) btn.dataset.tip = p.tip;    // instant styled hover tooltip
             btn.textContent = p.name;
             if (savedPowers.includes(id)) btn.classList.add('selected');
             btn.addEventListener('click', () => {

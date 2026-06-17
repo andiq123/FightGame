@@ -25,6 +25,9 @@ class Fighter {
 
     this.id = id;
     this.color = color;
+    this.traits = {};          // per-character special behaviours (see ai/monsters.js)
+    this.style = null;         // rendering style key (e.g. 'caped')
+    this.capeColor = null;
     this.x = x;
     this.y = 0;
     this.facing = facing;
@@ -379,6 +382,9 @@ class Fighter {
     } else {
       this.stamina = Math.min(this.maxStamina, this.stamina + dt * getStaminaRegenRate(this));
     }
+
+    // Tireless characters (e.g. One Strike) never run out — endless dodging/punching.
+    if (this.traits?.tireless) this.stamina = this.maxStamina;
 
     const isFrozen = this.status.active('frozen', now);
 

@@ -4,6 +4,8 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 export function spendStamina(fighter, amount) {
   const cost = Math.max(0, Math.round(amount || 0));
+  // Tireless characters (e.g. One Strike) never spend — their bar never lowers.
+  if (fighter.traits?.tireless) return cost;
   fighter.stamina = Math.max(0, fighter.stamina - cost);
   return cost;
 }

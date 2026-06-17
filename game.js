@@ -9,6 +9,7 @@ import { STAT, clampStat } from './config/stats.js';
 import { spawnRandomObstacle, ENV } from './config/environment.js';
 import { resumeAudio, startMusic, stopMusic, toggleMute, playSfx } from './services/audio.js';
 import { PASSIVES } from './config/passives.js';
+import { TRAITS, buildTraits, traitsToIds } from './config/traits.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -18,7 +19,7 @@ import { POWERS } from './entities/powers.js';
 import { CombatSystem } from './engine/systems/CombatSystem.js';
 import { PhysicsSystem } from './engine/systems/PhysicsSystem.js';
 import { AISystem } from './engine/systems/AISystem.js';
-import { AZURE_ASSASSIN } from './ai/monsters.js';
+import { AZURE_ASSASSIN, MONSTERS, getMonster } from './ai/monsters.js';
 import { UIManager } from './services/UIManager.js';
 
 // 1. Initialization
@@ -55,6 +56,7 @@ let lastTime = 0;
 const STAT_KEYS = ['power', 'intelligence'];
 const heroStats = { power: STAT.DEFAULT, intelligence: STAT.DEFAULT };
 const monsterStats = { power: AZURE_ASSASSIN.power, intelligence: AZURE_ASSASSIN.intelligence };
+let selectedMonster = AZURE_ASSASSIN;
 let running = false;
 let skillFeed = [];
 let koSlowMo = 0;
@@ -114,6 +116,77 @@ function updateStatHud(suffix) {
   if (fighter) fighter.setStats(stats);
 }
 
+// Switch the chosen enemy: update stats, name/blurb, HUD, and reset its jutsu /
+// passives to that character's defaults. Drives the character picker.
+function selectMonster(id) {
+  const m = getMonster(id);
+  selectedMonster = m;
+  monsterStats.power = m.power;
+  monsterStats.intelligence = m.intelligence;
+  applyStatsToUI(2);
+
+  const titleEl = document.getElementById('monsterTitle');
+  if (titleEl) titleEl.textContent = m.name;
+  const blurbEl = document.getElementById('monsterBlurb');
+  if (blurbEl) blurbEl.textContent = m.blurb || '';
+  const hudName = document.getElementById('hudName2');
+  if (hudName) hudName.textContent = m.name;
+
+  uiManager?.buildPowerButtons('powers2', POWERS, [...(m.powers || [])], (wrap) => {
+    if (running) syncPowersFromUI();
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+  uiManager?.buildPowerButtons('passives2', PASSIVES, [...(m.passives || [])], (wrap) => {
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+  // Default the enemy's trait toggles to the chosen character's own kit.
+  uiManager?.buildPowerButtons('traits2', TRAITS, traitsToIds(m.traits), (wrap) => {
+    if (running) applyMonsterTraits();
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+
+  document.querySelectorAll('#monsterPicker .char-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.id === id));
+  persistSettings();
+}
+
+function buildMonsterPicker() {
+  const wrap = document.getElementById('monsterPicker');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  MONSTERS.forEach(m => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'char-btn' + (m.id === selectedMonster.id ? ' active' : '');
+    btn.dataset.id = m.id;
+    btn.innerHTML = `<span class="char-dot" style="background:${m.color}"></span><span class="char-name">${m.name}</span>`;
+    btn.addEventListener('click', () => selectMonster(m.id));
+    wrap.appendChild(btn);
+  });
+}
+
+// Apply the hero's toggled traits (and 'caped' style) to fighter1 — used both at
+// match start and live, so toggling a trait mid-fight takes effect immediately.
+function applyHeroTraits() {
+  if (!world.fighter1) return;
+  const ht = buildTraits(getSelectedPowerIds('traits1'));
+  world.fighter1.traits = ht.traits;
+  world.fighter1.style = ht.style;
+  world.fighter1.capeColor = ht.style === 'caped' ? '#e23b3b' : null;
+}
+
+// Same for the enemy — its toggled traits (default = the character's own kit).
+function applyMonsterTraits() {
+  if (!world.fighter2) return;
+  const mt = buildTraits(getSelectedPowerIds('traits2'));
+  world.fighter2.traits = mt.traits;
+  world.fighter2.style = mt.style;
+  world.fighter2.capeColor = mt.style === 'caped' ? (selectedMonster.cape || '#e23b3b') : null;
+}
+
 function syncPowersFromUI() {
   const p1 = getSelectedPowerIds('powers1');
   const p2 = getSelectedPowerIds('powers2');
@@ -125,13 +198,16 @@ function persistSettings() {
   saveSettings({
     power: heroStats.power,
     intelligence: heroStats.intelligence,
+    monsterId: selectedMonster.id,
     monsterPower: monsterStats.power,
     monsterIntelligence: monsterStats.intelligence,
     gameSpeed: world.gameSpeed || 1,
     powers1: getSelectedPowerIds('powers1'),
     passives1: getSelectedPowerIds('passives1'),
+    heroTraits: getSelectedPowerIds('traits1'),
     monsterPowers: getSelectedPowerIds('powers2'),
     monsterPassives: getSelectedPowerIds('passives2'),
+    monsterTraits: getSelectedPowerIds('traits2'),
   });
 }
 
@@ -253,15 +329,19 @@ function createFighters() {
   world.fighter1 = new Fighter(0, color1, -ARENA.START_OFFSET, 1);
   world.fighter1.setStats(heroStats);
   world.fighter1.passives = getSelectedPowerIds('passives1');
+  applyHeroTraits(); // optional One-Strike-style traits the player toggled on
 
   // Initialize Monster (power/intelligence overridable, other traits fixed)
-  const m = AZURE_ASSASSIN;
+  const m = selectedMonster;
   world.fighter2 = new Fighter(1, m.color, ARENA.START_OFFSET, -1);
   world.fighter2.setPowers(getSelectedPowerIds('powers2'));
   world.fighter2.setStats(monsterStats);
   const selectedPassives = getSelectedPowerIds('passives2');
   world.fighter2.passives = selectedPassives.length ? selectedPassives : (m.passives || []);
   world.fighter2.scale = m.scale || 1;
+  // Character identity: traits are now toggleable in the setup (defaulting to the
+  // character's own kit), so apply them from the traits2 selection.
+  applyMonsterTraits();
 
   world.fighters = [world.fighter1, world.fighter2];
 
@@ -271,12 +351,21 @@ function createFighters() {
 }
 
 function applySettings(settings) {
+  selectedMonster = getMonster(settings.monsterId);
   heroStats.power = clampStat(settings.power, heroStats.power);
   heroStats.intelligence = clampStat(settings.intelligence, heroStats.intelligence);
-  monsterStats.power = clampStat(settings.monsterPower, AZURE_ASSASSIN.power);
-  monsterStats.intelligence = clampStat(settings.monsterIntelligence, AZURE_ASSASSIN.intelligence);
+  monsterStats.power = clampStat(settings.monsterPower, selectedMonster.power);
+  monsterStats.intelligence = clampStat(settings.monsterIntelligence, selectedMonster.intelligence);
   applyStatsToUI(1);
   applyStatsToUI(2);
+  // Reflect the chosen character in the picker, title, blurb and HUD name.
+  buildMonsterPicker();
+  const titleEl = document.getElementById('monsterTitle');
+  if (titleEl) titleEl.textContent = selectedMonster.name;
+  const blurbEl = document.getElementById('monsterBlurb');
+  if (blurbEl) blurbEl.textContent = selectedMonster.blurb || '';
+  const hudName = document.getElementById('hudName2');
+  if (hudName) hudName.textContent = selectedMonster.name;
   world.gameSpeed = settings.gameSpeed || 1;
 
   uiManager?.buildPowerButtons('powers1', POWERS, settings.powers1, (wrap) => {
@@ -288,13 +377,23 @@ function applySettings(settings) {
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
-  uiManager?.buildPowerButtons('powers2', POWERS, settings.monsterPowers || AZURE_ASSASSIN.powers, (wrap) => {
+  uiManager?.buildPowerButtons('traits1', TRAITS, settings.heroTraits || [], (wrap) => {
+    if (running) world.fighter1 && applyHeroTraits();
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+  uiManager?.buildPowerButtons('powers2', POWERS, settings.monsterPowers || selectedMonster.powers, (wrap) => {
     if (running) syncPowersFromUI();
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });
 
-  uiManager?.buildPowerButtons('passives2', PASSIVES, settings.monsterPassives || AZURE_ASSASSIN.passives, (wrap) => {
+  uiManager?.buildPowerButtons('passives2', PASSIVES, settings.monsterPassives || selectedMonster.passives, (wrap) => {
+    uiManager.updatePowerCount(wrap);
+    persistSettings();
+  });
+  uiManager?.buildPowerButtons('traits2', TRAITS, settings.monsterTraits || traitsToIds(selectedMonster.traits), (wrap) => {
+    if (running) applyMonsterTraits();
     uiManager.updatePowerCount(wrap);
     persistSettings();
   });

@@ -1,6 +1,7 @@
 import { getValidPowerIds } from '../entities/powers/index.js';
 import { STAT, clampStat } from '../config/stats.js';
 import { getPassiveIds } from '../config/passives.js';
+import { getTraitIds } from '../config/traits.js';
 import { AZURE_ASSASSIN } from './monsters.js';
 
 // getAIStats now lives in the attribute schema (config/stats.js). Re-exported
@@ -12,12 +13,15 @@ const SETTINGS_KEY = 'fightGame_settings';
 export const DEFAULT_SETTINGS = {
   power: STAT.DEFAULT,
   intelligence: STAT.DEFAULT,
+  monsterId: AZURE_ASSASSIN.id,
   monsterPower: AZURE_ASSASSIN.power,
   monsterIntelligence: AZURE_ASSASSIN.intelligence,
   powers1: [],
   passives1: [],
+  heroTraits: [],
   monsterPowers: [...AZURE_ASSASSIN.powers],
   monsterPassives: [...AZURE_ASSASSIN.passives],
+  monsterTraits: [],
   gameSpeed: 1,
 };
 
@@ -33,13 +37,16 @@ export function loadSettings() {
       monsterIntelligence: clampStat(loaded.monsterIntelligence, DEFAULT_SETTINGS.monsterIntelligence),
       powers1: Array.isArray(loaded.powers1) ? loaded.powers1.filter(p => getValidPowerIds().includes(p)) : [],
       passives1: Array.isArray(loaded.passives1) ? loaded.passives1.filter(p => getPassiveIds().includes(p)) : [],
+      heroTraits: Array.isArray(loaded.heroTraits) ? loaded.heroTraits.filter(t => getTraitIds().includes(t)) : [],
       monsterPowers: Array.isArray(loaded.monsterPowers)
         ? loaded.monsterPowers.filter(p => getValidPowerIds().includes(p))
         : [...DEFAULT_SETTINGS.monsterPowers],
       monsterPassives: Array.isArray(loaded.monsterPassives)
         ? loaded.monsterPassives.filter(p => getPassiveIds().includes(p))
         : [...DEFAULT_SETTINGS.monsterPassives],
+      monsterTraits: Array.isArray(loaded.monsterTraits) ? loaded.monsterTraits.filter(t => getTraitIds().includes(t)) : undefined,
       gameSpeed: [0.5, 1, 2].includes(loaded.gameSpeed) ? loaded.gameSpeed : 1,
+      monsterId: typeof loaded.monsterId === 'string' ? loaded.monsterId : DEFAULT_SETTINGS.monsterId,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

@@ -63,7 +63,8 @@ function applyLocomotion(fighter, dir, run, idle, now) {
   // faster and accelerates crisply; a novice is sluggish. All from one model.
   const agi = agilityProfile(fighter.moveAgility ?? 0.5);
   const targetVx = dir * speed * (fighter.speedMult || 1) * staminaSpeed * agi.speedMult;
-  const accel = Math.min(0.95, (shouldRun ? 0.72 : 0.62) * agi.accelMult);
+  // Athletic characters (e.g. One Strike) snap straight to top speed — no ramp.
+  const accel = fighter.traits?.athletic ? 1 : Math.min(0.95, (shouldRun ? 0.72 : 0.62) * agi.accelMult);
   fighter.vx += (targetVx - fighter.vx) * accel;
 
   if (fighter.pose !== nextPose || fighter.moveDir !== dir) {
@@ -79,9 +80,14 @@ function applyIntentionalBrake(fighter, now, dt = DEFAULT_FRAME_DT) {
 
   // Stopping is body control: a master halts almost instantly to plant a strike;
   // a novice slides for a long way (low friction), overshooting the opponent.
-  const agi = agilityProfile(fighter.moveAgility ?? 0.5);
-  const brake = (PHYSICS.MOVE_BRAKE_PER_SEC ?? 2200) * agi.brakeMult * Math.max(0.001, dt);
-  fighter.vx = moveTowardZero(fighter.vx, brake);
+  // Athletic characters (e.g. One Strike) stop DEAD — zero slide, ever.
+  if (fighter.traits?.athletic) {
+    fighter.vx = 0;
+  } else {
+    const agi = agilityProfile(fighter.moveAgility ?? 0.5);
+    const brake = (PHYSICS.MOVE_BRAKE_PER_SEC ?? 2200) * agi.brakeMult * Math.max(0.001, dt);
+    fighter.vx = moveTowardZero(fighter.vx, brake);
+  }
   fighter.isRunning = false;
 
   if (Math.abs(fighter.vx) <= (PHYSICS.VELOCITY_DEADZONE ?? 10)) {
@@ -232,6 +238,19 @@ const ACTION_HANDLERS = {
     fighter.status.set('sharinganPursueCd', now + (SHARINGAN.PURSUE_CD_MS ?? 520));
     fighter.status.set('invincible', now + 120);
     fighter.needsDashDust = true; // reuse the dash poof as the warp puff
+  },
+  blink(fighter, opponent, action, now) {
+    // Innate teleport (e.g. One Strike): when the enemy is far, close the gap in a
+    // blink — appear at striking range, facing them, ready to punch.
+    const dir = opponent.x > fighter.x ? 1 : -1;
+    fighter.x = opponent.x - dir * 64; // arrive at striking range
+    fighter.y = 0;
+    fighter.vx = 0;
+    fighter.facing = dir;
+    fighter.aiMoveIntent = null;
+    fighter.status.set('blinkCd', now + 600);
+    fighter.status.set('invincible', now + 120);
+    fighter.needsDashDust = true;
   },
   power(fighter, opponent, action, now, hitEffects, projectiles, clones) {
     if (fighter.usePower(action.powerId, now)) {

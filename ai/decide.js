@@ -67,6 +67,14 @@ function buildAttackPool(ctx) {
   const combo = fighter.comboCount;
   const comboNext = getNextComboAttack(fighter, rng);
 
+  // SERIOUS PUNCH (e.g. One Strike): he doesn't combo or peck — he plants a single
+  // slow, world-ending power punch. Always commit the big one when he chooses to
+  // attack at all (his chill rarely-attacks gate lives in closeOrAttack).
+  if (fighter.traits?.seriousPunch) {
+    const big = filterAffordableAttacks(ctx, [ATTACK_POWER_PUNCH], 0);
+    if (big.length) return big;
+  }
+
   // FINISH the combo: after stringing a few light hits, end with a hard knockdown.
   // Don't open with one — build the combo first (2-3 lights), then close it out.
   // A frozen opponent (can't escape) gets the finisher immediately.
@@ -107,6 +115,14 @@ function emergencyDefense(ctx) {
 
   const heavy = oppHeavyWindup || (oppHitbox?.damage >= 12);
   const skill = ctx.skill;
+
+  // UNTOUCHABLE (e.g. One Strike): slips EVERYTHING effortlessly. He always reads
+  // the attack and weaves out — the visible side of the auto-miss in combat.js.
+  if (fighter.traits?.untouchable && fighter.onGround()) {
+    const toward = ctx.faceToward();
+    const dir = rng() < 0.4 ? toward : -toward; // chill backstep, sometimes slip through
+    return as({ type: 'dodge', dir }, 'evadingProjectile');
+  }
 
   // SMART THREAT ASSESSMENT — true mastery is conserving actions, not flinching.
   // A skilled fighter reads whether the attack will actually CONNECT: if the
@@ -171,6 +187,8 @@ function punishOpening(ctx) {
 }
 
 function recoverStamina(ctx) {
+  // Tireless masters (e.g. One Strike) never rest and never retreat — they're chill.
+  if (ctx.fighter.traits?.tireless) return null;
   // Sharingan confidence: keep pressing unless genuinely exhausted.
   if (ctx.hasSharingan && !ctx.staminaCritical) return null;
   if (!shouldPrioritizeRecovery(ctx)) return null;
@@ -214,6 +232,7 @@ function recoverHealth(ctx) {
 // defensive escape (wall / teleport / clone), then create space.
 function survive(ctx) {
   if (!ctx.hpCritical) return null;
+  if (ctx.fighter.traits?.tireless) return null; // a master never panics or flees
   if (ctx.hasSharingan) return null; // counter-warp protects us — keep attacking, don't flee
   const power = pickPower(ctx, { tags: ['defense'], threshold: 34, emergency: true, allowRepeat: true });
   if (power) return as({ type: 'power', powerId: power }, 'defending');
@@ -243,6 +262,16 @@ function counterClone(ctx) {
   if (cloneDist <= AI.ATTACK_RANGE && fighter.hasStamina(6)) return as({ type: 'attack', attack: ATTACK.jab }, 'combat'); // pop it
   if (cloneDist < dist + 30) return as({ type: 'move', dir, run: true }, 'approaching');
   return null;
+}
+
+// Innate teleport (e.g. One Strike): when the enemy is genuinely far, close the
+// gap in a blink instead of jogging the whole way. Short cooldown so he still
+// walks/runs at medium range and only blinks across big gaps.
+function blinkClose(ctx) {
+  if (!ctx.fighter.traits?.blink) return null;
+  if (ctx.fighter.status.active('blinkCd', ctx.now)) return null;
+  if (ctx.dist < (AI.COMBAT_EXIT ?? 260)) return null;
+  return as({ type: 'blink' }, 'pressuring');
 }
 
 // COUNTER: heal jutsu. A healing opponent is wide open — smart fighters punish it
@@ -305,12 +334,18 @@ function useOffensivePower(ctx) {
 function closeOrAttack(ctx) {
   const { inRange, fighter, dist, tired } = ctx;
   const toward = ctx.faceToward();
-  const confident = ctx.hasSharingan; // protected → press the attack, never back off
+  const confident = ctx.hasSharingan || fighter.traits?.tireless; // press / hold, never back off
 
   if (!confident && (tired || (fighter.stamina < 15 && dist < 110))) {
     return as({ type: 'move', dir: -toward, run: false, commitMs: 400 }, 'retreating');
   }
   if (inRange && fighter.hasStamina(8)) {
+    // CHILL (e.g. One Strike): bored and unbothered — he holds a relaxed stance and
+    // only occasionally bothers to throw his one punch, which makes it land rarely
+    // but end the fight. Otherwise he just stands his ground.
+    if (fighter.traits?.chill && ctx.rng() > 0.14) {
+      return as({ type: 'move', dir: 0, run: false, commitMs: 260 }, 'idle');
+    }
     // Low intelligence sometimes mistimes the hit — but a confident fighter commits.
     if (!confident && ctx.rng() < 0.3 * (1 - execSkill(ctx))) return as({ type: 'move', dir: toward, run: false, commitMs: 140 }, 'approaching');
     const pool = buildAttackPool(ctx);
@@ -349,7 +384,8 @@ const CONSIDERATIONS = [
   recoverHealth,   // 4. heal when hurt & safe
   counterHeal,     // 5. punish a healing/cloning opponent
   counterClone,
-  sharinganPursue, // 6. blink onto a fleeing/distant foe while sharingan is up
+  blinkClose,      // 6. innate teleport to close a big gap (e.g. One Strike)
+  sharinganPursue, // 7. blink onto a fleeing/distant foe while sharingan is up
   // Skill use is a PRIMARY part of a smart fighter's game — woven into melee AND
   // neutral, NOT a last resort. It sits above the basic punish/approach/attack so
   // masters actually USE jutsu (freeze→combo, clone, fireball) instead of always

@@ -15,8 +15,9 @@ export const PHYSICS = {
   DODGE_PEAK_SPEED: 560,
   DODGE_INVULN_MS: 120,
   DODGE_DURATION_MS: 190,
-  JUMP_VY: -560,
-  JUMP_SHORT_VY: -360,
+  JUMP_VY: -620,         // normal jump apex ~125px — clears a standard wall
+  WALL_VAULT_VY: -820,   // dedicated wall-vault leap, apex ~217px — clears any wall
+  JUMP_SHORT_VY: -380,
   DOUBLE_JUMP_VY: -430,
   WALL_JUMP_VY: -420,
   WALL_JUMP_VX: 360,
@@ -86,6 +87,12 @@ export const COMBAT = {
   COUNTER_BONUS: 1.35,
   COMBO_SCALE: [1, 0.97, 0.94, 0.91, 0.88, 0.85],
   HITBOX_EXTRA: 28,
+  VERTICAL_REACH: 95,        // grounded pokes only reach ~body height
+  VERTICAL_REACH_HIGH: 180,  // launchers (uppercut/high kick) reach into the air
+  CRIT_CHANCE: 0.15,
+  CRIT_MULT: 1.6,
+  CANCEL_AFTER: 0.55,         // recovery cancels allowed after 55% of an attack
+  CANCEL_HIT_WINDOW_MS: 280,  // hit-confirm combo-cancel window after a landed hit
   HIT_FLASH_MS: 200,
   HIT_FLASH_COUNTER_MS: 250,
   RECOVERY_MS: 120,

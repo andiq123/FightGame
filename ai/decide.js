@@ -1,28 +1,29 @@
 import { ATTACK, ATTACK_POWER_PUNCH, GRAB, COMBO_CHAINS } from '../entities/attacks.js';
-import { AI } from '../config/constants.js';
-import { scorePower } from '../entities/powers/index.js';
-import {
-  scorePowerWithBudget,
-  canUsePowerWithBudget,
-  shouldPrioritizeRecovery,
-  filterAffordableAttacks
-} from './staminaStrategy.js';
+import { AI, FIGHTER } from '../config/constants.js';
+import { shouldPrioritizeRecovery, filterAffordableAttacks } from './staminaStrategy.js';
+import { pickPower, recordJutsuUse, CATEGORY } from './skills.js';
+import { evadeProjectile } from './evasion.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Single utility-based AI decider.
+// AI decision orchestration.
 //
-// One pass per decision tick. A flat, priority-ordered list of "considerations"
-// is evaluated top to bottom; the first one that returns an action wins. There
-// is no separate state machine, strategy layer, or jutsu plan-queue fighting
-// over the result — every power scores itself (see each power's `score(ctx)`),
-// and tactics live here as readable rules.
+// One pass per decision tick over a flat, priority-ordered list of considerations;
+// the first that returns an action wins. Concerns are kept separate:
+//   - perception/sensing      → ai/context.js
+//   - skill categorization    → ai/skills.js (pickPower by category/tag)
+//   - projectile evasion      → ai/evasion.js
+//   - basic combat + movement → here
+// Every power scores itself (each power's score(ctx)); tactics here are readable
+// rules. Everything is gated by `ctx.skill` (0…1 from intelligence).
 // ─────────────────────────────────────────────────────────────────────────────
+
+export { pickPower, recordJutsuUse };
+const C = CATEGORY;
 
 const GCD_MS = 700;
 
 // Effective skill for execution gates. Raising skill to a power widens the gap
-// between mid levels (e.g. 5 vs 10) so every intelligence step is decisive,
-// while leaving the extremes (0 and 1) anchored.
+// between mid levels (e.g. 5 vs 10) so every intelligence step is decisive.
 function execSkill(ctx) {
   return Math.pow(ctx.skill, 1.4);
 }
@@ -35,44 +36,6 @@ function as(action, label) {
 
 function pick(list, rng) {
   return list[Math.floor(rng() * list.length)];
-}
-
-// Pick the best affordable power for the situation. Each power scores itself;
-// we only add a stamina-budget gate, the global cooldown, and a repeat penalty.
-export function pickPower(ctx, { allowed = null, threshold = 50, emergency = false, finisher = false, allowRepeat = false } = {}) {
-  const { fighter, now } = ctx;
-  if (!fighter.powers?.length) return null;
-  if (!emergency && fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < GCD_MS) return null;
-
-  let best = null;
-  let bestScore = threshold;
-  for (const pid of fighter.powers) {
-    if (allowed && !allowed.includes(pid)) continue;
-    const base = scorePower(pid, ctx);          // power's own situational/range scoring
-    if (base <= 0) continue;
-    let s = scorePowerWithBudget(ctx, pid, base, {
-      emergency: emergency || ctx.hpCritical || ctx.cannotEvade,
-      finisher: finisher || ctx.oppHpCritical
-    });
-    if (s <= 0) continue;
-    if (!allowRepeat && pid === fighter.lastUsedPower) {
-      const reps = (fighter.aiJutsuHistory || []).filter(id => id === pid).length;
-      s -= 20 + reps * 12;
-    }
-    s += (ctx.rng?.() ?? 0) * 6;
-    if (s > bestScore) {
-      bestScore = s;
-      best = pid;
-    }
-  }
-  return best;
-}
-
-// Record a used jutsu for repeat-avoidance (called from behavior on cast).
-export function recordJutsuUse(fighter, powerId) {
-  fighter.aiJutsuHistory = fighter.aiJutsuHistory || [];
-  fighter.aiJutsuHistory.unshift(powerId);
-  if (fighter.aiJutsuHistory.length > 6) fighter.aiJutsuHistory.pop();
 }
 
 function getNextComboAttack(fighter, rng) {
@@ -117,26 +80,7 @@ function buildAttackPool(ctx) {
 }
 
 // ── Considerations (priority order) ─────────────────────────────────────────
-
-function evadeProjectile(ctx) {
-  const { inboundThreat, fighter, stats, rng } = ctx;
-  if (!inboundThreat || !fighter.canAct(ctx.now)) return null;
-  if ((stats.reaction ?? 50) / 100 < (AI.EVADE_PROJECTILE_REACTION_MIN ?? 0.68)) return null;
-
-  const power = pickPower(ctx, {
-    allowed: ['shinraTensei', 'earthWall', 'spectralDash'],
-    threshold: inboundThreat.heavy ? 42 : 56,
-    emergency: true
-  });
-  if (power) return as({ type: 'power', powerId: power }, 'evadingProjectile');
-
-  const tMs = inboundThreat.timeToImpact * 1000;
-  if (fighter.onGround()) {
-    if (inboundThreat.high && tMs > (AI.PROJECTILE_JUMP_WHEN_FAR_MS ?? 320)) return as({ type: 'jump' }, 'evadingProjectile');
-    if (ctx.canAffordDodge && rng() < 0.55 + ctx.defense * 0.3) return as({ type: 'dodge', dir: inboundThreat.evadeDir }, 'evadingProjectile');
-  }
-  return as({ type: 'block', duration: 380, low: !inboundThreat.high }, 'evadingProjectile');
-}
+// (evadeProjectile lives in ai/evasion.js and is first in the list below.)
 
 function emergencyDefense(ctx) {
   const { oppAttacking, oppHeavyWindup, oppHitbox, dist, fighter, rng } = ctx;
@@ -153,7 +97,7 @@ function emergencyDefense(ctx) {
   if (rng() > reactChance) return null;
 
   const power = pickPower(ctx, {
-    allowed: ['shinraTensei', 'earthWall', 'spectralDash', 'cloneJutsu'],
+    tags: ['defense'],
     threshold: heavy ? 40 : 60,
     emergency: heavy
   });
@@ -175,7 +119,7 @@ function punishOpening(ctx) {
   if (rng() > 0.22 + ctx.skill * 0.78) return null;
 
   const power = pickPower(ctx, {
-    allowed: ['lightningCutter', 'dragonRoar', 'shinraTensei', 'fireball', 'shuriken', 'iceSpikes'],
+    categories: [C.MELEE_BURST, C.PROJECTILE, C.CONTROL],
     threshold: ctx.oppHpCritical ? 34 : 48,
     finisher: ctx.oppHpCritical
   });
@@ -194,25 +138,44 @@ function recoverStamina(ctx) {
   return as({ type: 'move', dir: -ctx.faceToward(), run: false, commitMs: 600 }, 'retreating');
 }
 
-function survive(ctx) {
-  if (!ctx.hpCritical) return null;
-  const { dist, cornered, fighter, now } = ctx;
+// Is there a safe window to commit to a (cast-locked) recovery skill?
+// Safe = no incoming threat, and the opponent can't punish the cast.
+function isSafeToHeal(ctx) {
+  if (ctx.inboundThreat || ctx.oppAttacking || ctx.oppHeavyWindup) return false;
+  if (ctx.isSafe) return true;                                   // behind own wall
+  if (ctx.dist >= (AI.STAMINA_SAFE_REST_DIST ?? 330)) return true; // far enough to cast
+  if ((ctx.oppStaggered || ctx.oppGettingUp) && ctx.dist > 200) return true; // opponent down & away
+  return false;
+}
 
-  if (cornered && dist < 120 && canUsePowerWithBudget(ctx, 'shinraTensei', { emergency: true })) {
-    return as({ type: 'power', powerId: 'shinraTensei' }, 'defending');
-  }
-  const gcdReady = !fighter.lastGlobalSkillAt || now - fighter.lastGlobalSkillAt >= GCD_MS;
-  if (dist > 180 && gcdReady && canUsePowerWithBudget(ctx, 'heal', { emergency: true })) {
-    return as({ type: 'power', powerId: 'heal' }, 'recharging');
-  }
+// Proactive recovery: heal when hurt AND safe — not only at death's door. A
+// smart fighter values its HP and takes safe windows to top up; a dumb one
+// rarely bothers. Selects any RECOVERY-category skill (future-proof).
+function recoverHealth(ctx) {
+  if (!ctx.hpLow && !ctx.hpCritical) return null;
+  if (!isSafeToHeal(ctx)) return null;
+  const { fighter, now } = ctx;
+  if (fighter.lastGlobalSkillAt && now - fighter.lastGlobalSkillAt < GCD_MS) return null;
+  // Eagerness: always at critical, otherwise scales with intelligence.
+  const eager = ctx.hpCritical ? 0.95 : 0.45 + ctx.skill * 0.5;
+  if (ctx.rng() > eager) return null;
   const power = pickPower(ctx, {
-    allowed: ['earthWall', 'cloneJutsu', 'spectralDash', 'shinraTensei'],
-    threshold: 34,
-    emergency: true,
+    categories: [C.RECOVERY],
+    threshold: 22,
+    emergency: ctx.hpCritical,
     allowRepeat: true
   });
+  if (power) return as({ type: 'power', powerId: power }, 'recharging');
+  return null;
+}
+
+// Last-ditch survival when critically hurt and NOT safe enough to heal: use a
+// defensive escape (wall / teleport / clone), then create space.
+function survive(ctx) {
+  if (!ctx.hpCritical) return null;
+  const power = pickPower(ctx, { tags: ['defense'], threshold: 34, emergency: true, allowRepeat: true });
   if (power) return as({ type: 'power', powerId: power }, 'defending');
-  if (dist < 200) return as({ type: 'move', dir: -ctx.faceToward(), run: true, commitMs: 500 }, 'retreating');
+  if (ctx.dist < 200) return as({ type: 'move', dir: -ctx.faceToward(), run: true, commitMs: 500 }, 'retreating');
   return null;
 }
 
@@ -245,7 +208,7 @@ function counterClone(ctx) {
 function counterHeal(ctx) {
   if (!ctx.oppHealing) return null;
   if (ctx.rng() > 0.1 + ctx.skill * 0.9) return null;
-  const power = pickPower(ctx, { allowed: ['shuriken', 'fireball', 'lightningCutter', 'iceSpikes', 'shinraTensei'], threshold: 28, finisher: true });
+  const power = pickPower(ctx, { categories: [C.PROJECTILE, C.MELEE_BURST, C.CONTROL], threshold: 28, finisher: true });
   if (power) return as({ type: 'power', powerId: power }, 'punishing');
   if (ctx.inRange && ctx.fighter.hasStamina(8)) {
     const pool = filterAffordableAttacks(ctx, [ATTACK.cross, ATTACK.hook, ATTACK.uppercut], 0);
@@ -256,12 +219,14 @@ function counterHeal(ctx) {
 
 function useOffensivePower(ctx) {
   const { dist, rng, isNightmare } = ctx;
-  const allowed = dist > 180
-    ? ['fireball', 'shuriken', 'iceSpikes', 'flameShower', 'vacuumPull']
+  // Pick the skill class that fits the gap: zone from afar, burst up close, or
+  // teleport in to close distance. Each power still self-scores within the class.
+  const categories = dist > 180
+    ? [C.PROJECTILE, C.CONTROL]
     : dist < 120
-      ? ['lightningCutter', 'dragonRoar', 'shinraTensei', 'spectralDash', 'cloneJutsu']
-      : null;
-  const power = pickPower(ctx, { allowed, threshold: isNightmare ? 44 : 56 });
+      ? [C.MELEE_BURST, C.MOVEMENT, C.SETUP]
+      : null; // any category — let scoring decide in the mid-range
+  const power = pickPower(ctx, { categories, threshold: isNightmare ? 44 : 56 });
   // Smart fighters use jutsu at the right moment; weak ones rarely do.
   if (power && (isNightmare || rng() < 0.35 + execSkill(ctx) * 0.6)) return as({ type: 'power', powerId: power }, 'combat');
   return null;
@@ -294,19 +259,38 @@ const CONSIDERATIONS = [
   punishOpening,
   counterHeal,
   counterClone,
+  recoverHealth,   // heal proactively when hurt & safe
   recoverStamina,
-  survive,
+  survive,         // desperate escape when critical & unsafe
   antiAir,
   useOffensivePower,
   closeOrAttack
 ];
 
+// A wall can't be walked through. If a move heads into a near wall, a smart
+// fighter vaults over it (jump) or redirects; a dumb one may still bonk into it.
+function avoidWall(ctx, action) {
+  if (action?.type !== 'move') return action;
+  const fighter = ctx.fighter;
+  if (!fighter.onGround()) return action; // already mid-vault — don't fight the jump
+  const obs = ctx.nearestObstacle;
+  if (!obs || action.dir !== obs.dir || obs.d > 95) return action;
+
+  // Awareness of the obstacle scales with intelligence.
+  if (ctx.rng() > 0.25 + ctx.skill * 0.7) return action;
+
+  if (fighter.hasStamina(FIGHTER.JUMP_STAMINA ?? 14)) {
+    return { type: 'jump', wallVault: true, dir: obs.dir, aiLabel: action.aiLabel || 'approaching' };
+  }
+  return { ...action, dir: -action.dir }; // can't jump → don't push into it, go around
+}
+
 export function decideAction(ctx) {
   for (const consider of CONSIDERATIONS) {
     const action = consider(ctx);
-    if (action) return action;
+    if (action) return avoidWall(ctx, action);
   }
-  return as({ type: 'move', dir: ctx.faceToward(), run: false }, 'approaching');
+  return avoidWall(ctx, as({ type: 'move', dir: ctx.faceToward(), run: false }, 'approaching'));
 }
 
 // Should the AI interrupt a committed move to re-decide right now?

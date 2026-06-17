@@ -101,7 +101,7 @@ class Fighter {
     this.powerMult = p.skillMult;
   }
 
-  onGround() { return this.y >= -3; }
+  onGround() { return this.y >= (this.groundY || 0) - 3; }
 
   staminaRatio() {
     const m = this.maxStamina || 1;
@@ -161,7 +161,33 @@ class Fighter {
     return true;
   }
 
+  // Can the current attack's recovery be cancelled into a new attack?
+  // - hit-confirm: after landing a hit you can chain straight into the next move
+  // - speed cancel: a faster (or equal) move can cut a slower one's recovery
+  // Startup/active frames can never be cancelled (no skipping the commitment).
+  canCancelAttack(type, now) {
+    const data = ATTACK_DATA[type];
+    if (!data) return false;
+    const minStart = COMBAT.CANCEL_AFTER ?? 0.55;
+    if (this.currentAttack) {
+      const cur = this.currentAttack;
+      if (now - cur.started < cur.data.duration * minStart) return false; // still in startup/active
+      const landedHit = (this.lastHitLandAt || 0) >= cur.started;
+      const faster = data.duration <= cur.data.duration;
+      return landedHit || faster;
+    }
+    if (this.status.active('recovery', now)) {
+      return (this.lastHitLandAt || 0) > now - (COMBAT.CANCEL_HIT_WINDOW_MS ?? 280);
+    }
+    return false;
+  }
+
   startAttack(type, now) {
+    // Cancel a recovering attack into this one when eligible (combo / speed cancel).
+    if ((this.currentAttack || this.status.active('recovery', now)) && this.canCancelAttack(type, now)) {
+      this.currentAttack = null;
+      this.status.clear('recovery');
+    }
     if (!this.canAct(now) && !(!this.onGround() && !this.currentAttack)) {
       this.buffer.set('attack', { type }, now);
       return false;

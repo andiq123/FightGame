@@ -46,8 +46,8 @@ registerPower('earthWall', {
         world.addObstacle({
             x: wallX,
             y: 0,
-            width: 60,
-            height: 120,
+            width: 110,
+            height: 110,
             life: 6,
             type: 'earth',
             ownerId: fighter.id,

@@ -84,7 +84,7 @@ export class Viewport {
 
         world.hitEffects.forEach(h => {
             drawHitEffect(ctx, h);
-            if (h.dmg > 0) drawDamageNumber(ctx, h.x, h.y - 25, h.dmg, Math.max(0, 1 - h.t * 2.2), h.counter);
+            if (h.dmg > 0) drawDamageNumber(ctx, h.x, h.y - 25, h.dmg, Math.max(0, 1 - h.t * 2.2), h.counter, h.crit);
         });
 
         ctx.restore();

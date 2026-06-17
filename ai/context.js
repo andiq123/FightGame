@@ -29,7 +29,7 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
     }, null);
 
     // Raycasting (Vision)
-    const ray = castRay(fighter, opponent);
+    const ray = castRay(fighter, opponent, obstacles);
     const rayDist = ray.dist;
     const canSee = ray.hit && !ray.blocked;
 
@@ -175,7 +175,9 @@ export function buildCtx(fighter, opponent, stats, now, rng, clones = [], projec
         movementBlocked: blockedMove != null,
 
         // New Tactical Senses
-        isSafe: nearestObstacle && ray.blocked && ray.hit && nearestObstacle.o.ownerId === fighter.id && nearestObstacle.d < 150,
+        // Safe behind cover: any obstacle (own wall OR a dynamic one) breaking
+        // line of sight close by — the AI uses it to recover / heal / regroup.
+        isSafe: nearestObstacle && ray.blocked && ray.hit && nearestObstacle.d < 160 && (nearestObstacle.o.ownerId === fighter.id || nearestObstacle.o.type === 'env'),
         underPressure: (hitALot || (dist < 150 && oppAttacking)) && !oppStaggered,
         staminaHigh,
         staminaMid: staminaRatio > 0.45,

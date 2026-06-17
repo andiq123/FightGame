@@ -1,5 +1,5 @@
 import { POSE } from '../entities/fighter.js';
-import { ATTACK_POWER_PUNCH } from '../entities/attacks.js';
+import { ATTACK, ATTACK_POWER_PUNCH } from '../entities/attacks.js';
 import { applyKnockback, applyAttackerRecoil } from './physics.js';
 import { createRagdoll } from './ragdoll.js';
 import { createHitEffect } from '../core/hitEffectFactory.js';
@@ -19,6 +19,22 @@ function hitboxOverlap(hb, targetX) {
   return Math.abs(targetX - hb.x) < hb.w + COMBAT.HITBOX_EXTRA;
 }
 
+// A protective wall standing between the two fighters blocks a melee strike.
+function wallBetween(ax, bx, obstacles) {
+  if (!obstacles?.length) return null;
+  const lo = Math.min(ax, bx) + 6;
+  const hi = Math.max(ax, bx) - 6;
+  return obstacles.find(o => o.x > lo && o.x < hi) || null;
+}
+
+// Vertical reach: ground pokes can't hit someone leaping overhead; only
+// launchers (uppercut / high kick / kick-launch moves) reach high into the air.
+function withinVerticalReach(hb, attacker, defender) {
+  const gap = Math.abs((attacker.y || 0) - (defender.y || 0));
+  const isLauncher = hb.kickLaunch || hb.type === ATTACK.uppercut || hb.type === ATTACK.highKick;
+  return gap <= (isLauncher ? (COMBAT.VERTICAL_REACH_HIGH ?? 180) : (COMBAT.VERTICAL_REACH ?? 95));
+}
+
 export function checkCloneHit(attacker, clones, opponentId, now) {
   const hb = attacker.getAttackHitbox(now);
   if (!hb) return null;
@@ -29,15 +45,37 @@ function getComboScale(comboCount) {
   return COMBAT.COMBO_SCALE[Math.min(comboCount, COMBAT.COMBO_SCALE.length - 1)] || 0.6;
 }
 
-function processHit(attacker, defender, now, hitEffects) {
+function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   const hb = attacker.getAttackHitbox(now);
   if (!hb || defender.status.active('invincible', now)) return;
 
+  // 1. Accurate reach: must be in horizontal range AND vertical reach.
+  if (!hitboxOverlap(hb, defender.x)) return;
+  if (!withinVerticalReach(hb, attacker, defender)) return;
+
+  // 2. Wall protection: a wall between the fighters eats the strike.
+  const wall = wallBetween(attacker.x, defender.x, obstacles);
+  if (wall) {
+    hitEffects.push(createHitEffect(wall.x, { y: getHitEffectY(0), block: true }));
+    return;
+  }
+
   const lowAttack = !hb.high;
+  const ducking = defender.status.active('blockLow', now);
+  const airborne = !defender.onGround();
+
+  // 3. Height evasion (full whiff → attacker is now punishable):
+  //    duck UNDER a high attack, or jump OVER a low attack.
+  if ((ducking && !lowAttack) || (airborne && lowAttack)) {
+    hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dodge: true }));
+    attacker.lastWhiffAt = now;
+    return;
+  }
+
+  // 4. Guard: standing block stops highs, crouch block stops lows.
   const isBlockingHigh = defender.status.active('block', now);
-  const isBlockingLow = defender.status.active('blockLow', now);
-  const successfullyBlocked = (isBlockingHigh && !lowAttack) || (isBlockingLow && lowAttack);
-  const blockMistake = (isBlockingHigh && lowAttack) || (isBlockingLow && !lowAttack);
+  const successfullyBlocked = (isBlockingHigh && !lowAttack) || (ducking && lowAttack);
+  const blockMistake = isBlockingHigh && lowAttack; // standing guard beaten by a low hit
 
   if (successfullyBlocked) {
     attacker.stamina = Math.max(0, attacker.stamina - (FIGHTER.DOUBLE_JUMP_STAMINA ?? 10));
@@ -66,8 +104,6 @@ function processHit(attacker, defender, now, hitEffects) {
     return;
   }
 
-  if (!hitboxOverlap(hb, defender.x)) return;
-
   const counter = defender.currentAttack && defender.getAttackHitbox(now) ? COMBAT.COUNTER_BONUS : 1;
   const comboScale = getComboScale(attacker.comboCount);
   let momentumMult = 1;
@@ -77,7 +113,11 @@ function processHit(attacker, defender, now, hitEffects) {
   else if (mom > 0) momentumMult = 1 + mom * 0.2;
   if (attacker.airAttack) momentumMult *= (COMBAT.AIR_ATTACK_MULT ?? 1.14);
 
-  const dmg = Math.round(hb.damage * comboScale * counter * attacker.damageMult * defender.damageTakenMult * momentumMult);
+  // 5. Critical hit: a random clean strike lands for bonus damage + extra punch.
+  const isCrit = secureRandom() < (COMBAT.CRIT_CHANCE ?? 0.15);
+  const critMult = isCrit ? (COMBAT.CRIT_MULT ?? 1.6) : 1;
+
+  const dmg = Math.round(hb.damage * comboScale * counter * critMult * attacker.damageMult * defender.damageTakenMult * momentumMult);
 
   applyHitResult(attacker, defender, dmg, now, hitEffects);
   defender.hitsDecayAt = now + 5000;
@@ -94,20 +134,21 @@ function processHit(attacker, defender, now, hitEffects) {
   attacker.lastHitLandAt = now;
   attacker.lastLandingAttackType = hb.type;
 
-  defender.status.set('stun', now + hb.stun);
-  defender.status.set('hitFlash', now + (counter > 1 ? COMBAT.HIT_FLASH_COUNTER_MS : COMBAT.HIT_FLASH_MS));
+  const stunMult = isCrit ? 1.3 : 1;
+  defender.status.set('stun', now + hb.stun * stunMult);
+  defender.status.set('hitFlash', now + (counter > 1 || isCrit ? COMBAT.HIT_FLASH_COUNTER_MS : COMBAT.HIT_FLASH_MS));
   defender.hitFromX = attacker.x;
   defender.pose = POSE.hit;
   defender.poseTime = 0;
 
   const afterwardDefender = defender.x > attacker.x ? 1 : -1;
-  const heavy = hb.damage >= 14 || hb.kickLaunch;
+  const heavy = hb.damage >= 14 || hb.kickLaunch || isCrit;
 
-  applyKnockback(defender, hb.knockback, attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch, now);
+  applyKnockback(defender, hb.knockback * (isCrit ? 1.25 : 1), attacker.x, heavy, hb.type === 6 || hb.type === ATTACK_POWER_PUNCH, hb.kickLaunch, now);
   applyAttackerRecoil(attacker, hb.knockback, -afterwardDefender);
 
   const shouldStagger = !defender.status.active('stagger', now) && defender.hp > 0 &&
-    (dmg >= COMBAT.STAGGER_DAMAGE || (counter > 1 && dmg >= COMBAT.STAGGER_COUNTER) || (attacker.comboCount >= 4 && dmg >= 9));
+    (dmg >= COMBAT.STAGGER_DAMAGE || isCrit || (counter > 1 && dmg >= COMBAT.STAGGER_COUNTER) || (attacker.comboCount >= 4 && dmg >= 9));
 
   if (shouldStagger || hb.kickLaunch) {
     defender.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
@@ -117,10 +158,10 @@ function processHit(attacker, defender, now, hitEffects) {
   }
 
   const punchDir = defender.x > attacker.x ? 1 : -1;
-  hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dmg, counter: counter > 1, heavy: hb.damage >= 9 || hb.kickLaunch, splatter: true, splatterDir: punchDir, splatterColor: attacker.color }));
+  hitEffects.push(createHitEffect(defender.x, { y: getHitEffectY(defender.y), dmg, counter: counter > 1, crit: isCrit, heavy: hb.damage >= 9 || hb.kickLaunch || isCrit, splatter: true, splatterDir: punchDir, splatterColor: attacker.color }));
 }
 
-export function resolveCombat(f1, f2, now, hitEffects, cloneHitByF1 = null, cloneHitByF2 = null) {
+export function resolveCombat(f1, f2, now, hitEffects, cloneHitByF1 = null, cloneHitByF2 = null, obstacles = []) {
   const hb1 = f1.getAttackHitbox(now);
   const hb2 = f2.getAttackHitbox(now);
   const bothAttacking = hb1 && hb2;
@@ -136,8 +177,8 @@ export function resolveCombat(f1, f2, now, hitEffects, cloneHitByF1 = null, clon
     f2.pose = POSE.idle;
     return;
   }
-  if (!cloneHitByF1) processHit(f1, f2, now, hitEffects);
-  if (!cloneHitByF2) processHit(f2, f1, now, hitEffects);
+  if (!cloneHitByF1) processHit(f1, f2, now, hitEffects, obstacles);
+  if (!cloneHitByF2) processHit(f2, f1, now, hitEffects, obstacles);
 }
 
 export function decayCombos(f1, f2, now) {

@@ -24,7 +24,7 @@ export class PhysicsSystem {
 
             const prevVx = f.vx;
             const prevVy = f.vy;
-            const wasOnGround = f.y >= -3;
+            const wasOnGround = f.y >= (f.groundY || 0) - 3;
 
             this.resolveObstacleCollision(f, world.obstacles, prevVx, now);
 
@@ -57,7 +57,7 @@ export class PhysicsSystem {
                 }
             }
 
-            const justLanded = !wasOnGround && f.y >= -3;
+            const justLanded = !wasOnGround && f.y >= (f.groundY || 0) - 3;
             if (justLanded) {
                 // Ground Impact Damage
                 if (isDistressed && prevVy > PHYSICS_EXTRA.IMPACT_DMG_THRESHOLD_GROUND) {
@@ -100,34 +100,46 @@ export class PhysicsSystem {
     }
 
     resolveObstacleCollision(f, obstacles, prevVx, now) {
-        if (!obstacles || obstacles.length === 0) return;
-        obstacles.forEach(o => {
-            const dx = f.x - o.x;
-            const halfW = o.width / 2;
-            const margin = 20;
-            if (Math.abs(dx) < halfW + margin) {
-                const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll;
-                // Impact Damage for slamming into obstacles
-                if (isDistressed && Math.abs(prevVx) > PHYSICS_EXTRA.IMPACT_DMG_THRESHOLD_WALL) {
-                    const impactCooldown = 300;
-                    if (now - (f.lastImpactAt || 0) > impactCooldown) {
-                        const dmg = Math.floor(Math.abs(prevVx) * PHYSICS_EXTRA.IMPACT_DMG_MULT);
-                        f.takeDamage(dmg, true, o.x, now);
-                        f.lastImpactAt = now;
-                    }
-                }
+        // Also resolves the fighter's standing surface (f.groundY): the floor (0)
+        // unless they're on top of a standable obstacle.
+        let groundY = 0;
+        if (obstacles && obstacles.length) {
+            obstacles.forEach(o => {
+                const halfW = o.width / 2;
+                const top = -(o.height || 0);
+                const overX = Math.abs(f.x - o.x) < halfW + 20;
 
-                // Push fighter out
-                if (f.x < o.x) {
-                    f.x = o.x - halfW - margin;
-                    if (prevVx > 0 || f.aiMoveIntent?.dir === 1) markMovementBlocked(f, 1, now, 'obstacle');
+                if (o.standable) {
+                    // Standable box: stand on top when over the footprint and at/above the top.
+                    if (Math.abs(f.x - o.x) < halfW - 2 && (f.y || 0) <= top + 6) {
+                        groundY = Math.min(groundY, top);
+                    }
+                    // Block the sides only when the body is below the top (beside the box).
+                    if (overX && (f.y || 0) > top + 8) this.pushOut(f, o, halfW, prevVx, now);
+                } else {
+                    // Tall cover (pillar / earth wall): pass over when airborne (feet 25px+ up).
+                    if (overX && (f.y || 0) > -25) this.pushOut(f, o, halfW, prevVx, now);
                 }
-                else {
-                    f.x = o.x + halfW + margin;
-                    if (prevVx < 0 || f.aiMoveIntent?.dir === -1) markMovementBlocked(f, -1, now, 'obstacle');
-                }
-                f.vx = 0;
-            }
-        });
+            });
+        }
+        f.groundY = groundY;
+    }
+
+    pushOut(f, o, halfW, prevVx, now) {
+        const margin = 20;
+        const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll;
+        if (isDistressed && Math.abs(prevVx) > PHYSICS_EXTRA.IMPACT_DMG_THRESHOLD_WALL && now - (f.lastImpactAt || 0) > 300) {
+            const dmg = Math.floor(Math.abs(prevVx) * PHYSICS_EXTRA.IMPACT_DMG_MULT);
+            f.takeDamage(dmg, true, o.x, now);
+            f.lastImpactAt = now;
+        }
+        if (f.x < o.x) {
+            f.x = o.x - halfW - margin;
+            if (prevVx > 0 || f.aiMoveIntent?.dir === 1) markMovementBlocked(f, 1, now, 'obstacle');
+        } else {
+            f.x = o.x + halfW + margin;
+            if (prevVx < 0 || f.aiMoveIntent?.dir === -1) markMovementBlocked(f, -1, now, 'obstacle');
+        }
+        f.vx = 0;
     }
 }

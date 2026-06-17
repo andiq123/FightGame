@@ -40,12 +40,13 @@ function applyAirDrag(fighter, dt) {
 }
 
 export function integratePosition(fighter, dt, now) {
-  const wasOnGround = fighter.y >= -2;
+  const gy = fighter.groundY || 0;
+  const wasOnGround = fighter.y >= gy - 2;
 
   fighter.x += fighter.vx * dt;
   fighter.y += fighter.vy * dt;
-  if (wasOnGround && fighter.y < -2) fighter.lastLeftGroundAt = now;
-  if (fighter.y >= 0) {
+  if (wasOnGround && fighter.y < gy - 2) fighter.lastLeftGroundAt = now;
+  if (fighter.y >= gy) {
     fighter.lastLeftGroundAt = 0;
   }
 }
@@ -59,8 +60,9 @@ export function applyFriction(fighter, dt, now) {
 }
 
 function clampToGround(fighter) {
-  if (fighter.y >= 0) {
-    fighter.y = 0;
+  const gy = fighter.groundY || 0; // floor, or the top of a standable obstacle
+  if (fighter.y >= gy) {
+    fighter.y = gy;
     if (Math.abs(fighter.vy) < 45) fighter.vy = 0;
   }
 }

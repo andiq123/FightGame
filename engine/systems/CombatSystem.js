@@ -34,7 +34,7 @@ export class CombatSystem {
         }
 
         // 3. Resolve Main Combat
-        resolveCombat(world.fighter1, world.fighter2, now, world.hitEffects, cloneHitByF1, cloneHitByF2);
+        resolveCombat(world.fighter1, world.fighter2, now, world.hitEffects, cloneHitByF1, cloneHitByF2, world.obstacles);
 
         // 4. Projectile Processing
         tickProjectiles(world.projectiles, dt * world.gameSpeed);
@@ -225,7 +225,7 @@ export class CombatSystem {
                 world.hitStopRemaining = Math.max(world.hitStopRemaining, RENDER.HIT_STOP_HEAVY_MS ?? 160);
             }
 
-            if (h.counter) {
+            if (h.counter || h.crit) {
                 world.screenShake = Math.min(30, world.screenShake + (RENDER.SHAKE_COUNTER ?? 10));
                 world.hitZoom = Math.min(world.hitZoom, RENDER.ZOOM_HEAVY ?? 0.88);
                 world.hitStopRemaining = Math.max(world.hitStopRemaining, RENDER.HIT_STOP_COUNTER_MS ?? 180);

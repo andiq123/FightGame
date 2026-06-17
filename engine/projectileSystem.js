@@ -148,6 +148,18 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
     const hitY = segMinY <= fighterBottom && segMaxY >= fighterTop;
 
     if (hitX && hitY) {
+      // Height-based evasion: a successful duck/jump is a full evade, not a chip block.
+      // These must run before any block/damage logic so the projectile keeps flying.
+      const projectileIsHigh = p.high !== false; // fireball/shuriken/flameShower are HIGH; iceSpikes is LOW
+      // Rule A — duck under a HIGH projectile: crouch-block (blockLow) lets it pass over.
+      if (projectileIsHigh && targetFighter.status.active('blockLow', now)) {
+        return Math.abs(p.x) < ARENA_BOUNDS + 150; // whiff: no hit, keep traveling
+      }
+      // Rule B — jump over a LOW projectile: airborne fighter lets it pass under.
+      if (!projectileIsHigh && !targetFighter.onGround()) {
+        return Math.abs(p.x) < ARENA_BOUNDS + 150; // whiff: no hit, keep traveling
+      }
+
       if (targetFighter.status.active('invincible', now)) return Math.abs(p.x) < ARENA_BOUNDS + 150;
 
       const blocking = targetFighter.status.active('block', now);

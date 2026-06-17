@@ -38,7 +38,21 @@ power multiplier at each skill's damage site. The AI reads each fighter's own
 
 ## AI: one brain, not three
 
-The AI is a single utility-based decider (`ai/decide.js`). Each decision tick:
+Concerns are split into focused modules:
+- **`ai/context.js`** — perception: distance, vision, projectile threat, frame
+  advantage, opponent + self state, all the awareness flags.
+- **`ai/skills.js`** — every jutsu has one CATEGORY (projectile, movement/teleport,
+  meleeBurst, control, defense/wall, setup, recovery) plus tags (`evade`,
+  `defense`). `pickPower(ctx, {categories|tags})` selects by class instead of
+  hardcoded id lists — the one reusable skill-selection pattern.
+- **`ai/evasion.js`** — projectile-aware dodging: read the shot's height/timing/
+  distance and answer optimally (teleport → duck a high shot → jump a low shot →
+  sidestep → block), all gated by intelligence. Duck/jump actually whiff
+  projectiles (height rules in `engine/projectileSystem.js`).
+- **`ai/decide.js`** — orchestration only: the priority-ordered considerations.
+- **`ai/behavior.js`** — turns an action into fighter state + locomotion.
+
+The AI is a single utility-based decider. Each decision tick:
 1. `ai/context.js` builds sensing data **once** (vision raycast, projectile
    threat, frame advantage, ranges, stamina/HP flags).
 2. `decideAction(ctx)` walks a flat, priority-ordered list of considerations
@@ -50,6 +64,25 @@ The AI is a single utility-based decider (`ai/decide.js`). Each decision tick:
 Powers score themselves via each power's own `score(ctx)` — there is **no**
 separate jutsu-profile table, strategy/mood layer, or state machine. `pickPower`
 only adds a stamina-budget gate, the global cooldown, and a repeat penalty.
+
+## Melee hit resolution (engine/combat.js)
+
+`processHit` resolves a strike accurately, in order:
+1. **Reach** — horizontal hitbox overlap AND vertical reach (`VERTICAL_REACH` 95;
+   launchers `VERTICAL_REACH_HIGH` 180), so ground pokes whiff against an airborne
+   opponent and only uppercut/high-kick reach into the air.
+2. **Wall** — `wallBetween()` blocks the strike if a protective wall (earthWall)
+   sits between the fighters, mirroring the projectile-vs-wall rule.
+3. **Height evasion** — duck (`blockLow`) UNDER a high attack or jump OVER a low
+   attack is a full whiff (attacker left punishable), matching projectile evasion.
+4. **Guard** — standing block stops highs, crouch block stops lows.
+5. **Crit** — `CRIT_CHANCE` 0.15 / `CRIT_MULT` 1.6, with extra stun, knockback and
+   a guaranteed stagger; rendered as a gold "CRIT!" number.
+
+Attack animations (`engine/fightAnimations.js`) are timed so the limb reaches full
+extension across the 30–75% hitbox-active window (windup → strike → follow →
+recovery), with per-attack variety (jab snap, hook arc, uppercut rise, axe chop,
+spin kick).
 
 ## SOLID
 
@@ -94,8 +127,9 @@ services/hud.js         - updateHUD, updatePowerCooldownUI, updateJutsuHUD
 services/particleSystem.js - spawn*, tickParticles
 engine/                 - physics, combat, renderer, ragdoll, projectileThreat, raycast
 entities/               - fighter, attacks, powers/
-ai/                     - context (sensing), decide (single utility brain),
-                          behavior (action execution + locomotion),
+ai/                     - context (perception/sensing), skills (categorization +
+                          pickPower), evasion (projectile dodge/duck/jump/teleport),
+                          decide (orchestration), behavior (execution + locomotion),
                           staminaStrategy, presets
 game.js                 - minimal orchestrator
 ```

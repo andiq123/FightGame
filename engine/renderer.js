@@ -13,8 +13,73 @@ import {
   recoveryFromRest,
   getWalkCycle,
   getRunCycle,
-  getHitReaction
+  getHitReaction,
+  strikeImpactPulse
 } from './fightAnimations.js';
+
+// Tint the swipe arc + anticipation glow by attack "weight" (its base damage).
+// Light/fast strikes read cool white→cyan; heavy strikes read hot orange→red.
+function attackWeightTint(damage) {
+  const d = damage || 5;
+  const t = Math.max(0, Math.min(1, (d - 5) / 16)); // 5dmg→light … 21dmg→heavy
+  // Lerp cyan-white (light) → orange-red (heavy).
+  const r = Math.round(180 + t * 75);   // 180 → 255
+  const g = Math.round(245 - t * 145);  // 245 → 100
+  const b = Math.round(255 - t * 215);  // 255 → 40
+  return { r, g, b, t };
+}
+
+// Draw a bright crescent MOTION SWIPE that traces the striking limb's recent
+// path during the active window. This is the primary telegraph for an attack:
+// a fading swoosh from the limb's earlier position to its current tip.
+function drawAttackSwipe(ctx, tips, tint, intensity) {
+  if (!tips || tips.length < 2 || intensity <= 0) return;
+  const { r, g, b } = tint;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Layered strokes: a wide soft glow underneath, a bright thin core on top.
+  const layers = [
+    { w: 22, a: 0.18 },
+    { w: 12, a: 0.30 },
+    { w: 4.5, a: 0.85 }
+  ];
+
+  for (const layer of layers) {
+    ctx.beginPath();
+    for (let i = 0; i < tips.length; i++) {
+      const p = tips[i];
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    // Width tapers along the trail via the stroke alpha gradient feel; we keep a
+    // single width per layer but fade the whole swipe by `intensity` (drops to 0
+    // outside the active window) so it appears on the hit and vanishes fast.
+    const newest = tips[tips.length - 1];
+    const oldest = tips[0];
+    const grad = ctx.createLinearGradient(oldest.x, oldest.y, newest.x, newest.y);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},${layer.a * intensity})`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = layer.w;
+    ctx.stroke();
+  }
+
+  // A bright leading "spark" at the current limb tip to punctuate the strike.
+  const tip = tips[tips.length - 1];
+  const sparkR = 7 + 5 * intensity;
+  const sg = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, sparkR);
+  sg.addColorStop(0, `rgba(255,255,255,${0.9 * intensity})`);
+  sg.addColorStop(0.5, `rgba(${r},${g},${b},${0.5 * intensity})`);
+  sg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, sparkR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
 
 export function drawDecals(ctx, decals, now) {
   decals.forEach(d => {
@@ -355,30 +420,76 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lFootAng = hit.lFoot;
     rFootAng = hit.rFoot;
   } else if (pose === POSE.block) {
-    lean = -face * 0.12 * blockT;
-    bob = 4 * blockT;
-    const armUp = blockT * 1.25;
-    lArmAng = -Math.PI / 2 - armUp;
-    rArmAng = -Math.PI / 2 - armUp;
-    lForeArmAng = 0.9;
-    rForeArmAng = 0.65;
+    // Two readable defensive shapes: HIGH guard (arms up & forward, covering the
+    // head) vs LOW block / crouch (compact, lowered, arms down across the body).
+    const isLow = fighter.status?.active?.('blockLow', now);
+    if (isLow) {
+      // Crouch: drop the centre of mass, fold the knees, tuck forearms low and
+      // forward so it clearly reads as ducking under / blocking low.
+      lean = face * 0.18 * blockT;
+      bob = -14 * blockT;                 // sink down
+      lLegAng = 0.34 * blockT;
+      rLegAng = -0.26 * blockT;
+      lKneeOff = 0.36 + 0.9 * blockT;     // deep knee bend
+      rKneeOff = 0.30 + 0.8 * blockT;
+      // Forearms angled down-and-forward, hands meeting low to guard the body.
+      lArmAng = -0.35 + blockT * 0.55;
+      rArmAng = -0.35 + blockT * 0.55;
+      lForeArmAng = -0.55 * blockT;
+      rForeArmAng = -0.7 * blockT;
+      headTilt = face * 0.12 * blockT;
+    } else {
+      // High guard: both fists driven UP and slightly FORWARD to cover the face,
+      // shoulders raised, weight rocked back — a clear "I'm defending" silhouette.
+      lean = -face * 0.14 * blockT;
+      bob = 5 * blockT;
+      const armUp = blockT * 1.35;
+      lArmAng = -Math.PI / 2 - armUp;
+      rArmAng = -Math.PI / 2 - armUp;
+      // Forearms cross slightly forward of the face rather than straight up.
+      lForeArmAng = 1.0 + face * 0.15;
+      rForeArmAng = 0.7 + face * 0.15;
+      headTilt = -face * 0.06 * blockT;   // chin tucked behind the guard
+    }
   }
 
-  // Calculate Limb Bulge & Stretch
+  // Calculate Limb Bulge & Stretch — and gather the attack-phase context the
+  // swipe / anticipation / impact accents below all share.
   let limbBulge = 0;
   let limbStretch = 0;
+  // Accent state used after the body is positioned.
+  let attackCtx = null;        // { phase, localT, isPunch, weapon, tint, active }
+  let anticipationGlow = 0;    // 0..1 windup chamber-glow strength
   if (fighter.currentAttack) {
     const isPunch = pose === POSE.punch;
     const isKick = pose === POSE.kick;
     const a = fighter.currentAttack;
     const { phase, localT } = isPunch ? getPunchPhase(poseT, a.data.duration, a.type) : getKickPhase(poseT, a.data.duration, a.type);
 
-    const STRIKE = 1;
+    const WINDUP = 0, STRIKE = 1;
     if (phase === STRIKE) {
       const snap = Math.sin(localT * Math.PI);
       limbBulge = 0.45 * snap;
       limbStretch = 10 * snap;
+      // Extra IMPACT stretch spike right on the contact frame (~50%).
+      limbStretch += 6 * strikeImpactPulse(localT);
     }
+
+    // ANTICIPATION: faint chamber-glow that builds through the windup so the
+    // wind-up is visible just before the hand/foot fires.
+    if (phase === WINDUP) anticipationGlow = Math.sin(localT * Math.PI * 0.5);
+
+    // Active window for the swipe is 30%–75% of the whole attack (matches the
+    // melee hitbox). Compute a global progress fraction to gate it.
+    const progress = poseT / (a.data.duration / 1000);
+    const inActive = progress >= 0.3 && progress <= 0.75;
+    // Fade the swipe in/out smoothly at the window edges so it never pops.
+    const edge = Math.min(1, (progress - 0.3) / 0.12, (0.75 - progress) / 0.12);
+    attackCtx = {
+      phase, localT, progress, isPunch,
+      tint: attackWeightTint(a.data.damage),
+      swipeIntensity: inActive ? Math.max(0, edge) : 0
+    };
   }
 
   // Combat Override
@@ -447,6 +558,9 @@ export function drawStickman(ctx, fighter, groundY, now) {
         squashY += 0.05 * snap;
         stretchX += 0.15 * snap;
         pelvisX += face * snap * 8; // Extra reach/lean
+        // IMPACT emphasis: a brief forward lunge spike on the contact frame so
+        // the exact moment of the hit reads as a committed push.
+        pelvisX += face * strikeImpactPulse(localT) * 7;
       }
     }
   }
@@ -567,6 +681,55 @@ export function drawStickman(ctx, fighter, groundY, now) {
   drawAdvancedLimb(ctx, lElbowX, lElbowY, lWristX, lWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
   drawAdvancedLimb(ctx, rShX, rShY, rElbowX, rElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
   drawAdvancedLimb(ctx, rElbowX, rElbowY, rWristX, rWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
+
+  // ── MOTION SWIPE ARC + ANTICIPATION GLOW ──────────────────────────────────
+  // Telegraph the strike: trace the striking limb's tip path with a bright
+  // crescent during the active window, and show a faint chamber-glow on windup.
+  if (attackCtx) {
+    // Pick the striking weapon tip. Punches drive the LEAD hand (rendered as the
+    // right arm wrist); kicks drive the LEAD foot's toe (side depends on facing).
+    let tipX, tipY;
+    if (attackCtx.isPunch) {
+      tipX = rWristX; tipY = rWristY;
+    } else if (face === 1) {
+      tipX = rToeX; tipY = rToeY;
+    } else {
+      tipX = lToeX; tipY = lToeY;
+    }
+
+    // Per-fighter ring buffer of recent tip positions (world space) for the arc.
+    if (!fighter._swipeTips) fighter._swipeTips = [];
+    const tips = fighter._swipeTips;
+
+    if (attackCtx.swipeIntensity > 0) {
+      // Record the current tip while the strike is active.
+      tips.push({ x: tipX, y: tipY });
+      if (tips.length > 7) tips.shift();
+      drawAttackSwipe(ctx, tips, attackCtx.tint, attackCtx.swipeIntensity);
+    } else {
+      // Outside the active window: let the trail decay so it's fresh next strike.
+      if (tips.length) tips.length = 0;
+    }
+
+    // ANTICIPATION chamber-glow: a soft pulse at the striking hand/foot as it
+    // loads, hinting where the strike will come from before it fires.
+    if (anticipationGlow > 0.02) {
+      const { r, g, b } = attackCtx.tint;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = 10 + 8 * anticipationGlow;
+      const gg = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, gr);
+      gg.addColorStop(0, `rgba(${r},${g},${b},${0.35 * anticipationGlow})`);
+      gg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = gg;
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, gr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else if (fighter._swipeTips && fighter._swipeTips.length) {
+    fighter._swipeTips.length = 0; // not attacking → clear stale tips
+  }
 
   // Head
   ctx.fillStyle = baseColor;
@@ -698,8 +861,46 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     ctx.restore();
   }
 
+  // Subtle horizontal gradient banding for atmospheric depth in the sky
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  for (let b = 0; b < 4; b++) {
+    const by = h * (0.12 + b * 0.11);
+    const band = ctx.createLinearGradient(drawX, by, drawX, by + h * 0.06);
+    band.addColorStop(0, 'rgba(40,58,78,0.05)');
+    band.addColorStop(1, 'rgba(40,58,78,0)');
+    ctx.fillStyle = band;
+    ctx.fillRect(drawX, by, drawW, h * 0.06);
+  }
+  ctx.restore();
+
+  // --- Layer 0: DISTANT PEAKS (deepest, slowest parallax) ---
   const farLeft = viewLeft * PARALLAX_FAR + farOff;
   const farRight = viewRight * PARALLAX_FAR + farOff;
+  const deepStep = 540;
+  let dsx = Math.floor(farLeft / deepStep) * deepStep;
+  ctx.fillStyle = '#0a0f14';
+  while (dsx < farRight + deepStep) {
+    const x = dsx;
+    const peak = floorY - 560 - (Math.sin(dsx * 0.0013) * 70) - (Math.cos(dsx * 0.0007) * 40);
+    ctx.beginPath();
+    ctx.moveTo(x - 220, floorY + 20);
+    ctx.lineTo(x - 60, peak + 120);
+    ctx.lineTo(x + 30, peak);
+    ctx.lineTo(x + 140, peak + 90);
+    ctx.lineTo(x + 260, floorY + 20);
+    ctx.closePath();
+    ctx.fill();
+    dsx += deepStep;
+  }
+  // soft haze where distant peaks meet the sky
+  const hazeG = ctx.createLinearGradient(drawX, floorY - 560, drawX, floorY - 280);
+  hazeG.addColorStop(0, 'rgba(30,44,60,0)');
+  hazeG.addColorStop(1, 'rgba(30,44,60,0.25)');
+  ctx.fillStyle = hazeG;
+  ctx.fillRect(drawX, floorY - 560, drawW, 300);
+
+  // --- Layer 1: nearer ridge silhouettes ---
   const step = 320;
   let sx = Math.floor(farLeft / step) * step;
   ctx.fillStyle = '#0e1412';
@@ -714,6 +915,67 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     ctx.closePath();
     ctx.fill();
     sx += step;
+  }
+
+  // --- Layer 1.5: distant temple + torii silhouettes (FAR parallax) ---
+  const templeStep = 900;
+  let tsx = Math.floor(farLeft / templeStep) * templeStep;
+  while (tsx < farRight + templeStep) {
+    const x = tsx + 200;
+    const baseY = floorY - 40;
+    const variant = Math.floor((Math.sin(tsx * 0.01) * 0.5 + 0.5) * 2);
+    ctx.fillStyle = '#0c1311';
+    if (variant === 0) {
+      // pagoda silhouette
+      const pw = 120;
+      for (let tier = 0; tier < 3; tier++) {
+        const ty = baseY - 60 - tier * 70;
+        const tw = pw - tier * 28;
+        ctx.fillRect(x - tw / 2, ty, tw, 50);
+        // eaves
+        ctx.beginPath();
+        ctx.moveTo(x - tw / 2 - 18, ty);
+        ctx.lineTo(x + tw / 2 + 18, ty);
+        ctx.lineTo(x + tw / 2, ty - 14);
+        ctx.lineTo(x - tw / 2, ty - 14);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else {
+      // torii gate silhouette
+      const gw = 150, gh = 200;
+      ctx.fillRect(x - gw / 2, baseY - gh, 16, gh);
+      ctx.fillRect(x + gw / 2 - 16, baseY - gh, 16, gh);
+      ctx.fillRect(x - gw / 2 - 26, baseY - gh + 6, gw + 52, 22);
+      ctx.fillRect(x - gw / 2 - 14, baseY - gh + 46, gw + 28, 16);
+    }
+    tsx += templeStep;
+  }
+
+  // --- Layer 1.6: mid-distance scattered boulders (MID parallax, behind bamboo) ---
+  const boulderSpacing = 260;
+  const midWL = (viewLeft - midOff) / PARALLAX_MID;
+  const midWR = (viewRight - midOff) / PARALLAX_MID;
+  let rbx = Math.floor(midWL / boulderSpacing) * boulderSpacing - boulderSpacing;
+  while (rbx < midWR + boulderSpacing) {
+    const x = rbx * PARALLAX_MID + midOff;
+    const s = Math.sin(rbx * 0.017) * 0.5 + 0.5;
+    const bw = 70 + s * 60;
+    const bh = 36 + s * 30;
+    const by = floorY - 6;
+    const bg = ctx.createLinearGradient(x, by - bh, x, by);
+    bg.addColorStop(0, '#23302a');
+    bg.addColorStop(1, '#141d18');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(x - bw / 2, by);
+    ctx.lineTo(x - bw * 0.3, by - bh * 0.7);
+    ctx.lineTo(x, by - bh);
+    ctx.lineTo(x + bw * 0.34, by - bh * 0.6);
+    ctx.lineTo(x + bw / 2, by);
+    ctx.closePath();
+    ctx.fill();
+    rbx += boulderSpacing;
   }
 
   const fog = ctx.createLinearGradient(baseX, floorY - 200, baseX, h);
@@ -756,8 +1018,47 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     ctx.strokeRect(px, floorY, plankW, plankH);
   }
 
-  ctx.fillStyle = '#121a14';
+  // Ground plane base
+  const groundG = ctx.createLinearGradient(baseX, floorY + plankH, baseX, h);
+  groundG.addColorStop(0, '#16211a');
+  groundG.addColorStop(1, '#0c120e');
+  ctx.fillStyle = groundG;
   ctx.fillRect(baseX, floorY + plankH, w, h - floorY - plankH);
+
+  // Ground texture: subtle seed-stable speckle + cracks (foreground detail)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  const gTex = 90;
+  const gFirst = Math.floor(viewLeft / gTex) * gTex;
+  for (let gx = gFirst; gx < viewRight + gTex; gx += gTex) {
+    const s = Math.sin(gx * 0.05) * 0.5 + 0.5;
+    const gy = floorY + plankH + 14 + s * (h - floorY - plankH - 30);
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(gx + 30 + s * 30, gy + 6);
+    ctx.stroke();
+    // small pebble highlight
+    ctx.fillStyle = 'rgba(120,140,120,0.06)';
+    ctx.fillRect(gx + 50, gy + 10, 4 + s * 6, 2);
+  }
+  // foreground grass/debris tufts along the plank edge
+  ctx.strokeStyle = 'rgba(40,60,40,0.55)';
+  ctx.lineWidth = 2;
+  const tuftStep = 70;
+  const tFirst = Math.floor(viewLeft / tuftStep) * tuftStep;
+  for (let tx = tFirst; tx < viewRight + tuftStep; tx += tuftStep) {
+    const s = Math.sin(tx * 0.08) * 0.5 + 0.5;
+    if (s < 0.45) continue;
+    const ty = floorY + plankH + 2;
+    for (let b = -1; b <= 1; b++) {
+      ctx.beginPath();
+      ctx.moveTo(tx + b * 3, ty);
+      ctx.quadraticCurveTo(tx + b * 6, ty - 10 - s * 6, tx + b * 10, ty - 14 - s * 8);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 
   const lanternSpacing = 380;
   let lx = Math.floor(midWorldLeft / lanternSpacing) * lanternSpacing - lanternSpacing;
@@ -816,14 +1117,19 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     ctx.restore();
   });
 
-  drawObstacles(ctx, world.obstacles);
+  drawObstacles(ctx, world.obstacles, now);
   drawAtmosphere(ctx, w, h, camX, now, world);
 }
 
-function drawObstacles(ctx, obstacles) {
+function drawObstacles(ctx, obstacles, now = 0) {
   if (!obstacles) return;
   obstacles.forEach(o => {
     ctx.save();
+    if (o.type === 'env') {
+      drawEnvObstacle(ctx, o, now);
+      ctx.restore();
+      return;
+    }
     if (o.type === 'earth') {
       const lifePct = o.life / 6; // Assume 6s base life
       const rise = Math.min(1, (6 - o.life) * 2.5); // Fast rise
@@ -843,15 +1149,18 @@ function drawObstacles(ctx, obstacles) {
       ctx.strokeStyle = '#1a1005';
       ctx.lineWidth = 3;
 
-      // Draw jagged rock
+      // Draw jagged rock — points scale with the wall's width so a thicker wall
+      // renders as a wider, more imposing barrier.
+      const w = o.width;
       ctx.beginPath();
-      ctx.moveTo(x - 5, groundY);
-      ctx.lineTo(x + 5, y + h * 0.2);
-      ctx.lineTo(x + 15, y);
-      ctx.lineTo(x + 30, y + h * 0.15);
-      ctx.lineTo(x + 45, y - h * 0.05);
-      ctx.lineTo(x + 60, y + h * 0.2);
-      ctx.lineTo(x + o.width + 5, groundY);
+      ctx.moveTo(x - 6, groundY);
+      ctx.lineTo(x + w * 0.07, y + h * 0.2);
+      ctx.lineTo(x + w * 0.22, y);
+      ctx.lineTo(x + w * 0.42, y + h * 0.12);
+      ctx.lineTo(x + w * 0.62, y - h * 0.05);
+      ctx.lineTo(x + w * 0.8, y + h * 0.1);
+      ctx.lineTo(x + w * 0.93, y + h * 0.22);
+      ctx.lineTo(x + w + 6, groundY);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
@@ -867,6 +1176,284 @@ function drawObstacles(ctx, obstacles) {
     }
     ctx.restore();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic environment obstacles (rock / crate / log / pillar)
+// ---------------------------------------------------------------------------
+function drawEnvObstacle(ctx, o, now) {
+  const groundY = 810;
+  const seed = (typeof o.seed === 'number' ? o.seed : 0.5);
+
+  // RISE animation: first ~0.35s after createdAt, height scales 0 -> 1 with ease-out
+  const age = (typeof o.createdAt === 'number' && now) ? (now - o.createdAt) / 1000 : 99;
+  const riseT = Math.max(0, Math.min(1, age / 0.35));
+  const rise = 1 - Math.pow(1 - riseT, 3); // ease-out cubic
+
+  // FADE / crumble as life runs out (life is in seconds)
+  const life = (typeof o.life === 'number') ? o.life : 99;
+  const fade = life < 1.5 ? Math.max(0, life / 1.5) : 1;
+  const sink = (1 - fade) * 14; // slight sink into the ground as it crumbles
+
+  if (rise <= 0.001 || fade <= 0.001) return;
+
+  const w = o.width;
+  const fullH = o.height;
+  const h = fullH * rise;
+  const x = o.x - w / 2;
+  const cx = o.x;
+  const topY = groundY - h + sink;
+
+  ctx.globalAlpha = fade;
+
+  // --- Contact shadow on the ground (all kinds) ---
+  ctx.save();
+  const shW = w * (0.62 + seed * 0.12);
+  const shadG = ctx.createRadialGradient(cx, groundY + 4, 0, cx, groundY + 4, shW);
+  shadG.addColorStop(0, 'rgba(0,0,0,0.4)');
+  shadG.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shadG;
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY + 6, shW, 12 + h * 0.03, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const kind = o.kind || 'rock';
+  if (kind === 'rock') drawRock(ctx, x, topY, w, h, groundY, seed);
+  else if (kind === 'crate') drawCrate(ctx, x, topY, w, h, groundY, seed);
+  else if (kind === 'log') drawLog(ctx, x, topY, w, h, groundY, seed);
+  else if (kind === 'pillar') drawPillar(ctx, x, topY, w, h, groundY, seed);
+  else drawRock(ctx, x, topY, w, h, groundY, seed);
+}
+
+function drawRock(ctx, x, topY, w, h, groundY, seed) {
+  const cx = x + w / 2;
+  // seed-based silhouette variation
+  const j = (n) => Math.sin(seed * 31.7 + n) * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 4, groundY);
+  ctx.lineTo(x + w * (0.05 + 0.04 * j(1)), topY + h * (0.35 + 0.1 * j(2)));
+  ctx.lineTo(x + w * (0.24 + 0.05 * j(3)), topY + h * (0.08 + 0.06 * j(4)));
+  ctx.lineTo(x + w * 0.5, topY + h * (0.02 + 0.05 * j(5)));
+  ctx.lineTo(x + w * (0.74 + 0.05 * j(6)), topY + h * (0.1 + 0.06 * j(7)));
+  ctx.lineTo(x + w * (0.95 + 0.03 * j(8)), topY + h * (0.4 + 0.1 * j(9)));
+  ctx.lineTo(x + w + 4, groundY);
+  ctx.closePath();
+
+  const g = ctx.createLinearGradient(x, topY, x, groundY);
+  g.addColorStop(0, '#7d7468');
+  g.addColorStop(0.45, '#5c5247');
+  g.addColorStop(1, '#332a20');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = '#1c150d';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // facet highlights
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255,245,225,0.10)';
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.18, topY + h * 0.18);
+  ctx.lineTo(cx + w * 0.05, topY + h * 0.05);
+  ctx.lineTo(cx - w * 0.02, topY + h * 0.4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx + w * 0.1, topY + h * 0.15);
+  ctx.lineTo(cx + w * 0.22, groundY - h * 0.1);
+  ctx.stroke();
+  ctx.restore();
+
+  // top ledge highlight (standable)
+  ctx.strokeStyle = 'rgba(255,250,235,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.24, topY + h * 0.08 + 1);
+  ctx.lineTo(x + w * 0.5, topY + h * 0.02 + 1);
+  ctx.lineTo(x + w * 0.74, topY + h * 0.1 + 1);
+  ctx.stroke();
+}
+
+function drawCrate(ctx, x, topY, w, h, groundY, seed) {
+  const topFace = Math.min(14, h * 0.18);
+  // body
+  const g = ctx.createLinearGradient(x, topY, x, groundY);
+  g.addColorStop(0, '#8a6235');
+  g.addColorStop(1, '#523c20');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, topY + topFace, w, groundY - topY - topFace);
+  ctx.strokeStyle = '#241803';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, topY + topFace, w, groundY - topY - topFace);
+
+  // lighter top face (reads as standable)
+  ctx.fillStyle = '#a8804c';
+  ctx.beginPath();
+  ctx.moveTo(x, topY + topFace);
+  ctx.lineTo(x + topFace * 0.8, topY);
+  ctx.lineTo(x + w + topFace * 0.0, topY);
+  ctx.lineTo(x + w, topY + topFace);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,210,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 2, topY + topFace - 1);
+  ctx.lineTo(x + w - 2, topY + topFace - 1);
+  ctx.stroke();
+
+  // plank lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+  ctx.lineWidth = 1.5;
+  const planks = 3;
+  for (let i = 1; i < planks; i++) {
+    const py = topY + topFace + (groundY - topY - topFace) * (i / planks);
+    ctx.beginPath();
+    ctx.moveTo(x, py);
+    ctx.lineTo(x + w, py);
+    ctx.stroke();
+  }
+  // diagonal brace
+  ctx.beginPath();
+  ctx.moveTo(x, topY + topFace);
+  ctx.lineTo(x + w, groundY);
+  ctx.stroke();
+
+  // corner braces
+  ctx.fillStyle = '#3a2a14';
+  const b = Math.min(8, w * 0.08);
+  ctx.fillRect(x, topY + topFace, b, groundY - topY - topFace);
+  ctx.fillRect(x + w - b, topY + topFace, b, groundY - topY - topFace);
+}
+
+function drawLog(ctx, x, topY, w, h, groundY, seed) {
+  const cy = (topY + groundY) / 2;
+  const ry = (groundY - topY) / 2;
+  const endR = ry; // end ellipse radius
+  // barrel body
+  const g = ctx.createLinearGradient(x, topY, x, groundY);
+  g.addColorStop(0, '#6e4f30');
+  g.addColorStop(0.5, '#56391f');
+  g.addColorStop(1, '#3a2614');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x, topY);
+  ctx.lineTo(x + w, topY);
+  ctx.lineTo(x + w, groundY);
+  ctx.lineTo(x, groundY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#241404';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, topY); ctx.lineTo(x + w, topY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, groundY); ctx.lineTo(x + w, groundY); ctx.stroke();
+
+  // bark texture along top
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const lx = x + w * (0.12 + i * 0.14);
+    ctx.beginPath();
+    ctx.moveTo(lx, topY + 2);
+    ctx.lineTo(lx + 4, groundY - 4);
+    ctx.stroke();
+  }
+  // top ledge highlight (standable)
+  ctx.strokeStyle = 'rgba(255,235,200,0.45)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x + endR, topY + 2);
+  ctx.lineTo(x + w - endR, topY + 2);
+  ctx.stroke();
+
+  // rounded end with end-grain rings
+  ctx.fillStyle = '#7a5836';
+  ctx.beginPath();
+  ctx.ellipse(x + w - 2, cy, endR * 0.6, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2c1a08';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  for (let r = 1; r <= 3; r++) {
+    ctx.strokeStyle = `rgba(40,24,8,${0.5 - r * 0.1})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(x + w - 2, cy, endR * 0.6 * (r / 3.5), ry * (r / 3.5), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // far end (shaded)
+  ctx.fillStyle = '#4a3320';
+  ctx.beginPath();
+  ctx.ellipse(x + 1, cy, endR * 0.55, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2c1a08';
+  ctx.stroke();
+}
+
+function drawPillar(ctx, x, topY, w, h, groundY, seed) {
+  const capH = Math.min(18, h * 0.1);
+  const bodyTop = topY + capH;
+  // body gradient — jade-grey stone
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, '#3f4a44');
+  g.addColorStop(0.5, '#5c6b62');
+  g.addColorStop(1, '#2c352f');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, bodyTop, w, groundY - bodyTop);
+  ctx.strokeStyle = '#161c19';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, bodyTop, w, groundY - bodyTop);
+
+  // vertical segments
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1.5;
+  for (let i = 1; i < 3; i++) {
+    const vx = x + w * (i / 3);
+    ctx.beginPath();
+    ctx.moveTo(vx, bodyTop);
+    ctx.lineTo(vx, groundY);
+    ctx.stroke();
+  }
+  // horizontal segment bands
+  const bands = 4;
+  for (let i = 1; i < bands; i++) {
+    const by = bodyTop + (groundY - bodyTop) * (i / bands);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.moveTo(x, by); ctx.lineTo(x + w, by); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath(); ctx.moveTo(x, by + 1.5); ctx.lineTo(x + w, by + 1.5); ctx.stroke();
+  }
+  // seed-based crack
+  ctx.strokeStyle = 'rgba(10,14,12,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const crackX = x + w * (0.3 + seed * 0.4);
+  ctx.moveTo(crackX, bodyTop + h * 0.15);
+  ctx.lineTo(crackX + w * 0.12, bodyTop + h * 0.4);
+  ctx.lineTo(crackX - w * 0.05, groundY - h * 0.15);
+  ctx.stroke();
+
+  // capital at top (slightly wider, ominous)
+  const capOv = w * 0.22;
+  const capG = ctx.createLinearGradient(x, topY, x, bodyTop);
+  capG.addColorStop(0, '#6b7a70');
+  capG.addColorStop(1, '#34403a');
+  ctx.fillStyle = capG;
+  ctx.fillRect(x - capOv, topY, w + capOv * 2, capH);
+  ctx.strokeStyle = '#161c19';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - capOv, topY, w + capOv * 2, capH);
+  // faint top rim light
+  ctx.strokeStyle = 'rgba(180,222,255,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(x - capOv + 2, topY + 1);
+  ctx.lineTo(x + w + capOv - 2, topY + 1);
+  ctx.stroke();
 }
 
 function drawAtmosphere(ctx, w, h, camX, now, world) {
@@ -923,6 +1510,51 @@ function drawAtmosphere(ctx, w, h, camX, now, world) {
   ctx.fillStyle = rayG;
   ctx.fillRect(baseX, 0, w, h);
 
+  // 2b. Volumetric god-rays slanting from upper-left, drifting gently
+  ctx.save();
+  ctx.translate(baseX + w * 0.3, 0);
+  ctx.rotate(0.32);
+  const rayCount = 5;
+  for (let i = 0; i < rayCount; i++) {
+    const drift = Math.sin(now * 0.0003 + i * 1.3) * 30;
+    const rx = -w * 0.5 + i * (w / rayCount) + drift;
+    const rw = 40 + Math.sin(i * 2.1) * 20;
+    const lg = ctx.createLinearGradient(rx, 0, rx, h * 1.4);
+    lg.addColorStop(0, 'rgba(150,200,255,0.05)');
+    lg.addColorStop(0.6, 'rgba(120,180,255,0.02)');
+    lg.addColorStop(1, 'rgba(120,180,255,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(rx, -h * 0.2, rw, h * 1.6);
+  }
+  ctx.restore();
+
+  // 3. Drifting dust motes (slow, large, depth haze) — seed via index, no per-frame random
+  ctx.globalCompositeOperation = 'screen';
+  const dustCount = 14;
+  for (let i = 0; i < dustCount; i++) {
+    const t = now * 0.00015;
+    const dx = baseX + ((Math.sin(i * 2.3) * 0.5 + 0.5) * w + Math.sin(t + i) * 40);
+    const dy = (Math.cos(i * 1.7) * 0.5 + 0.5) * h * 0.8 + Math.cos(t * 1.3 + i) * 30;
+    const ds = 1.5 + (Math.sin(i * 0.9) * 0.5 + 0.5) * 3;
+    ctx.fillStyle = `rgba(180,200,220,${0.04 + Math.sin(t * 2 + i) * 0.02})`;
+    ctx.beginPath();
+    ctx.arc(dx, dy, ds, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // 4. Edge vignette — frames the larger stage, focuses center
+  ctx.save();
+  const vig = ctx.createRadialGradient(
+    baseX + w / 2, h * 0.45, h * 0.3,
+    baseX + w / 2, h * 0.45, w * 0.75
+  );
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.7, 'rgba(0,0,0,0.12)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(baseX - w * 0.4, 0, w * 1.8, h);
   ctx.restore();
 }
 
@@ -955,6 +1587,38 @@ export function drawHitEffect(ctx, h) {
     ctx.beginPath();
     ctx.arc(x, y, 5 + (1 - t) * 5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  if (h.crit) {
+    // Critical-hit impact: a gold flash, an expanding ring, and a sharp star burst.
+    const ringR = 16 + (1 - t) * 42;
+    const flash = ctx.createRadialGradient(x, y, 0, x, y, ringR);
+    flash.addColorStop(0, `rgba(255,238,160,${0.6 * a})`);
+    flash.addColorStop(0.5, `rgba(255,200,60,${0.28 * a})`);
+    flash.addColorStop(1, 'transparent');
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(x, y, ringR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255,216,90,${a})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const spikes = 8;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < spikes; i++) {
+      const an = (i / spikes) * Math.PI * 2 + t * 0.6;
+      const inner = 5;
+      const outer = 14 + (1 - t) * 38 + (i % 2) * 9;
+      ctx.strokeStyle = `rgba(255,244,190,${a})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(an) * inner, y + Math.sin(an) * inner);
+      ctx.lineTo(x + Math.cos(an) * outer, y + Math.sin(an) * outer);
+      ctx.stroke();
+    }
   }
   if (block) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, 36);
@@ -1146,19 +1810,27 @@ export function drawHitEffect(ctx, h) {
   ctx.restore();
 }
 
-export function drawDamageNumber(ctx, x, y, dmg, alpha, counter) {
+export function drawDamageNumber(ctx, x, y, dmg, alpha, counter, crit) {
   if (alpha <= 0) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  const size = counter ? 22 : (dmg >= 15 ? 18 : 15);
-  ctx.font = `600 ${size}px system-ui, sans-serif`;
+  // Crits pop bigger, gold, and rise faster with a "CRIT!" flourish.
+  const rise = crit ? (1 - alpha) * 10 : 0;
+  const size = crit ? 28 : counter ? 22 : (dmg >= 15 ? 18 : 15);
+  ctx.font = `${crit ? 800 : 600} ${size}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.lineWidth = 3;
-  ctx.strokeText(String(dmg), x, y);
-  ctx.fillStyle = counter ? '#ff9a8a' : (dmg >= 15 ? '#ffc98a' : '#fff');
-  ctx.fillText(String(dmg), x, y);
+  ctx.lineWidth = crit ? 4 : 3;
+  ctx.strokeText(String(dmg), x, y - rise);
+  ctx.fillStyle = crit ? '#ffd24a' : counter ? '#ff9a8a' : (dmg >= 15 ? '#ffc98a' : '#fff');
+  ctx.fillText(String(dmg), x, y - rise);
+  if (crit) {
+    ctx.font = '800 12px system-ui, sans-serif';
+    ctx.fillStyle = '#ffec99';
+    ctx.strokeText('CRIT!', x, y - rise - size * 0.8);
+    ctx.fillText('CRIT!', x, y - rise - size * 0.8);
+  }
   ctx.restore();
 }
 

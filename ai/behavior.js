@@ -186,7 +186,9 @@ const ACTION_HANDLERS = {
     if (!fighter.startJump(now)) {
       applyFallbackMove(fighter, opponent, faceToward(fighter, opponent), FALLBACK_JUMP_RATIO);
     } else if (action.wallVault && action.dir) {
-      // Wall vault: apply strong forward momentum to arc over the wall
+      // Wall vault: leap HIGHER (to clear the wall) and carry forward to land
+      // on the other side.
+      fighter.vy = PHYSICS.WALL_VAULT_VY ?? -720;
       fighter.vx = action.dir * PHYSICS.RUN_SPEED * (fighter.speedMult || 1);
       fighter.facing = action.dir;
     }

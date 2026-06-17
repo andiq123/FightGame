@@ -6,6 +6,7 @@ import { World } from './engine/core/World.js';
 import { Viewport } from './engine/view/Viewport.js';
 import { loadSettings, saveSettings } from './ai/presets.js';
 import { STAT, clampStat } from './config/stats.js';
+import { spawnRandomObstacle, ENV } from './config/environment.js';
 import { secureRandom } from './utils.js';
 import { getRagdollOriginY } from './core/coordinates.js';
 import { createRagdoll, updateRagdoll } from './engine/ragdoll.js';
@@ -55,6 +56,7 @@ const monsterStats = { power: AZURE_ASSASSIN.power, intelligence: AZURE_ASSASSIN
 let running = false;
 let skillFeed = [];
 let koSlowMo = 0;
+let lastObstacleSpawnAt = 0;
 let uiManager;
 
 const MAX_ROUNDS = 3;
@@ -65,12 +67,8 @@ const SPAWN_EFFECTS = {
   heal: (f) => spawnHealParticles(world.particles, f, secureRandom),
   fireball: (f) => spawnFireballLaunch(world.particles, f, secureRandom),
   clone: (f) => spawnClonePoof(world.particles, f, secureRandom),
-  shinra: (f) => spawnShinraTensei(world.particles, f, secureRandom),
-  lightning: (f) => spawnLightningCutter(world.particles, f, secureRandom),
   earth: (f) => spawnEarthDust(world.particles, f.x + f.facing * 85, 810, secureRandom),
-  vacuum: (f) => spawnVortex(world.particles, f.x, 810 - 50, secureRandom),
   ice: (f) => spawnFrost(world.particles, f.x + f.facing * 60, 810, secureRandom),
-  dragon: (f) => spawnDragonFire(world.particles, f.x + f.facing * 30, 810 - 60, f.facing, secureRandom),
   spectral: (f) => spawnSpectralTrail(world.particles, f.x, 810, secureRandom)
 };
 
@@ -108,7 +106,8 @@ function updateStatHud(suffix) {
   const stats = statsFor(suffix);
   const lvlEl = document.getElementById(`hudLevel${suffix}`);
   if (lvlEl) lvlEl.textContent = `PWR ${stats.power}`;
-  if (suffix === 1 && hudEls.aiLevel1) hudEls.aiLevel1.textContent = `INT ${stats.intelligence}`;
+  const intEl = document.getElementById(`hudAiLevel${suffix}`);
+  if (intEl) intEl.textContent = `INT ${stats.intelligence}`;
   const fighter = suffix === 1 ? world.fighter1 : world.fighter2;
   if (fighter) fighter.setStats(stats);
 }
@@ -302,6 +301,7 @@ function initUI() {
       world.clearTransientState();
       world.roundHistory = [];
       skillFeed = [];
+      lastObstacleSpawnAt = performance.now(); // first obstacle ~MIN_SPAWN_GAP later
       createFighters();
       running = true;
       world.roundState = 'fighting';
@@ -334,6 +334,17 @@ function fullReset() {
   uiManager.updateSpeedUI(saved.gameSpeed);
 }
 
+
+// Periodically drop a fresh random obstacle into the arena (smart placement +
+// count cap live in spawnRandomObstacle / ENV).
+function maybeSpawnEnvironment(now) {
+  if (world.roundState !== 'fighting') return;
+  if (now - lastObstacleSpawnAt < ENV.MIN_SPAWN_GAP_MS) return;
+  lastObstacleSpawnAt = now;
+  if (secureRandom() > ENV.SPAWN_CHANCE) return;
+  const o = spawnRandomObstacle(world, secureRandom, now);
+  if (o) spawnEarthDust(world.particles, o.x, 810, secureRandom); // dust puff as it rises
+}
 
 // 3. Main Loop
 function update(dt) {
@@ -381,6 +392,7 @@ function update(dt) {
   aiSystem.update(world, dt, now, secureRandom, skillFeed, SPAWN_EFFECTS, getSpawnEffect);
   combatSystem.update(world, dt, now, secureRandom);
   physicsSystem.update(world, dt, now, secureRandom);
+  maybeSpawnEnvironment(now);
 
   // Effects & HUD
   world.particles = tickParticles(world.particles, dt);

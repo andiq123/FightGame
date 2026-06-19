@@ -1,184 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stick-Man AI Battle</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
-    rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stick Defense</title>
+  <style>
+    :root { --accent: #28d6c8; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7edf5; }
+    #canvas { position: fixed; inset: 0; display: block; }
+
+    /* Top HUD bars */
+    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 14px 18px;
+      display: flex; gap: 18px; align-items: flex-start; pointer-events: none; z-index: 5; }
+    .panel { background: rgba(14,18,26,0.72); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(8px); min-width: 200px; }
+    .panel h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+      color: #93a4ba; font-weight: 700; }
+    .bar { height: 14px; border-radius: 7px; background: #1a1f2a; overflow: hidden; position: relative; }
+    .bar > span { display: block; height: 100%; width: 100%; border-radius: 7px;
+      transition: width .18s ease; }
+    .barval { font-size: 12px; color: #aab7c8; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    #baseHp { background: linear-gradient(90deg,#2f7fd1,#5cc0ff); }
+    #enemyHp { background: linear-gradient(90deg,#b5294a,#ff5d7a); }
+    #heroHp { background: linear-gradient(90deg,#17a99c,#4ff0e0); }
+    #heroStam { background: linear-gradient(90deg,#caa23a,#ffd66b); transition: width .12s linear, opacity .2s ease; }
+
+    .spacer { flex: 1; }
+    .stats { display: flex; gap: 22px; justify-content: flex-end; }
+    .stat { text-align: center; }
+    .stat .n { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat .l { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #8b9ab0; margin-top: 4px; }
+
+    /* Equipped-skill bar (bottom center) */
+    #skills { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 5; pointer-events: none; }
+    .skill { position: relative; min-width: 74px; height: 46px; border-radius: 11px; overflow: hidden;
+      background: rgba(14,18,26,.82); border: 1px solid rgba(255,255,255,.12);
+      display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px);
+      transition: border-color .15s ease, box-shadow .15s ease; }
+    .skill .sk-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+      background: rgba(8,10,16,.78); transition: height .08s linear; }
+    .skill .sk-name { position: relative; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+      color: #cdd8e6; padding: 0 10px; transition: opacity .1s ease; }
+    .skill .sk-timer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; color: #ffd66b; font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; }
+    .skill.on-cd .sk-name { opacity: .25; }
+    .skill.ready { border-color: rgba(40,214,200,.7); box-shadow: 0 0 16px rgba(40,214,200,.28); }
+    .skill.ready .sk-name { color: #6ff0e2; }
+    .skill.charging { opacity: .9; }
+
+    /* Center wave announcer */
+    #announce { position: fixed; top: 30%; left: 50%; transform: translate(-50%,-50%) scale(.9);
+      font-size: 64px; font-weight: 900; letter-spacing: .04em; color: #fff;
+      text-shadow: 0 4px 30px rgba(40,214,200,.5); opacity: 0; transition: all .35s ease;
+      pointer-events: none; z-index: 6; }
+    #announce.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+    /* Start / end overlay */
+    #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 40%, rgba(20,28,40,.86), rgba(8,10,16,.95));
+      z-index: 10; }
+    #overlay.visible { display: flex; }
+    .ov-card { text-align: center; padding: 40px 56px; }
+    .ov-title { font-size: 64px; font-weight: 900; margin: 0 0 10px;
+      background: linear-gradient(90deg,#28d6c8,#7cf0e4); -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; }
+    .ov-sub { font-size: 17px; color: #9fb0c4; margin-bottom: 28px; }
+    .ov-btn { font: inherit; font-size: 18px; font-weight: 700; color: #06120f; cursor: pointer;
+      background: linear-gradient(90deg,#28d6c8,#5cf0e0); border: 0; border-radius: 12px;
+      padding: 14px 40px; transition: transform .12s ease, box-shadow .12s ease;
+      box-shadow: 0 8px 30px rgba(40,214,200,.35); }
+    .ov-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(40,214,200,.5); }
+
+    /* Loadout chooser */
+    .ov-card { max-width: 720px; }
+    .loadout { text-align: left; margin: 8px 0 30px;
+      background: rgba(10,14,20,.55); border: 1px solid rgba(255,255,255,.07);
+      border-radius: 16px; padding: 22px 26px; }
+    .ld-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 20px; }
+    .ld-stat { display: flex; flex-direction: column; gap: 7px; }
+    .ld-lbl { font-size: 14px; font-weight: 700; color: #d6e0ee; letter-spacing: .02em; }
+    .ld-lbl em { color: #28d6c8; font-style: normal; font-size: 17px; margin-left: 4px; }
+    .ld-hint { font-size: 11px; color: #76859a; }
+    .ld-stat input[type=range] { width: 100%; accent-color: #28d6c8; cursor: pointer; height: 4px; }
+    .ld-group { margin-top: 16px; }
+    .ld-group h4 { margin: 0 0 9px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: #93a4ba; font-weight: 700; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      color: #aeb9c8; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 999px; padding: 7px 14px; transition: all .12s ease; }
+    .chip:hover { border-color: rgba(40,214,200,.5); color: #dfe7f0; }
+    .chip.on { color: #06120f; background: linear-gradient(90deg,#28d6c8,#5cf0e0);
+      border-color: transparent; box-shadow: 0 4px 14px rgba(40,214,200,.35); }
+
+    /* Between-wave shop */
+    #shop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 40%, rgba(20,28,40,.88), rgba(8,10,16,.96)); z-index: 11; }
+    #shop.visible { display: flex; }
+    .shop-card { width: 560px; max-width: 92vw; background: rgba(14,18,26,.85);
+      border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 26px 28px; }
+    .shop-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+    .shop-title { margin: 0; font-size: 26px; font-weight: 800; }
+    .shop-title span { color: #28d6c8; }
+    .shop-sub { margin: 4px 0 0; font-size: 13px; color: #93a4ba; }
+    .shop-gold { font-size: 30px; font-weight: 900; color: #ffd66b; text-align: right; white-space: nowrap;
+      font-variant-numeric: tabular-nums; }
+    .shop-gold em { display: block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: #8b9ab0; font-style: normal; font-weight: 700; }
+    .shop-items { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; max-height: 50vh; overflow-y: auto; }
+    .shop-item { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      text-align: left; font: inherit; cursor: pointer; color: #e7edf5;
+      background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+      padding: 12px 16px; transition: all .12s ease; }
+    .shop-item:hover:not(.disabled) { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); transform: translateY(-1px); }
+    .shop-item.disabled { opacity: .4; cursor: not-allowed; }
+    .si-name { font-size: 15px; font-weight: 700; }
+    .si-desc { font-size: 12px; color: #93a4ba; margin-top: 2px; }
+    .si-cost { font-size: 18px; font-weight: 800; color: #ffd66b; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .si-cost span { font-size: 12px; color: #b89a4d; margin-left: 1px; }
+    #shopContinue { width: 100%; }
+  </style>
 </head>
-
 <body>
-  <div class="game-container">
-    <canvas id="canvas"></canvas>
-    <header class="hud-top">
-      <div class="fighter-hud f1">
-        <span class="hud-label">P1 <span class="hud-level" id="hudLevel1">PWR 5</span><span class="hud-ai-level" id="hudAiLevel1">INT 5</span><span class="hud-health" id="hudHealth1">200 / 200</span></span>
-        <div class="bar-wrap">
-          <div class="hp-track">
-            <div class="hp-fill" id="hp1"></div>
-          </div>
-          <div class="stamina-track">
-            <div class="stamina-fill" id="stam1"></div>
-          </div>
-        </div>
-        <div class="hud-bottom-row f1-row">
-          <div class="status-icons" id="statusIcons1"></div>
-          <div class="ai-state-tag" id="aiState1"></div>
-        </div>
-      </div>
-      <div class="vs-center">
-        <div class="rounds" id="rounds">0 - 0 | R1/3</div>
-        <div class="vs">VS</div>
-      </div>
-      <div class="fighter-hud f2">
-        <span class="hud-label"><span id="hudName2">Azure Assassin</span> <span class="hud-level" id="hudLevel2">PWR 18</span><span class="hud-ai-level" id="hudAiLevel2">INT 20</span><span class="hud-health" id="hudHealth2">1800 / 1800</span></span>
-        <div class="bar-wrap">
-          <div class="hp-track">
-            <div class="hp-fill" id="hp2"></div>
-          </div>
-          <div class="stamina-track">
-            <div class="stamina-fill" id="stam2"></div>
-          </div>
-        </div>
-        <div class="hud-bottom-row f2-row">
-          <div class="status-icons" id="statusIcons2"></div>
-          <div class="ai-state-tag" id="aiState2"></div>
-        </div>
-      </div>
-    </header>
-    <div class="arena-hud">
-      <div class="jutsu-hud jutsu-f1">
-        <div class="jutsu-slots" id="jutsuSlots1"></div>
-      </div>
-      <div class="jutsu-feed" id="jutsuFeed"></div>
-      <div class="jutsu-hud jutsu-monster">
-        <div class="jutsu-slots" id="jutsuSlots2"></div>
-      </div>
-    </div>
-    <div class="match-over" id="matchOver"></div>
-    <div class="countdown" id="countdown"></div>
+  <canvas id="canvas"></canvas>
 
-    <div class="quick-controls" id="quickControls">
-      <div class="quick-row">
-        <button type="button" class="quick-btn stop-btn" id="stopGameBtn">Stop & Reset</button>
-      </div>
-      <div class="quick-row">
-        <span class="quick-label">Speed</span>
-        <div class="quick-speed">
-          <button type="button" class="quick-speed-btn" data-speed="0.5">0.5x</button>
-          <button type="button" class="quick-speed-btn active" data-speed="1">1x</button>
-          <button type="button" class="quick-speed-btn" data-speed="2">2x</button>
-        </div>
-      </div>
-      <div class="quick-hint">Esc: Stop</div>
+  <div id="hud">
+    <div class="panel">
+      <h3>Your Base</h3>
+      <div class="bar"><span id="baseHp"></span></div>
+      <div class="barval"><span id="baseHpVal">0</span> HP</div>
+      <h3 style="margin-top:10px">Hero</h3>
+      <div class="bar" style="height:10px"><span id="heroHp"></span></div>
+      <div class="bar" style="height:7px;margin-top:5px"><span id="heroStam"></span></div>
+      <div class="barval" style="font-size:10px">Stamina</div>
     </div>
 
-    <!-- Hero Customization Screen -->
-    <div class="hero-screen" id="heroScreen">
-      <div class="hero-screen-inner">
-        <div class="hero-panel">
-          <h2 class="selection-title">Knight Customization</h2>
-          <p class="selection-sub">Configure your hero before entering the fray</p>
-
-          <div class="hero-config-grid">
-            <div class="config-section stat-card">
-              <div class="stat-row">
-                <div class="stat-head">
-                  <label class="stat-name" for="power1">Power Level</label>
-                  <span class="stat-value" id="powerVal1">5</span>
-                </div>
-                <input type="range" class="stat-range" id="power1" min="1" max="20" step="1" value="5" aria-label="Hero power level">
-                <p class="stat-desc">HP, attack damage, defense &amp; jutsu power</p>
-              </div>
-              <div class="stat-row">
-                <div class="stat-head">
-                  <label class="stat-name" for="intelligence1">Intelligence Level</label>
-                  <span class="stat-value" id="intelligenceVal1">5</span>
-                </div>
-                <input type="range" class="stat-range" id="intelligence1" min="1" max="20" step="1" value="5" aria-label="Hero intelligence level">
-                <p class="stat-desc">Reaction speed &amp; combat decision-making</p>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div class="powers">
-                <label>Jutsu <span class="power-count">(0/4)</span></label>
-                <div class="power-btns" id="powers1"></div>
-              </div>
-              <div class="powers">
-                <label>Passives <span class="power-count">(0)</span></label>
-                <div class="power-btns" id="passives1"></div>
-              </div>
-              <div class="powers">
-                <label>Traits <span class="power-count">(0)</span></label>
-                <div class="power-btns" id="traits1"></div>
-              </div>
-            </div>
-
-          </div>
-
-          <button type="button" class="confirm-btn large-btn" id="confirmHeroBtn">Continue</button>
-        </div>
-      </div>
+    <div class="panel">
+      <h3>Enemy Keep</h3>
+      <div class="bar"><span id="enemyHp"></span></div>
+      <div class="barval"><span id="enemyHpVal">0</span> HP</div>
     </div>
 
-    <!-- Monster Review Screen -->
-    <div class="monster-screen hidden" id="monsterScreen">
-      <div class="hero-screen-inner">
-        <div class="hero-panel">
-          <h2 class="selection-title" id="monsterTitle">Azure Assassin</h2>
-          <p class="selection-sub" id="monsterBlurb">Defaults shown below — override the enemy build before the fight starts</p>
+    <div class="spacer"></div>
 
-          <div class="char-picker" id="monsterPicker"></div>
-
-          <div class="monster-config-grid">
-            <div class="config-section stat-card">
-              <div class="stat-row">
-                <div class="stat-head">
-                  <label class="stat-name" for="power2">Power Level</label>
-                  <span class="stat-value" id="powerVal2">18</span>
-                </div>
-                <input type="range" class="stat-range" id="power2" min="1" max="20" step="1" value="18" aria-label="Enemy power level">
-                <p class="stat-desc">HP, attack damage, defense &amp; jutsu power</p>
-              </div>
-              <div class="stat-row">
-                <div class="stat-head">
-                  <label class="stat-name" for="intelligence2">Intelligence Level</label>
-                  <span class="stat-value" id="intelligenceVal2">20</span>
-                </div>
-                <input type="range" class="stat-range" id="intelligence2" min="1" max="20" step="1" value="20" aria-label="Enemy intelligence level">
-                <p class="stat-desc">Reaction speed &amp; combat decision-making</p>
-              </div>
-            </div>
-
-            <div class="config-section">
-              <div class="powers">
-                <label>Enemy Jutsu <span class="power-count">(0)</span></label>
-                <div class="power-btns" id="powers2"></div>
-              </div>
-              <div class="powers">
-                <label>Passives <span class="power-count">(0)</span></label>
-                <div class="power-btns" id="passives2"></div>
-              </div>
-              <div class="powers">
-                <label>Traits <span class="power-count">(0)</span></label>
-                <div class="power-btns" id="traits2"></div>
-              </div>
-            </div>
-          </div>
-
-          <button type="button" class="confirm-btn large-btn" id="startGameBtn">Start Battle</button>
-        </div>
+    <div class="panel">
+      <div class="stats">
+        <div class="stat"><div class="n" id="waveNum">0</div><div class="l">Wave</div></div>
+        <div class="stat"><div class="n" id="killNum">0</div><div class="l">Kills</div></div>
+        <div class="stat"><div class="n" id="goldNum">0</div><div class="l">Gold</div></div>
       </div>
     </div>
   </div>
-  <script type="module" src="game.js"></script>
-</body>
 
+  <div id="announce"></div>
+
+  <div id="skills"></div>
+
+  <div id="overlay">
+    <div class="ov-card">
+      <h1 class="ov-title">STICK DEFENSE</h1>
+      <p class="ov-sub">Build your hero, then watch it defend.</p>
+
+      <div class="loadout">
+        <div class="ld-stats">
+          <label class="ld-stat">
+            <span class="ld-lbl">Power <em id="ldPowerVal">14</em></span>
+            <input type="range" id="ldPower" min="1" max="20" step="1" value="14" />
+            <span class="ld-hint">HP · melee &amp; skill damage · defense</span>
+          </label>
+          <label class="ld-stat">
+            <span class="ld-lbl">Intelligence <em id="ldIntVal">14</em></span>
+            <input type="range" id="ldInt" min="1" max="20" step="1" value="14" />
+            <span class="ld-hint">reaction speed · target choice · skill use</span>
+          </label>
+        </div>
+
+        <div class="ld-group">
+          <h4>Traits</h4>
+          <div class="chips" id="ldTraits"></div>
+        </div>
+        <div class="ld-group">
+          <h4>Passives</h4>
+          <div class="chips" id="ldPassives"></div>
+        </div>
+        <div class="ld-group">
+          <h4>Skills</h4>
+          <div class="chips" id="ldSkills"></div>
+        </div>
+      </div>
+
+      <button class="ov-btn">Start</button>
+    </div>
+  </div>
+
+  <div id="shop">
+    <div class="shop-card">
+      <div class="shop-head">
+        <div>
+          <h2 class="shop-title">Wave <span id="shopWave">1</span> cleared</h2>
+          <p class="shop-sub">Spend gold on upgrades — then send the next wave.</p>
+        </div>
+        <div class="shop-gold"><span id="shopGold">0</span><em>gold</em></div>
+      </div>
+      <div id="shopItems" class="shop-items"></div>
+      <button id="shopContinue" class="ov-btn">Next Wave →</button>
+    </div>
+  </div>
+
+  <script type="module" src="/td/main.js"></script>
+</body>
 </html>

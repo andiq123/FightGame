@@ -66,18 +66,39 @@ function start() {
   startMusic();
 }
 
+// ── Game speed ───────────────────────────────────────────────────────────────
+// Fast-forward by running N full physics sub-steps per rendered frame, each with
+// a normal-sized dt — so collisions/timers stay stable at 2×/3× instead of
+// ballooning dt (which would tunnel). All gameplay reads a VIRTUAL clock that we
+// advance per sub-step, so cooldowns/decisions speed up in lockstep with motion.
+const SPEEDS = [1, 2, 3];
+let gameSpeed = 1;
+let gameClock = performance.now();
+
+export function getGameSpeed() { return gameSpeed; }
+function cycleSpeed() {
+  gameSpeed = SPEEDS[(SPEEDS.indexOf(gameSpeed) + 1) % SPEEDS.length];
+  syncSpeedBtn();
+}
+function setSpeed(n) { if (SPEEDS.includes(n)) { gameSpeed = n; syncSpeedBtn(); } }
+
 // ── Main loop ────────────────────────────────────────────────────────────────
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  if (running && world) update(dt, performance.now());
-  if (world) viewport.render(world, performance.now());
+  if (running && world) {
+    for (let i = 0; i < gameSpeed; i++) { gameClock += dt * 1000; update(dt, gameClock); }
+  } else {
+    gameClock += dt * 1000; // keep the clock moving while idle so timers don't jump on resume
+  }
+  if (world) viewport.render(world, gameClock);
   requestAnimationFrame(loop);
 }
 
 // Dev-only deterministic stepper so the sim can be exercised in headless
 // previews where requestAnimationFrame is throttled. No effect in production.
 if (import.meta.env?.DEV) {
+  window.__clock = () => gameClock; // virtual game clock (advances faster at 2×/3×)
   let synthNow = performance.now();
   window.__tick = (frames = 1, dt = 0.016) => {
     for (let i = 0; i < frames; i++) { synthNow += dt * 1000; if (running && world) update(dt, synthNow); }
@@ -272,7 +293,14 @@ const els = {
   skills: document.getElementById('skills'),
   shopBtn: document.getElementById('shopBtn'),
   shopToast: document.getElementById('shopToast'),
+  speedBtn: document.getElementById('speedBtn'),
 };
+
+function syncSpeedBtn() {
+  if (!els.speedBtn) return;
+  els.speedBtn.textContent = (gameSpeed > 1 ? '⏩ ' : '▶ ') + gameSpeed + '×';
+  els.speedBtn.classList.toggle('boosted', gameSpeed > 1);
+}
 
 // Equipped-skill bar — rebuild when the kit changes (e.g. learned in the shop),
 // and refresh each cooldown/availability every frame.
@@ -376,7 +404,13 @@ overlay.querySelector('.ov-btn').addEventListener('click', start);
 window.addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') toggleMute();
   if ((e.key === 'b' || e.key === 'B') && world && !world.over) toggleShop(world);
+  if (e.key === ' ') { e.preventDefault(); cycleSpeed(); }   // Space cycles 1×→2×→3×
+  if (e.key === '1') setSpeed(1);
+  if (e.key === '2') setSpeed(2);
+  if (e.key === '3') setSpeed(3);
 });
+els.speedBtn && els.speedBtn.addEventListener('click', cycleSpeed);
+syncSpeedBtn();
 window.addEventListener('resize', () => viewport.resize());
 
 // Boot

@@ -27,6 +27,16 @@ function tryDodgeProjectile(hero, world, skill, now) {
   const tMs = threat.t * 1000;
   const readWindow = 110 + skill * 560;        // smarter = sees it sooner
   if (tMs > readWindow || tMs < 30) return false;
+  // ONE decision per bolt: the hero commits to dodge-or-eat the instant it reads
+  // the shot, instead of re-rolling every frame (which let a tiny per-frame chance
+  // accumulate into a near-certain dodge over the approach). Mark this bolt as
+  // evaluated so a failed read isn't retried.
+  const bolt = threat.projectile;
+  if (bolt) {
+    bolt._evadeRolledBy = bolt._evadeRolledBy || new Set();
+    if (bolt._evadeRolledBy.has(hero.id)) return false;
+    bolt._evadeRolledBy.add(hero.id);
+  }
   // An exhausted hero can barely weave — stamina gates the evade chance, so near
   // empty (<5%) it almost always eats the bolt.
   if (world.rng() > gate(skill, 0.12) * evasionStaminaFactor(hero)) return false;

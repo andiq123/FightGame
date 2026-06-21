@@ -71,10 +71,19 @@ export function updateWaves(world, ws, dt, now) {
     if (ws.spawnTimer <= 0 && ws.toSpawn.length) {
       const key = ws.toSpawn.shift();
       const m = createMonster(key, ws.wave);
+      // A rising share of each wave are SIEGE units that bypass the hero and rush
+      // the base directly — the late-game pressure that makes the base bleed.
+      const siegeFrac = Math.min(TD.WAVE.siegeMax, TD.WAVE.siegeBase + (ws.wave - 1) * TD.WAVE.siegePerWave);
+      if (!m.ranged && world.rng() < siegeFrac) {
+        m.siege = true;
+        m.maxHp = m.hp = Math.round(m.maxHp * TD.WAVE.siegeHpMul); // tougher rushers
+      }
       // Stagger spawn height a touch so they don't perfectly overlap.
       m.x = TD.ENEMY_TOWER_X - 120 - Math.floor(world.rng() * 80);
       world.monsters.push(m);
-      ws.spawnTimer = TD.WAVE.spawnGapMs;
+      // Spawn cadence tightens each wave: a trickle early, a relentless swarm late
+      // (this is what lets the horde finally overwhelm the wall and reach the base).
+      ws.spawnTimer = Math.max(TD.WAVE.spawnGapMinMs, TD.WAVE.spawnGapMs - ws.wave * TD.WAVE.spawnGapDecayPerWave);
     }
     if (!ws.toSpawn.length && world.monsters.every(m => m.hp <= 0)) {
       // Wave cleared → take a breather and roll straight into the next wave. The

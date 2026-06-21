@@ -48,7 +48,7 @@ export const TD = {
   // Towers auto-fire arrows at threats in range (classic TD). Your base rains
   // arrows on monsters; the enemy keep snipes the hero (who can dodge them).
   TOWER_FIRE: {
-    range: 1100,            // how far a tower can shoot
+    range: 720,            // how far a tower can shoot (close defence, not a sniper)
     cooldownMs: 1100,       // gap between shots
     damage: 26,            // arrow damage (scales the keep's a touch via mult below)
     enemyDamageMul: 0.7,   // keep's arrows hit the hero a bit softer
@@ -140,12 +140,23 @@ export const TD = {
   // How wave N is composed (chaff early, casters/heavies/elites later).
   WAVE: {
     breatherMs: 4500,
-    spawnGapMs: 1050,
+    spawnGapMs: 1050,            // gap between spawns on wave 1…
+    spawnGapDecayPerWave: 42,    // …tightening each wave so late waves arrive as a SWARM
+    spawnGapMinMs: 300,          // floor on the gap (the densest a wave can pour in)
     // Per-wave level growth — monsters get smarter AND stronger each wave.
     strPerWave: 0.7,
     intPerWave: 0.95,
     hpPerStr: 0.15,
     rewardPerWave: 0.1,
+    // SIEGE share: the fraction of each wave that ignores the hero and marches
+    // straight for the BASE. Rising each wave, this is what actually threatens the
+    // base in the late game — the hero can't be everywhere, so the base bleeds and
+    // the Aegis barrier becomes the dramatic difference between holding and falling.
+    siegeBase: 0.10,
+    siegePerWave: 0.032,
+    siegeMax: 0.62,
+    siegeSpeedMul: 1.55,        // siege units sprint the lane so they reach the base
+    siegeHpMul: 1.35,           // …and are tougher, so interception can't clear them all
   },
 
   MONSTER: {

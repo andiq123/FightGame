@@ -360,15 +360,21 @@ export function updateMonster(m, world, dt, now) {
   // rush the BASE instead of piling onto the same target — a pincer the hero must
   // answer by falling back (see the hero's tacticalRetreat). Casters always prefer
   // shooting the hero, so they don't flank.
+  // SIEGE units ignore the hero entirely and bear down on the base; everyone else
+  // hunts the hero (unless flanking). Either way they still stop to smash an ally
+  // blocking the lane.
   const flank = shouldFlank(m, world, now);
-  const chaseHero = heroTargetable && distHero < aggro && !flank;
+  const chaseHero = !m.siege && heroTargetable && distHero < aggro && !flank;
   const ranged = m.ranged;
 
   // ALLIED FRONT LINE: a melee enemy fights the nearest friendly fighter blocking
   // its path — one that's closer than the hero, or that stands between it and the
   // base it's flanking toward — so the wall of allies actually soaks the column
   // instead of being walked past. Casters ignore the wall and keep shooting the hero.
-  const blockAlly = ranged ? null : nearestAlly(world, m.x);
+  // Siege units are single-minded — they bypass the allied wall and bee-line for
+  // the base, so the forward line can't simply soak them; only the base tower and
+  // a hero who races home can stop them.
+  const blockAlly = (ranged || m.siege) ? null : nearestAlly(world, m.x);
   const allyDist = blockAlly ? Math.abs(blockAlly.x - m.x) : Infinity;
   const engageAlly = !!blockAlly && allyDist < aggro
     && (allyDist <= distHero + 20 || !heroTargetable || flank);
@@ -423,7 +429,8 @@ export function updateMonster(m, world, dt, now) {
     if (m.onGround()) m.pose = POSE.walk;
   } else if ((!arrived || tooClose) && m.canAct(now)) {
     const dir = Math.sign(goalX - m.x);
-    m.vx += (dir * def.speed * speedMul * eventSpeed - m.vx) * Math.min(1, dt * 6);
+    const siegeMul = m.siege ? (TD.WAVE.siegeSpeedMul || 1.5) : 1; // siege units sprint
+    m.vx += (dir * def.speed * speedMul * eventSpeed * siegeMul - m.vx) * Math.min(1, dt * 6);
     if (m.onGround()) m.pose = POSE.walk;
     maybeAthleticMove(m, world, dir, distToTarget, now);
   } else if (m.canAct(now)) {

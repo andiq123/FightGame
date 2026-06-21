@@ -46,7 +46,7 @@ export function tickShop(world) {
 
 // Build the catalogue against the current hero/base state.
 function items(world) {
-  const S = TD.SHOP, h = world.hero, base = world.playerTower;
+  const S = TD.SHOP, h = world.hero;
   const list = [
     {
       id: 'power', name: 'Strength +1', desc: `Power ${h.power} → ${h.power + 1} · more HP & damage`,
@@ -71,12 +71,6 @@ function items(world) {
       cost: S.healHero,
       can: () => h.hp < h.maxHp,
       buy: () => { h.hp = h.maxHp; },
-    },
-    {
-      id: 'repair', name: 'Repair Base +' + S.repairAmount, desc: `Base HP ${Math.ceil(base.hp)} → ${Math.min(base.maxHp, Math.ceil(base.hp) + S.repairAmount)}`,
-      cost: S.repairBase,
-      can: () => base.hp < base.maxHp,
-      buy: () => { base.hp = Math.min(base.maxHp, base.hp + S.repairAmount); },
     },
   ];
   // Learn an unequipped power skill.
@@ -110,9 +104,8 @@ export function hasAffordable(world) {
 //     self-heals) is genuinely in danger — then it spikes above everything.
 // Returns a 0..~130 priority.
 function valueOf(it, world) {
-  const h = world.hero, base = world.playerTower;
+  const h = world.hero;
   const skillCount = (h.skills || []).length;
-  const baseRatio = base.hp / base.maxHp;
   switch (true) {
     // Intelligence first (reactions + decisions = survival), then strength
     // (HP + damage). Weighted highest when the level is low — early points
@@ -123,8 +116,6 @@ function valueOf(it, world) {
     // clear crowds, a heal/buff to survive); value tapers as the arsenal rounds out.
     case it.id.startsWith('skill:'):
       return skillCount === 0 ? 115 : skillCount === 1 ? 78 : skillCount === 2 ? 45 : 18;
-    // Save a falling base — ramps hard so a critical base outranks even upgrades.
-    case it.id === 'repair': return baseRatio < 0.45 ? (1 - baseRatio) * 120 : 0;
     // Consumable heal — kept below MIN_VALUE so it's effectively never auto-bought
     // (respawn + free base healing already cover HP). Tiny non-zero only as a
     // last-ditch tiebreak if the hero is somehow loaded and at death's door.

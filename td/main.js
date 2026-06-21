@@ -1,7 +1,7 @@
 import { TD } from './config.js';
 import { createHero } from './units.js';
 import { createTower } from './towers.js';
-import { createWaveState, updateWaves, startNextWave } from './waves.js';
+import { createWaveState, updateWaves } from './waves.js';
 import { updateHero, updateMonster, nearestMonster } from './ai.js';
 import {
   integrate, resolveHeroAttacks, resolveMonsterAttacks,
@@ -10,7 +10,7 @@ import {
 import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.js';
 import { TDViewport } from './render.js';
 import { initSetup, readLoadout } from './setup.js';
-import { initShop, openShop, isShopOpen } from './shop.js';
+import { initShop, toggleShop, tickShop, hasAffordable, aiAutoBuy, openShop, isShopOpen } from './shop.js';
 import { POWERS } from '../entities/powers.js';
 
 const SKILL_LABEL = Object.fromEntries(
@@ -50,6 +50,7 @@ function newWorld() {
     waveEvent: null,
     over: null,        // 'win' | 'lose'
     heroDownUntil: 0,
+    autoBuy: true,     // hero spends its own gold automatically (default on)
     time: 0,
   };
 }
@@ -58,6 +59,8 @@ function start() {
   world = newWorld();
   if (import.meta.env?.DEV) window.__td = world; // dev-only inspection hook
   running = true;
+  nextAutoBuyAt = 0;
+  syncAutoBtn();
   hideOverlay();
   resumeAudio();
   startMusic();
@@ -85,15 +88,6 @@ if (import.meta.env?.DEV) {
 
 function update(dt, now) {
   if (world.over) { decayEffects(dt); return; }
-
-  // Between-wave shop: open it on first entry and PAUSE the sim until the player
-  // continues (the shop's button resumes via startNextWave).
-  if (world.waveState.phase === 'shop') {
-    if (!isShopOpen()) openShop(world);
-    decayEffects(dt);
-    updateHUD(now);
-    return;
-  }
 
   const slow = world.slowMo > 0 ? 0.35 : 1;
   if (world.slowMo > 0) world.slowMo -= dt * 1000;
@@ -137,11 +131,22 @@ function update(dt, now) {
   resolveMonsterAttacks(world, now);
   reapDead(world);
 
+  maybeAutoBuy(now);
   observeAudio(now);
   decayEffects(dt);
   updateCamera(dt);
   updateHUD(now);
   checkEnd();
+}
+
+// Continuous auto-buy: while enabled (the default), the hero keeps spending its
+// own gold on whatever helps it most, throttled so it's not evaluated every
+// frame. Turn it off in the shop panel to take full manual control.
+let nextAutoBuyAt = 0;
+function maybeAutoBuy(now) {
+  if (!world.autoBuy || now < nextAutoBuyAt) return;
+  nextAutoBuyAt = now + 1200;
+  aiAutoBuy(world);
 }
 
 // Both towers auto-fire arrows at threats in range (classic TD): your base rains
@@ -265,6 +270,8 @@ const els = {
   gold: document.getElementById('goldNum'),
   announce: document.getElementById('announce'),
   skills: document.getElementById('skills'),
+  shopBtn: document.getElementById('shopBtn'),
+  shopToast: document.getElementById('shopToast'),
 };
 
 // Equipped-skill bar — rebuild when the kit changes (e.g. learned in the shop),
@@ -302,6 +309,23 @@ function updateSkillsHud(now) {
   }
 }
 
+// Shop button + "upgrades available" nudge. The toast fires once each time the
+// player crosses from "can't afford anything" to "can afford something" — a
+// simple, non-nagging hint rather than a popup after every wave.
+let wasAffordable = false;
+let toastUntil = 0;
+function updateShopHud(now) {
+  // When auto-buy is on, the hero handles spending — no nagging. The nudge only
+  // appears in manual mode, when the player actually needs to act.
+  const manual = !world.autoBuy;
+  const affordable = manual && hasAffordable(world);
+  const open = isShopOpen();
+  if (els.shopBtn) els.shopBtn.classList.toggle('has-deals', affordable && !open);
+  if (affordable && !wasAffordable && !open) toastUntil = now + 3200;
+  wasAffordable = affordable;
+  if (els.shopToast) els.shopToast.classList.toggle('show', now < toastUntil);
+}
+
 function updateHUD(now) {
   const pt = world.playerTower, et = world.enemyTower, h = world.hero;
   if (els.baseHp) els.baseHp.style.width = `${100 * pt.hp / pt.maxHp}%`;
@@ -317,6 +341,8 @@ function updateHUD(now) {
   if (els.kills) els.kills.textContent = world.kills;
   if (els.gold) els.gold.textContent = world.gold;
   if (els.skills) updateSkillsHud(now);
+  updateShopHud(now);
+  tickShop(world); // keep the (non-pausing) panel live while it's open
   if (els.announce) {
     if (world.announce && now < world.announce.until) {
       els.announce.textContent = world.announce.text;
@@ -349,12 +375,29 @@ overlay.querySelector('.ov-btn').addEventListener('click', start);
 // The hero is fully autonomous — the only key is mute.
 window.addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') toggleMute();
+  if ((e.key === 'b' || e.key === 'B') && world && !world.over) toggleShop(world);
 });
 window.addEventListener('resize', () => viewport.resize());
 
 // Boot
 initSetup();        // build the loadout chooser from the shared registries
-initShop(() => startNextWave(world.waveState, performance.now(), world)); // resume after buying
+initShop();         // the optional, non-pausing upgrade panel
+// Shop toggle button (open/close any time). The "let hero choose" button spends
+// gold the same way the hero does automatically between waves.
+els.shopBtn && els.shopBtn.addEventListener('click', () => world && toggleShop(world));
+const shopAutoBtn = document.getElementById('shopAuto');
+function syncAutoBtn() {
+  if (!shopAutoBtn || !world) return;
+  shopAutoBtn.textContent = world.autoBuy ? '🤖 Auto-buy: ON' : '✋ Auto-buy: OFF';
+  shopAutoBtn.classList.toggle('active', world.autoBuy);
+}
+shopAutoBtn && shopAutoBtn.addEventListener('click', () => {
+  if (!world) return;
+  world.autoBuy = !world.autoBuy;
+  if (world.autoBuy) nextAutoBuyAt = 0; // buy immediately when re-enabled
+  syncAutoBtn();
+});
 world = newWorld();
+syncAutoBtn();
 showOverlay(null);
 requestAnimationFrame(loop);

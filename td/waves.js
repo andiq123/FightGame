@@ -5,7 +5,7 @@ import { TD } from './config.js';
 export function createWaveState() {
   return {
     wave: 0,
-    phase: 'breather',     // 'breather' | 'spawning' | 'cleared'
+    phase: 'breather',     // 'breather' | 'spawning'
     timer: 1500,           // ms until next action
     toSpawn: [],           // queue of type keys for the current wave
     spawnTimer: 0,
@@ -77,20 +77,14 @@ export function updateWaves(world, ws, dt, now) {
       ws.spawnTimer = TD.WAVE.spawnGapMs;
     }
     if (!ws.toSpawn.length && world.monsters.every(m => m.hp <= 0)) {
-      // Wave cleared → open the upgrade shop (handled by the orchestrator, which
-      // pauses the sim while 'shop' is active). 'breather' just advances waves.
-      ws.phase = 'shop';
+      // Wave cleared → take a breather and roll straight into the next wave. The
+      // shop never pauses the game; the hero auto-buys upgrades on its own (main
+      // loop), and the player can pop the panel open any time.
       world.waveEvent = null;
+      ws.phase = 'breather';
+      ws.timer = TD.WAVE.breatherMs;
       world.announce = { text: `WAVE ${ws.wave} CLEARED`, until: now + 2000 };
     }
     return;
   }
-
-  // 'shop' is a paused state; the orchestrator resumes it via startNextWave().
-}
-
-// Called by the shop when the player is done buying — kick off the next wave.
-export function startNextWave(ws, now, world) {
-  ws.phase = 'breather';
-  ws.timer = 1200; // brief countdown, then WAVE N+1 announces & spawns
 }

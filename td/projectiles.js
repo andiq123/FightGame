@@ -71,13 +71,26 @@ function nearestAhead(list, x, dir) {
 }
 
 // A tower looses an arrow at a target (your base → monsters, enemy keep → hero).
+// The arrow is a true ballistic shot: we solve its launch velocity so its arc
+// actually passes through the target's body, no matter how near or far (even an
+// enemy hugging the base). If it whiffs, gravity carries it into the ground and
+// it's destroyed there — arrows never drift across the field.
 export function fireTowerArrow(world, fromX, fromTopY, dir, targetSide, dmg, aimX, now) {
   const F = TD.TOWER_FIRE;
+  const g = F.arc;
+  const TARGET_Y = -55;                 // aim for mid-body of the target
+  const dx = aimX - fromX;
+  // Time to span the horizontal gap at flight speed; clamped so a point-blank
+  // shot still arcs down sharply instead of dividing by ~zero.
+  const t = Math.max(0.09, Math.abs(dx) / F.speed);
+  const vx = dx / t;
+  // Vertical launch that lands the arrow at TARGET_Y exactly at time t.
+  const vy = (TARGET_Y - fromTopY - 0.5 * g * t * t) / t;
   world.projectiles.push({
     target: targetSide, owner: { isTower: true }, aimX,
-    x: fromX, y: fromTopY, vx: dir * F.speed, vy: -90,
-    type: 'arrow', arc: F.arc, spin: 0,
-    dmg, radius: 34,
+    x: fromX, y: fromTopY, vx, vy,
+    type: 'arrow', arc: g, spin: 0,
+    dmg, radius: 40,
     hitIds: new Set(), life: 6,
   });
 }
@@ -101,22 +114,26 @@ export function castMonsterSkill(world, m, hero, now) {
 export function updateProjectiles(world, dt, now) {
   for (const p of world.projectiles) {
     p.x += p.vx * dt;
-    if (p.arc) { p.vy = (p.vy || 0) + p.arc * dt; p.y += p.vy * dt; if (p.y > PROJ_Y) p.y = PROJ_Y; } // arrows rain down to body level
+    if (p.arc) { p.vy = (p.vy || 0) + p.arc * dt; p.y += p.vy * dt; } // true ballistic fall
     p.spin = (p.spin || 0) + dt * (p.type === 'shuriken' ? 26 : p.type === 'ice' ? 9 : 0) * Math.sign(p.vx || 1);
     p.life -= dt;
     // Travelling trails: fire embers, frost shards.
     if (p.type === 'fireball' && world.rng() < 0.6) spawnDragonFire(world.particles, p.x, TD.GROUND_Y + PROJ_Y, Math.sign(p.vx), world.rng);
     else if (p.type === 'ice' && world.rng() < 0.4) spawnFrost(world.particles, p.x, TD.GROUND_Y + PROJ_Y, world.rng);
     if (Math.abs(p.x) > TD.STAGE_HALF || p.life <= 0) { p._dead = true; continue; }
-    // MISS → VANISH: a shot aimed at a target that overshoots its aim point
+    // GROUND IMPACT: an arcing shot that reaches the floor without connecting
+    // buries itself there — no skidding or drifting across the arena.
+    if (p.arc && p.y >= 0) { p.y = 0; fizzle(world, p); p._dead = true; continue; }
+    // MISS → VANISH: a flat shot aimed at a target that overshoots its aim point
     // (because the target dodged or moved) fizzles instead of flying on forever.
-    if (p.aimX != null) {
+    if (p.aimX != null && !p.arc) {
       const margin = p.radius + 70;
       const overshot = (p.vx > 0 && p.x > p.aimX + margin) || (p.vx < 0 && p.x < p.aimX - margin);
       if (overshot) { fizzle(world, p); p._dead = true; continue; }
     }
-    // Arrows only connect once they've descended to body height.
-    if (p.arc && p.y < PROJ_Y - 50) continue;
+    // Arrows only connect once they've descended near body height (so they
+    // visibly rain down onto the target rather than clip it on the way up).
+    if (p.arc && p.y < PROJ_Y - 45) continue;
     if (p.target === 'monster') stepHeroProjectile(world, p, now);
     else stepMonsterProjectile(world, p, now);
   }

@@ -98,11 +98,38 @@
       border-color: transparent; box-shadow: 0 4px 14px rgba(40,214,200,.35); }
 
     /* Between-wave shop */
-    #shop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-      background: radial-gradient(circle at 50% 40%, rgba(20,28,40,.88), rgba(8,10,16,.96)); z-index: 11; }
+    /* Optional, non-pausing panel: floats on the right, game stays visible &
+       playable behind it (no full-screen backdrop, no pointer capture). */
+    #shop { position: fixed; top: 0; right: 0; bottom: 0; display: none;
+      align-items: center; justify-content: flex-end; padding: 16px; z-index: 11;
+      pointer-events: none; }
     #shop.visible { display: flex; }
-    .shop-card { width: 560px; max-width: 92vw; background: rgba(14,18,26,.85);
-      border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 26px 28px; }
+    .shop-card { pointer-events: auto; width: 380px; max-width: 92vw; max-height: 88vh;
+      overflow-y: auto; background: rgba(14,18,26,.92); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 22px 24px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+    .shop-actions { display: flex; gap: 10px; }
+    .shop-actions .ov-btn { flex: 1; }
+    .ov-btn.ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); color: #e7edf5; }
+    .ov-btn.ghost:hover { border-color: rgba(40,214,200,.55); }
+    .ov-btn.ghost.active { background: rgba(40,214,200,.16); border-color: rgba(40,214,200,.6); color: #bdf6ef; }
+    .shop-hint { margin: 10px 2px 0; font-size: 11.5px; color: #8b9ab0; text-align: center; }
+
+    /* Floating shop button + "deals available" nudge (left edge). */
+    .shop-fab { position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
+      z-index: 10; display: inline-flex; align-items: center; gap: 7px;
+      background: rgba(14,18,26,.82); color: #e7edf5; border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px; padding: 11px 15px; font: inherit; font-weight: 700; font-size: 14px;
+      cursor: pointer; transition: all .15s ease; }
+    .shop-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
+    .shop-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
+    .shop-fab.has-deals { border-color: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
+    .shop-fab.has-deals .shop-dot { background: #ffd66b; box-shadow: 0 0 8px #ffd66b; }
+    .shop-toast { position: fixed; left: 16px; top: calc(50% + 42px); transform: translateY(-50%);
+      z-index: 10; max-width: 210px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px;
+      color: #ffe39a; background: rgba(255,214,107,.12); border: 1px solid rgba(255,214,107,.4);
+      opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+    .shop-toast.show { opacity: 1; }
     .shop-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
     .shop-title { margin: 0; font-size: 26px; font-weight: 800; }
     .shop-title span { color: #28d6c8; }
@@ -122,7 +149,6 @@
     .si-desc { font-size: 12px; color: #93a4ba; margin-top: 2px; }
     .si-cost { font-size: 18px; font-weight: 800; color: #ffd66b; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .si-cost span { font-size: 12px; color: #b89a4d; margin-left: 1px; }
-    #shopContinue { width: 100%; }
   </style>
 </head>
 <body>
@@ -197,20 +223,29 @@
     </div>
   </div>
 
+  <button id="shopBtn" class="shop-fab" type="button" aria-label="Open upgrades">
+    🛒 Upgrades <span class="shop-dot"></span>
+  </button>
+  <div id="shopToast" class="shop-toast">Upgrades available — press B to shop</div>
+
   <div id="shop">
     <div class="shop-card">
       <div class="shop-head">
         <div>
-          <h2 class="shop-title">Wave <span id="shopWave">1</span> cleared</h2>
-          <p class="shop-sub">Spend gold on upgrades — then send the next wave.</p>
+          <h2 class="shop-title">Upgrades · Wave <span id="shopWave">1</span></h2>
+          <p class="shop-sub">Spend gold any time — the game keeps running.</p>
         </div>
         <div class="shop-gold"><span id="shopGold">0</span><em>gold</em></div>
       </div>
       <div id="shopItems" class="shop-items"></div>
-      <button id="shopContinue" class="ov-btn">Next Wave →</button>
+      <div class="shop-actions">
+        <button id="shopAuto" class="ov-btn ghost" type="button">🤖 Auto-buy: ON</button>
+        <button id="shopClose" class="ov-btn" type="button">Close</button>
+      </div>
+      <p class="shop-hint">Auto-buy spends gold for you. Turn it off to shop manually.</p>
     </div>
   </div>
 
-  <script type="module" src="/td/main.js"></script>
+  <script type="module" src="./td/main.js"></script>
 </body>
 </html>

@@ -12,17 +12,25 @@ import { spawnHitParticles } from '../services/particleSystem.js';
 
 const ALLY_COMBO = [ATTACK.jab, ATTACK.cross, ATTACK.hook, ATTACK.highKick];
 
-// Muster allies on a cadence, capped, scaling the cap up with the wave.
-export function updateAllySpawning(world, now) {
+// Muster allies as the base accumulates power: it slowly charges up and deploys a
+// single fighter only when fully charged — a resource-paced trickle, not a fast
+// timer. Charge holds (ready) at the cap so a fresh ally deploys the instant a
+// slot opens. Cap scales up a little with the wave.
+export function updateAllySpawning(world, dt, now) {
   if (world.over) return;
   const A = TD.ALLY;
-  const cap = Math.min(A.capMax, A.maxAlive + Math.floor((world.waveState.wave - 1) * A.capPerWave));
-  const alive = world.allies.length;
-  if (alive >= cap) { world._nextAllyAt = Math.max(world._nextAllyAt || 0, now + A.spawnIntervalMs); return; }
-  if (!world._nextAllyAt) world._nextAllyAt = now + A.firstSpawnMs;
-  if (now < world._nextAllyAt) return;
-  world._nextAllyAt = now + A.spawnIntervalMs;
-  const a = createAlly(world.waveState.wave);
+  const wave = world.waveState.wave;
+  if (wave < A.startWave) return;        // reinforcements only unlock in later waves
+  const cap = A.maxAlive;                // hard cap, never scales up
+  if (world.allies.length >= cap) {
+    world.musterEnergy = Math.min(world.musterEnergy ?? 0, A.musterCost); // hold ready, don't overflow
+    return;
+  }
+  const rate = A.musterRate + (wave - 1) * A.musterRatePerWave;
+  world.musterEnergy = (world.musterEnergy ?? 0) + rate * dt;
+  if (world.musterEnergy < A.musterCost) return;
+  world.musterEnergy -= A.musterCost;
+  const a = createAlly(wave);
   a.needsDashDust = true;
   world.allies.push(a);
 }

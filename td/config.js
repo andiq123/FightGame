@@ -80,11 +80,15 @@ export const TD = {
     speed: 250,
     attackRange: 96,
     atkCdMs: 680,
-    spawnIntervalMs: 7000,     // muster one this often…
-    firstSpawnMs: 2500,        // …with a short grace before the first
-    maxAlive: 3,               // concurrent cap…
-    capPerWave: 0.5,           // …+0.5 per wave (so later waves get more help)
-    capMax: 7,
+    // The base MUSTERS power over time and only deploys a fighter once it's fully
+    // charged — a deliberate, resource-paced trickle, not a fast timer. Charging a
+    // single ally takes ~15s early on, easing a little as the battle escalates.
+    startWave: 3,              // the base can only muster allies from this wave on
+    musterCost: 100,           // power needed to deploy one ally
+    musterRate: 6.5,           // power/sec the base generates… (~15s per ally)
+    musterRatePerWave: 0.7,    // …growing slightly each wave
+    musterStart: 30,           // small head start once mustering unlocks
+    maxAlive: 3,               // hard concurrent cap — never more than this
     lineAhead: 720,            // hold this far ahead of the base when no enemy is near
   },
 

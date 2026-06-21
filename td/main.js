@@ -36,7 +36,7 @@ function newWorld() {
     hero: createHero(readLoadout()),
     monsters: [],
     allies: [],
-    _nextAllyAt: 0,
+    musterEnergy: TD.ALLY.musterStart, // base "power" accumulating toward the next ally
     playerTower: createTower('player'),
     enemyTower: createTower('enemy'),
     particles: [],
@@ -60,6 +60,7 @@ function newWorld() {
 
 function start() {
   world = newWorld();
+  world.camX = world.hero.x; // open framed on the hero, then drift with the action
   if (import.meta.env?.DEV) window.__td = world; // dev-only inspection hook
   running = true;
   nextAutoBuyAt = 0;
@@ -147,7 +148,7 @@ function update(dt, now) {
 
   // Allied reinforcements — mustered from the base, they march out and intercept
   // the enemy column (their kills credit the hero's gold).
-  updateAllySpawning(world, now);
+  updateAllySpawning(world, dt, now);
   for (const a of world.allies) {
     if (a.hp <= 0) continue;
     const wasAir = a.y < -6;
@@ -276,9 +277,31 @@ function decayEffects(dt) {
   if (world.screenShake < 0.5) world.screenShake = 0;
 }
 
+// Free, battle-framing camera. Rather than rigidly glue to the hero, it drifts to
+// the CENTRE of the action — a weighted average of the hero, the allies, and the
+// enemies actually near the fight — so you see the whole engagement. The hero is
+// weighted enough to stay in frame, but the view opens up toward wherever the
+// fighting is. A soft deadzone keeps it from twitching on every little step.
 function updateCamera(dt) {
-  const target = world.hero.hp > 0 ? world.hero.x : world.playerTower.x;
-  world.camX += (target - world.camX) * Math.min(1, dt * TD.CAMERA_SMOOTH);
+  let target;
+  if (world.hero.hp > 0) {
+    let sum = world.hero.x * 1.5, n = 1.5; // hero stays in frame without dominating
+    for (const a of world.allies) if (a.hp > 0) { sum += a.x; n++; }
+    for (const m of world.monsters) {
+      if (m.hp > 0 && Math.abs(m.x - world.hero.x) < 1600) { sum += m.x; n++; } // ignore distant spawns
+    }
+    target = sum / n;
+    // Keep the hero comfortably on screen (view is ~960px each side): the camera
+    // may lead toward the action, but never so far it loses our hero.
+    const maxLead = 560;
+    target = Math.max(world.hero.x - maxLead, Math.min(world.hero.x + maxLead, target));
+  } else {
+    target = world.playerTower.x; // hero down → watch the base hold the line
+  }
+  // Soft deadzone: don't chase tiny drifts, so the frame feels loose, not locked.
+  if (Math.abs(target - world.camX) > 50) {
+    world.camX += (target - world.camX) * Math.min(1, dt * TD.CAMERA_SMOOTH * 0.7);
+  }
   const lim = TD.STAGE_HALF - 760;
   world.camX = Math.max(-lim, Math.min(lim, world.camX));
 }

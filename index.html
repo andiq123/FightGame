@@ -194,6 +194,11 @@
     .aegis-pips .pip { color: #78e1ff; text-shadow: 0 0 6px rgba(120,225,255,.6); }
     .aegis-pips .pip.spent { color: rgba(255,255,255,.18); text-shadow: none; }
 
+    /* Hide scrollbars everywhere (still scrollable by drag/wheel/touch). */
+    .shop-items, .shop-card, .ov-card, #overlay { scrollbar-width: none; -ms-overflow-style: none; }
+    .shop-items::-webkit-scrollbar, .shop-card::-webkit-scrollbar,
+    .ov-card::-webkit-scrollbar, #overlay::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
     /* ── Touch devices: don't let :hover states stick after a tap ────────────── */
     @media (hover: none) {
       .ov-btn:hover, .shop-item:hover, .chip:hover, .shop-fab:hover, .speed-fab:hover { transform: none; }
@@ -209,39 +214,62 @@
     }
 
     /* ── Landscape phones: compact the chrome to fit a short, wide screen ────── */
-    @media (max-height: 540px) {
-      #hud { gap: 9px; padding: calc(8px + var(--sat)) calc(10px + var(--sar)) 8px calc(10px + var(--sal)); }
-      .panel { padding: 7px 11px; min-width: 0; border-radius: 10px; }
-      .panel h3 { font-size: 9px; margin-bottom: 4px; }
-      .bar { height: 10px; }
-      .barval { font-size: 10px; margin-top: 2px; }
-      .stats { gap: 13px; }
-      .stat .n { font-size: 18px; }
-      .stat .l { font-size: 8px; margin-top: 2px; }
-      #skills { gap: 7px; bottom: calc(9px + var(--sab)); }
-      .skill { min-width: 54px; height: 38px; }
-      .skill .sk-name { font-size: 10px; padding: 0 7px; }
-      .skill .sk-timer { font-size: 13px; }
-      #announce { font-size: 38px; top: 33%; }
-      .shop-fab, .speed-fab { padding: 9px 12px; font-size: 13px; }
-      .speed-fab { top: calc(50% + 46px); }
-      .shop-toast { top: calc(50% + 90px); font-size: 11px; max-width: 168px; }
+    @media (max-height: 600px) {
+      #hud { gap: 7px; padding: calc(6px + var(--sat)) calc(8px + var(--sar)) 6px calc(8px + var(--sal)); }
+      .panel { padding: 6px 9px; min-width: 0; border-radius: 9px; }
+      .panel h3 { font-size: 8px; margin-bottom: 3px; letter-spacing: .08em; }
+      .panel h3[style] { margin-top: 6px !important; }
+      .bar { height: 8px; border-radius: 5px; }
+      .barval { font-size: 9px; margin-top: 2px; }
+      .stats { gap: 11px; }
+      .stat .n { font-size: 16px; }
+      .stat .l { font-size: 7px; margin-top: 1px; }
+      #skills { gap: 6px; bottom: calc(7px + var(--sab)); }
+      .skill { min-width: 46px; height: 32px; border-radius: 9px; }
+      .skill .sk-name { font-size: 9px; padding: 0 5px; }
+      .skill .sk-timer { font-size: 11px; }
+      #announce { font-size: 32px; top: 32%; }
+      .shop-fab, .speed-fab { padding: 7px 10px; font-size: 12px; border-radius: 10px; }
+      .speed-fab { top: calc(50% + 40px); min-width: 52px; }
+      .shop-toast { top: calc(50% + 78px); font-size: 10px; max-width: 150px; padding: 7px 9px; }
+      .aegis-pips { font-size: 9px; }
       #overlay { align-items: flex-start; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-      .ov-card { padding: calc(14px + var(--sat)) 24px 24px; max-width: 640px; }
-      .ov-title { font-size: 38px; }
-      .ov-sub { font-size: 13px; margin-bottom: 14px; }
-      .loadout { padding: 14px 16px; margin: 6px 0 16px; border-radius: 12px; }
-      .ld-stats { gap: 14px; margin-bottom: 12px; }
-      .ld-hint { font-size: 10px; }
-      .ld-group { margin-top: 10px; }
-      .ld-group h4 { margin-bottom: 6px; }
-      .ov-btn { padding: 13px 30px; font-size: 16px; }
+      .ov-card { padding: calc(12px + var(--sat)) 20px 20px; max-width: 560px; }
+      .ov-title { font-size: 32px; margin-bottom: 6px; }
+      .ov-sub { font-size: 12px; margin-bottom: 12px; }
+      .loadout { padding: 12px 14px; margin: 4px 0 12px; border-radius: 11px; }
+      .ld-stats { gap: 12px; margin-bottom: 10px; }
+      .ld-lbl { font-size: 12px; }
+      .ld-lbl em { font-size: 14px; }
+      .ld-hint { font-size: 9px; }
+      .ld-group { margin-top: 8px; }
+      .ld-group h4 { margin-bottom: 5px; font-size: 9px; }
+      .chip { font-size: 11px; padding: 6px 11px; }
+      .ov-btn { padding: 11px 26px; font-size: 15px; }
+      /* Shop: a slimmer card with tighter rows */
+      .shop-card { width: 300px; padding: 14px 16px; border-radius: 14px; }
+      .shop-head { margin-bottom: 11px; }
+      .shop-title { font-size: 18px; }
+      .shop-sub { font-size: 11px; }
+      .shop-gold { font-size: 22px; }
+      .shop-gold em { font-size: 9px; }
+      .shop-items { gap: 6px; margin-bottom: 12px; max-height: none; }
+      .shop-item { padding: 9px 12px; border-radius: 10px; }
+      .si-name { font-size: 13px; }
+      .si-desc { font-size: 11px; }
+      .si-cost { font-size: 15px; }
+      .shop-hint { font-size: 10px; margin-top: 7px; }
     }
-    /* Narrow screens — single-column loadout, slimmer shop */
-    @media (max-width: 760px) {
-      .ld-stats { grid-template-columns: 1fr; }
-      .shop-card { width: 320px; }
+    /* Very small phones — squeeze a touch more */
+    @media (max-height: 380px) {
+      .panel { padding: 5px 8px; }
+      .bar { height: 7px; }
+      .stat .n { font-size: 14px; }
+      .skill { min-width: 42px; height: 28px; }
+      #announce { font-size: 26px; }
     }
+    /* Narrow screens — single-column loadout */
+    @media (max-width: 760px) { .ld-stats { grid-template-columns: 1fr; } }
 
     /* ── "Rotate your device" gate (portrait phones only) ───────────────────── */
     #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column;

@@ -4,7 +4,7 @@ import {
 } from '../engine/renderer.js';
 import { TD } from './config.js';
 
-const LOGICAL_WIDTH = 1920;
+export const LOGICAL_WIDTH = 1920;
 const LOGICAL_HEIGHT = 1080;
 const GROUND_Y = TD.GROUND_Y;
 

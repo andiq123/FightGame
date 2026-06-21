@@ -8,7 +8,7 @@ import {
   resolveHeroVsEnemyTower, reapDead, separateMonsters,
 } from './combat.js';
 import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.js';
-import { TDViewport } from './render.js';
+import { TDViewport, LOGICAL_WIDTH } from './render.js';
 import { initSetup, readLoadout } from './setup.js';
 import { initShop, toggleShop, tickShop, hasAffordable, aiAutoBuy, openShop, isShopOpen } from './shop.js';
 import { updateAlly, resolveAllyAttacks, reapAllies } from './allies.js';
@@ -316,12 +316,22 @@ function decayEffects(dt) {
   if (world.screenShake < 0.5) world.screenShake = 0;
 }
 
-// Free, battle-framing camera. Rather than rigidly glue to the hero, it drifts to
-// the CENTRE of the action — a weighted average of the hero, the allies, and the
-// enemies actually near the fight — so you see the whole engagement. The hero is
-// weighted enough to stay in frame, but the view opens up toward wherever the
-// fighting is. A soft deadzone keeps it from twitching on every little step.
+const camClamp = (x) => { const lim = TD.STAGE_HALF - 760; return Math.max(-lim, Math.min(lim, x)); };
+
+// Free, battle-framing camera that the PLAYER can override by dragging. While the
+// finger/mouse is panning (or coasting on momentum, or within the grace window
+// after a flick) the auto-follow stands down so you can look around freely; once
+// you let go and it settles, it eases back to the centre of the action — a weighted
+// average of the hero, allies, and nearby enemies — keeping the hero in frame.
 function updateCamera(dt) {
+  const now = performance.now();
+  if (camDragging) return;                       // finger is driving the camera directly
+  if (Math.abs(camVel) > 0.4 || now < camManualUntil) {
+    world.camX = camClamp(world.camX + camVel);   // momentum glide after a flick
+    camVel *= 0.88;
+    if (Math.abs(camVel) < 0.4) camVel = 0;
+    return;
+  }
   let target;
   if (world.hero.hp > 0) {
     let sum = world.hero.x * 1.5, n = 1.5; // hero stays in frame without dominating
@@ -341,8 +351,7 @@ function updateCamera(dt) {
   if (Math.abs(target - world.camX) > 50) {
     world.camX += (target - world.camX) * Math.min(1, dt * TD.CAMERA_SMOOTH * 0.7);
   }
-  const lim = TD.STAGE_HALF - 760;
-  world.camX = Math.max(-lim, Math.min(lim, world.camX));
+  world.camX = camClamp(world.camX);
 }
 
 function checkEnd() {
@@ -505,6 +514,36 @@ window.addEventListener('keydown', (e) => {
 els.speedBtn && els.speedBtn.addEventListener('click', cycleSpeed);
 syncSpeedBtn();
 window.addEventListener('resize', () => viewport.resize());
+
+// ── Free camera: drag to pan (touch & mouse), with native-feeling momentum ──────
+// Dragging anywhere on the play field pans the camera; the auto-follow stands down
+// while you drag and for a short grace window after, then eases back to the action.
+let camDragging = false, camLastX = 0, camVel = 0, camManualUntil = 0, camMoved = false;
+// World units per CSS pixel of drag (accounts for the render scale + zoom).
+const worldPerPx = () => LOGICAL_WIDTH / (window.innerWidth * ((world && world.zoom) || 1));
+
+function camPanStart(clientX) { camDragging = true; camLastX = clientX; camVel = 0; camMoved = false; }
+function camPanMove(clientX) {
+  if (!camDragging || !world) return;
+  const dxPx = clientX - camLastX;
+  if (Math.abs(dxPx) > 1) camMoved = true;
+  const dxWorld = dxPx * worldPerPx();
+  camLastX = clientX;
+  world.camX = camClamp(world.camX - dxWorld);   // content follows the finger
+  camVel = camVel * 0.5 - dxWorld * 0.5;          // smoothed velocity for the flick
+  camVel = Math.max(-90, Math.min(90, camVel));   // cap so a flick glides, not rockets
+}
+function camPanEnd() {
+  if (!camDragging) return;
+  camDragging = false;
+  if (camMoved) camManualUntil = performance.now() + 3500; // a tap shouldn't freeze auto-follow
+  else camVel = 0;
+}
+
+canvas.addEventListener('pointerdown', (e) => { camPanStart(e.clientX); });
+window.addEventListener('pointermove', (e) => camPanMove(e.clientX));
+window.addEventListener('pointerup', camPanEnd);
+window.addEventListener('pointercancel', camPanEnd);
 
 // Boot
 initSetup();        // build the loadout chooser from the shared registries

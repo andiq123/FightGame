@@ -2,17 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Lock scale, fill the notch/safe areas (viewport-fit=cover) for a real app feel. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Stick Defense</title>
+  <meta name="description" content="Build a stick hero, then watch it defend the base across 20 escalating waves." />
+  <meta name="theme-color" content="#0b0e14" />
+
+  <!-- Installable web app (Add to Home Screen) -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+
+  <!-- iOS standalone web-app: full-screen, dark status bar, home-screen title & icon -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Stick Defense" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <style>
-    :root { --accent: #28d6c8; }
+    :root {
+      --accent: #28d6c8;
+      /* iOS safe-area insets (notch / home indicator), 0 on devices without them. */
+      --sat: env(safe-area-inset-top, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+    }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e14;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7edf5; }
-    #canvas { position: fixed; inset: 0; display: block; }
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7edf5;
+      /* App-like touch: no pinch-zoom/scroll, no pull-to-refresh, no text selection,
+         no tap highlight or long-press callout. */
+      touch-action: none; overscroll-behavior: none;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+    /* Use the dynamic viewport units so iOS Safari's toolbar can't crop the canvas. */
+    #canvas { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh;
+      width: 100dvw; height: 100dvh; }
 
     /* Top HUD bars */
-    #hud { position: fixed; top: 0; left: 0; right: 0; padding: 14px 18px;
+    #hud { position: fixed; top: 0; left: 0; right: 0;
+      padding: calc(14px + var(--sat)) calc(18px + var(--sar)) 14px calc(18px + var(--sal));
       display: flex; gap: 18px; align-items: flex-start; pointer-events: none; z-index: 5; }
     .panel { background: rgba(14,18,26,0.72); border: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px; padding: 10px 14px; backdrop-filter: blur(8px); min-width: 200px; }
@@ -34,8 +63,9 @@
     .stat .l { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #8b9ab0; margin-top: 4px; }
 
     /* Equipped-skill bar (bottom center) */
-    #skills { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-      display: flex; gap: 10px; z-index: 5; pointer-events: none; }
+    #skills { position: fixed; bottom: calc(18px + var(--sab)); left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 5; pointer-events: none; max-width: 96vw; flex-wrap: wrap;
+      justify-content: center; }
     .skill { position: relative; min-width: 74px; height: 46px; border-radius: 11px; overflow: hidden;
       background: rgba(14,18,26,.82); border: 1px solid rgba(255,255,255,.12);
       display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px);
@@ -101,11 +131,12 @@
     /* Optional, non-pausing panel: floats on the right, game stays visible &
        playable behind it (no full-screen backdrop, no pointer capture). */
     #shop { position: fixed; top: 0; right: 0; bottom: 0; display: none;
-      align-items: center; justify-content: flex-end; padding: 16px; z-index: 11;
-      pointer-events: none; }
+      align-items: center; justify-content: flex-end; z-index: 11; pointer-events: none;
+      padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) 16px; }
     #shop.visible { display: flex; }
-    .shop-card { pointer-events: auto; width: 380px; max-width: 92vw; max-height: 88vh;
-      overflow-y: auto; background: rgba(14,18,26,.92); backdrop-filter: blur(8px);
+    .shop-card { pointer-events: auto; width: 380px; max-width: 92vw; max-height: 100%;
+      overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+      overscroll-behavior: contain; background: rgba(14,18,26,.92); backdrop-filter: blur(8px);
       border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 22px 24px;
       box-shadow: 0 18px 50px rgba(0,0,0,.5); }
     .shop-actions { display: flex; gap: 10px; }
@@ -116,14 +147,14 @@
     .shop-hint { margin: 10px 2px 0; font-size: 11.5px; color: #8b9ab0; text-align: center; }
 
     /* Floating shop button + "deals available" nudge (left edge). */
-    .shop-fab { position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
+    .shop-fab { position: fixed; left: calc(16px + var(--sal)); top: 50%; transform: translateY(-50%);
       z-index: 10; display: inline-flex; align-items: center; gap: 7px;
       background: rgba(14,18,26,.82); color: #e7edf5; border: 1px solid rgba(255,255,255,.12);
       border-radius: 12px; padding: 11px 15px; font: inherit; font-weight: 700; font-size: 14px;
       cursor: pointer; transition: all .15s ease; }
     .shop-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
     /* Fast-forward toggle — sits just below the Upgrades button. */
-    .speed-fab { position: fixed; left: 16px; top: calc(50% + 52px); transform: translateY(-50%);
+    .speed-fab { position: fixed; left: calc(16px + var(--sal)); top: calc(50% + 52px); transform: translateY(-50%);
       z-index: 10; min-width: 64px; text-align: center; background: rgba(14,18,26,.82); color: #e7edf5;
       border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 11px 15px;
       font: inherit; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer;
@@ -133,7 +164,7 @@
     .shop-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
     .shop-fab.has-deals { border-color: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
     .shop-fab.has-deals .shop-dot { background: #ffd66b; box-shadow: 0 0 8px #ffd66b; }
-    .shop-toast { position: fixed; left: 16px; top: calc(50% + 104px); transform: translateY(-50%);
+    .shop-toast { position: fixed; left: calc(16px + var(--sal)); top: calc(50% + 104px); transform: translateY(-50%);
       z-index: 10; max-width: 210px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px;
       color: #ffe39a; background: rgba(255,214,107,.12); border: 1px solid rgba(255,214,107,.4);
       opacity: 0; pointer-events: none; transition: opacity .3s ease; }
@@ -146,7 +177,8 @@
       font-variant-numeric: tabular-nums; }
     .shop-gold em { display: block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
       color: #8b9ab0; font-style: normal; font-weight: 700; }
-    .shop-items { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; max-height: 50vh; overflow-y: auto; }
+    .shop-items { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; max-height: 50vh;
+      overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; }
     .shop-item { display: flex; align-items: center; justify-content: space-between; gap: 14px;
       text-align: left; font: inherit; cursor: pointer; color: #e7edf5;
       background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
@@ -161,10 +193,77 @@
     .aegis-pips { float: right; letter-spacing: 1px; font-size: 11px; line-height: 1; }
     .aegis-pips .pip { color: #78e1ff; text-shadow: 0 0 6px rgba(120,225,255,.6); }
     .aegis-pips .pip.spent { color: rgba(255,255,255,.18); text-shadow: none; }
+
+    /* ── Touch devices: don't let :hover states stick after a tap ────────────── */
+    @media (hover: none) {
+      .ov-btn:hover, .shop-item:hover, .chip:hover, .shop-fab:hover, .speed-fab:hover { transform: none; }
+    }
+    /* Tap controls: instant taps (no 300ms / double-tap-zoom), no stuck callout. */
+    .ov-btn, .chip, .shop-item, .shop-fab, .speed-fab, input[type=range] {
+      touch-action: manipulation; -webkit-touch-callout: none; }
+    /* Finger-sized tap targets */
+    @media (pointer: coarse) {
+      .shop-item { padding: 14px 16px; }
+      .chip { padding: 10px 16px; font-size: 14px; }
+      .ld-stat input[type=range] { height: 22px; } /* taller hit area for the thumb */
+    }
+
+    /* ── Landscape phones: compact the chrome to fit a short, wide screen ────── */
+    @media (max-height: 540px) {
+      #hud { gap: 9px; padding: calc(8px + var(--sat)) calc(10px + var(--sar)) 8px calc(10px + var(--sal)); }
+      .panel { padding: 7px 11px; min-width: 0; border-radius: 10px; }
+      .panel h3 { font-size: 9px; margin-bottom: 4px; }
+      .bar { height: 10px; }
+      .barval { font-size: 10px; margin-top: 2px; }
+      .stats { gap: 13px; }
+      .stat .n { font-size: 18px; }
+      .stat .l { font-size: 8px; margin-top: 2px; }
+      #skills { gap: 7px; bottom: calc(9px + var(--sab)); }
+      .skill { min-width: 54px; height: 38px; }
+      .skill .sk-name { font-size: 10px; padding: 0 7px; }
+      .skill .sk-timer { font-size: 13px; }
+      #announce { font-size: 38px; top: 33%; }
+      .shop-fab, .speed-fab { padding: 9px 12px; font-size: 13px; }
+      .speed-fab { top: calc(50% + 46px); }
+      .shop-toast { top: calc(50% + 90px); font-size: 11px; max-width: 168px; }
+      #overlay { align-items: flex-start; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+      .ov-card { padding: calc(14px + var(--sat)) 24px 24px; max-width: 640px; }
+      .ov-title { font-size: 38px; }
+      .ov-sub { font-size: 13px; margin-bottom: 14px; }
+      .loadout { padding: 14px 16px; margin: 6px 0 16px; border-radius: 12px; }
+      .ld-stats { gap: 14px; margin-bottom: 12px; }
+      .ld-hint { font-size: 10px; }
+      .ld-group { margin-top: 10px; }
+      .ld-group h4 { margin-bottom: 6px; }
+      .ov-btn { padding: 13px 30px; font-size: 16px; }
+    }
+    /* Narrow screens — single-column loadout, slimmer shop */
+    @media (max-width: 760px) {
+      .ld-stats { grid-template-columns: 1fr; }
+      .shop-card { width: 320px; }
+    }
+
+    /* ── "Rotate your device" gate (portrait phones only) ───────────────────── */
+    #rotate { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column;
+      gap: 14px; align-items: center; justify-content: center; text-align: center; padding: 30px;
+      background: #0b0e14; color: #cdd8e6; }
+    #rotate .rot-icon { font-size: 54px; animation: rotwig 1.8s ease-in-out infinite; }
+    #rotate h2 { margin: 0; font-size: 22px; font-weight: 800; }
+    #rotate p { margin: 0; font-size: 14px; color: #8b9ab0; }
+    @keyframes rotwig { 0%,100% { transform: rotate(-14deg); } 50% { transform: rotate(76deg); } }
+    @media (orientation: portrait) and (max-width: 920px) and (pointer: coarse) {
+      #rotate { display: flex; }
+    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
+
+  <div id="rotate">
+    <div class="rot-icon">📱</div>
+    <h2>Rotate your device</h2>
+    <p>Stick Defense plays in landscape.</p>
+  </div>
 
   <div id="hud">
     <div class="panel">
@@ -260,5 +359,16 @@
   </div>
 
   <script type="module" src="./td/main.js"></script>
+  <script>
+    // Register the service worker (offline + installable). Relative path keeps the
+    // scope under /FightGame/ on GitHub Pages and / locally.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+    // Kill pinch-zoom on iOS Safari (which ignores user-scalable=no for it). Tap
+    // controls use touch-action: manipulation in CSS to drop the double-tap zoom
+    // without breaking fast successive taps (e.g. buying several shop items).
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+  </script>
 </body>
 </html>

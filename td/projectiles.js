@@ -1,6 +1,6 @@
 import { TD } from './config.js';
 import { POSE } from '../entities/fighter.js';
-import { sharinganNegate } from './combat.js';
+import { sharinganNegate, killMonster } from './combat.js';
 import { evasionStaminaFactor } from './perception.js';
 import { spawnHitParticles, spawnFireballLaunch, spawnFrost, spawnDashDust, spawnDragonFire } from '../services/particleSystem.js';
 
@@ -204,5 +204,5 @@ function damageMonster(world, m, dmg, p, now) {
   else if (p.type === 'ice') spawnFrost(world.particles, m.x, TD.GROUND_Y, world.rng);
   else spawnHitParticles(world.particles, m.x, my, false, world.rng);
   world.screenShake = Math.min(22, world.screenShake + 6);
-  if (m.hp <= 0) { m._dead = true; world.kills++; world.gold += (m.reward ?? m.def.reward); }
+  if (m.hp <= 0) killMonster(world, m, now); // credits the kill (incl. base-tower arrows)
 }

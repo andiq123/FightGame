@@ -98,25 +98,48 @@ export function hasAffordable(world) {
 }
 
 // ── AI auto-buy ────────────────────────────────────────────────────────────
-// How badly the hero wants each upgrade *right now*. Context-sensitive: a heal
-// is worthless at full HP but the top priority when nearly dead; repairing the
-// base climbs as the base (the lose condition) drops. Steady upgrades have a
-// flat-ish value that tapers as the stat climbs. Returns a 0..~140 priority.
+// The hero spends like an investor, not a patient. PERMANENT power — intelligence,
+// strength, and a skill kit — is what actually wins the run: it compounds every
+// wave, so the hero buys it first and hardest while the stats are still low. The
+// two consumables are deliberately deprioritised:
+//   • Heal is almost never worth gold — the hero already respawns at FULL HP when
+//     downed and heals for free in the base zone, so a paid heal buys nothing the
+//     game wasn't about to hand over. It's valued below the buy threshold, so the
+//     hero banks that gold toward a real upgrade instead.
+//   • Repair only matters when the base (the lose condition, which barely
+//     self-heals) is genuinely in danger — then it spikes above everything.
+// Returns a 0..~130 priority.
 function valueOf(it, world) {
   const h = world.hero, base = world.playerTower;
-  if (it.id === 'repair') return (1 - base.hp / base.maxHp) * 140; // base falling = game over
-  if (it.id === 'heal')   return (1 - h.hp / h.maxHp) * 110;       // urgent only when hurt
-  if (it.id === 'power')  return 62 - h.power * 1.6;               // tapers with level
-  if (it.id === 'int')    return 60 - h.intelligence * 1.6;
-  if (it.id.startsWith('skill:')) return 48;                       // strong one-time pickup
-  if (it.id === 'stam')   return 18;
-  return 10;
+  const skillCount = (h.skills || []).length;
+  const baseRatio = base.hp / base.maxHp;
+  switch (true) {
+    // Intelligence first (reactions + decisions = survival), then strength
+    // (HP + damage). Weighted highest when the level is low — early points
+    // compound the most — and tapering as the stat climbs toward 20.
+    case it.id === 'int':   return 60 + (20 - h.intelligence) * 2.6;   // ~110 @1 … ~60 @20
+    case it.id === 'power': return 55 + (20 - h.power) * 2.3;          // ~99 @1 … ~55 @20
+    // Filling out the kit — a hero with NO skills desperately needs one (AoE to
+    // clear crowds, a heal/buff to survive); value tapers as the arsenal rounds out.
+    case it.id.startsWith('skill:'):
+      return skillCount === 0 ? 115 : skillCount === 1 ? 78 : skillCount === 2 ? 45 : 18;
+    // Save a falling base — ramps hard so a critical base outranks even upgrades.
+    case it.id === 'repair': return baseRatio < 0.45 ? (1 - baseRatio) * 120 : 0;
+    // Consumable heal — kept below MIN_VALUE so it's effectively never auto-bought
+    // (respawn + free base healing already cover HP). Tiny non-zero only as a
+    // last-ditch tiebreak if the hero is somehow loaded and at death's door.
+    case it.id === 'heal':  return h.hp < h.maxHp * 0.15 ? 16 : 0;
+    case it.id === 'stam':  return 14;
+    default: return 8;
+  }
 }
-// Below this, the hero would rather bank the gold than buy something marginal.
-const MIN_VALUE = 24;
+// Below this, the hero banks the gold and waits for a worthwhile upgrade instead
+// of frittering it on a marginal buy (stamina, or a heal it doesn't really need).
+const MIN_VALUE = 22;
 
-// Let the hero spend its own gold on whatever helps it most. Buys greedily by
-// priority until nothing worthwhile is affordable. Returns the names bought.
+// Let the hero spend its own gold on whatever improves it most. Buys greedily by
+// priority until nothing worthwhile is affordable — otherwise it BANKS the gold
+// toward the next real upgrade rather than wasting it. Returns the names bought.
 export function aiAutoBuy(world) {
   const bought = [];
   for (let guard = 0; guard < 16; guard++) {

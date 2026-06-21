@@ -150,7 +150,7 @@ function update(dt, now) {
     resolveHeroVsEnemyTower(world, now);
   }
   resolveMonsterAttacks(world, now);
-  reapDead(world);
+  reapDead(world, now);
 
   maybeAutoBuy(now);
   observeAudio(now);

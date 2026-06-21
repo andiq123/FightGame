@@ -134,8 +134,13 @@ export function resolveHeroVsEnemyTower(world, now) {
   addHit(world, et.x - et.w / 2, TD.GROUND_Y - 150, dmg, { heavy: true });
 }
 
+// Credit a monster's death exactly once — bumping the hero's kill count and gold
+// pool (world.gold IS the hero's purse) — no matter what landed the killing blow:
+// the hero's fists/skills, the BASE TOWER's arrows, a burning DoT, or thorns.
 export function killMonster(world, m, now) {
   m._dead = true;
+  if (m._credited) return;
+  m._credited = true;
   world.kills += 1;
   world.gold += (m.reward ?? m.def.reward);
   spawnHitParticles(world.particles, m.x, TD.GROUND_Y + m.y - 60, true, world.rng);
@@ -164,7 +169,10 @@ export function sharinganNegate(world, hero, attacker, attackerX, now) {
   return true;
 }
 
-export function reapDead(world) {
+export function reapDead(world, now) {
+  // Catch deaths from sources that bypass killMonster (burning/DoT ticks inside a
+  // fighter's own update, etc.) so their reward is never silently dropped.
+  for (const m of world.monsters) if (m.hp <= 0 && !m._credited) killMonster(world, m, now);
   world.monsters = world.monsters.filter(m => !m._dead);
 }
 

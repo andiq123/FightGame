@@ -142,6 +142,18 @@ export function updateHero(hero, world, dt, now) {
   const tacticalRetreat = reads && !!hero._regroup;
   const regroup = recovering || tacticalRetreat;
 
+  // ── PROACTIVE TOP-OFF (intelligence-gated): hurt but the coast is clear — nothing
+  // pressing the hero and no enemy near the base — so a smart hero ducks HOME into
+  // the free heal zone and tops off to full before re-engaging, instead of fighting
+  // (or sieging the keep) at a deficit. Hysteresis: heal until full, bail instantly
+  // the moment any threat appears. A dull hero doesn't bother and fights hurt. ──
+  const baseX = world.playerTower.x;
+  const hpFull = hero.hp >= hero.maxHp - 1;
+  const enemyNearBase = world.monsters.some(m => m.hp > 0 && Math.abs(m.x - baseX) < TD.HERO.baseHealZone + 240);
+  const calmToHeal = sit.melee === 0 && sit.near === 0 && sit.inbound === 0 && !enemyNearBase;
+  if (reads && !hpFull && calmToHeal) hero._healingUp = true;
+  else if (hpFull || !calmToHeal) hero._healingUp = false;
+
   hero._winded = recovering || fleeing; // drives the HUD dim
   hero._scared = fleeing;
   if (recovering && !fleeing) hero.stamina = Math.min(hero.maxStamina, hero.stamina + dt * TD.HERO.windedRegen);
@@ -197,6 +209,12 @@ export function updateHero(hero, world, dt, now) {
     if (tacticalRetreat && Math.abs(hero.x - baseSpot) > 40) { goalX = baseSpot; retreating = true; }
     else if (gap >= TD.HERO.restSafeDist) { goalX = hero.x; }
     else { const away = threat ? (Math.sign(hero.x - threat.x) || -1) : -1; goalX = hero.x + away * (TD.HERO.restSafeDist + 60); retreating = true; }
+    inRange = false;
+  } else if (hero._healingUp) {
+    // Coast is clear and we're hurt → jog home and sit in the heal zone until full,
+    // facing the field so we can snap back to the fight the instant one appears.
+    faceX = hero.x + hero.facing;
+    goalX = baseSpot;
     inRange = false;
   } else if (target) {
     faceX = target.x;

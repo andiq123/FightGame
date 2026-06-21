@@ -168,8 +168,10 @@ function stepMonsterProjectile(world, p, now) {
   }
   p.hitIds.add(hero.id);
   p._dead = true;
-  // Sharingan negates ranged hits too (no melee attacker to counter).
-  if (sharinganNegate(world, hero, null, p.x, now)) return;
+  // Sharingan voids the bolt 100% AND blinks the hero onto the enemy that FIRED it
+  // (p.owner) to punish them — not just where the bolt happened to be.
+  const shooter = (p.owner && p.owner.isMonster && p.owner.hp > 0) ? p.owner : null;
+  if (sharinganNegate(world, hero, shooter, shooter ? shooter.x : p.x, now)) return;
   // The hero's evade traits/passives apply to ranged hits too — but a near-empty
   // stamina bar collapses the chance (an exhausted hero eats the bolt).
   const ev = evasionStaminaFactor(hero);

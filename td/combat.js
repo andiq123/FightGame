@@ -161,23 +161,33 @@ export function killMonster(world, m, now) {
   spawnHitParticles(world.particles, m.x, TD.GROUND_Y + m.y - 60, true, world.rng);
 }
 
-// Sharingan: if active and off internal cooldown, negate an incoming hit, warp
-// the hero beside the attacker, and counter (melee attacker only). Returns true
-// when the hit was negated. Reused by both melee and ranged hit resolution.
+// Sharingan: while active, EVERY incoming hit — melee OR projectile — is avoided
+// 100%. The flashy warp-to-attacker counter is rate-limited so a barrage doesn't
+// teleport-spam every frame, but the AVOIDANCE itself is unconditional: a hit that
+// can't be answered with a warp this instant is still simply voided. For a ranged
+// hit the `attacker`/`attackerX` is the SHOOTER, so the hero blinks right onto the
+// enemy that fired and punishes it. Returns true when the hit was negated.
 export function sharinganNegate(world, hero, attacker, attackerX, now) {
-  if (!hero.status.active('sharingan', now) || hero.status.active('sharinganCd', now)) return false;
-  hero.status.set('sharinganCd', now + 650);
-  hero.status.set('invincible', now + 220);
+  if (!hero.status.active('sharingan', now)) return false;
+  hero.status.set('invincible', now + 180);                 // the hit is voided — 100%
+
+  // Rate-limit only the teleport-counter, not the avoidance.
+  if (hero.status.active('sharinganCd', now)) {
+    world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: 0, block: true });
+    return true;
+  }
+  hero.status.set('sharinganCd', now + 280);
   const dir = Math.sign(attackerX - hero.x) || hero.facing || 1;
-  hero.x = attackerX - dir * 62;
+  hero.x = attackerX - dir * 62;                             // blink right beside the attacker/shooter
   hero.facing = dir;
   hero.vx = 0;
   hero.needsDashDust = true;
   world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y - 70, t: 0, dmg: 0, sharinganWarp: true });
-  world.slowMo = Math.max(world.slowMo, 160);
+  world.slowMo = Math.max(world.slowMo, 150);
   if (attacker && attacker.isMonster && attacker.hp > 0) {
     const dealt = attacker.takeDamage(Math.round(40 * hero.damageMult), true, hero.x, now);
     attacker.vx += dir * 380; attacker.status.set('stun', now + 480); attacker.currentAttack = null;
+    attacker.pose = POSE.hit; attacker.poseTime = 0;
     addHit(world, attacker.x, TD.GROUND_Y + attacker.y - 70 * (attacker.scale || 1), dealt, { heavy: true, counter: true });
     if (attacker.hp <= 0) killMonster(world, attacker, now);
   }

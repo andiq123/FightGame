@@ -76,4 +76,31 @@ export function createMonster(typeKey, wave = 1) {
   return m;
 }
 
+// An allied reinforcement mustered from the player base. Same Fighter body as the
+// hero/monsters, with a compact "hunt the nearest enemy" brain in td/allies.js.
+// Stats scale gently with the wave so they stay relevant without outshining the
+// hero. Friendly cyan so they read clearly against the enemy palette.
+export function createAlly(wave = 1) {
+  const A = TD.ALLY;
+  const strLevel = clampStat(A.power + Math.floor((wave - 1) * A.powerPerWave));
+  const intLevel = clampStat(A.intelligence + Math.floor((wave - 1) * A.intPerWave));
+
+  const a = new Fighter(_idSeq++, A.color, TD.PLAYER_TOWER_X + 150, 1);
+  a.style = 'caped'; a.capeColor = A.capeColor;
+  a.setStats({ power: strLevel, intelligence: intLevel });
+  a.damageTakenMult = 1;
+  a.maxHp = a.hp = Math.round(A.hp + (wave - 1) * A.hpPerWave);
+  a.dmg = Math.round(A.dmg + (wave - 1) * A.dmgPerWave);
+  a.atkCdMs = A.atkCdMs;
+  a.scale = 0.92;
+  a.groundY = 0;
+  a.isAlly = true;
+  a.attackRange = A.attackRange;
+  a.moveSpeed = A.speed;
+  a.ai = getAIStats(intLevel);
+  a.facing = 1;     // marching right, out toward the enemy
+  a.nextAtkAt = 0;
+  return a;
+}
+
 export { POSE, ATTACK };

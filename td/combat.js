@@ -60,7 +60,7 @@ export function resolveMonsterAttacks(world, now) {
   for (const m of world.monsters) {
     if (m.hp <= 0) continue;
     const a = m.currentAttack;
-    if (!a) { m._pendingHeroHit = m._pendingTowerHit = false; continue; }
+    if (!a) { m._pendingHeroHit = m._pendingTowerHit = false; m._pendingAllyHit = null; continue; }
     const elapsed = now - a.started;
     const active = elapsed >= a.data.duration * 0.3 && elapsed <= a.data.duration * 0.72;
     if (!active) continue;
@@ -103,6 +103,21 @@ export function resolveMonsterAttacks(world, now) {
             if (m.hp <= 0) killMonster(world, m, now);
           }
         }
+      }
+    }
+    if (m._pendingAllyHit != null) {
+      const ally = world.allies.find(x => x.id === m._pendingAllyHit && x.hp > 0);
+      if (!ally || Math.abs(ally.x - m.x) > m.def.atkRange + 30 || ally.y <= -150) {
+        m._pendingAllyHit = null;
+      } else {
+        m._pendingAllyHit = null;
+        const mdmg = m.dmg ?? m.def.dmg;
+        const heavy = m.def.scale > 1.2 || mdmg >= 22;
+        const dealt = ally.takeDamage(mdmg, heavy, m.x, now);
+        ally.vx += Math.sign(ally.x - m.x) * (heavy ? 360 : 180);
+        ally.pose = POSE.hit; ally.poseTime = 0;
+        if (heavy) ally.status.set('stun', now + 300);
+        addHit(world, ally.x, TD.GROUND_Y + ally.y - 70 * (ally.scale || 1), dealt, { heavy });
       }
     }
     if (m._pendingTowerHit) {

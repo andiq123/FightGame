@@ -360,8 +360,24 @@ export function updateMonster(m, world, dt, now) {
   const chaseHero = heroTargetable && distHero < aggro && !flank;
   const ranged = m.ranged;
 
-  let goalX, mode, targetX, stopDist;
-  if (chaseHero) {
+  // ALLIED FRONT LINE: a melee enemy fights the nearest friendly fighter blocking
+  // its path — one that's closer than the hero, or that stands between it and the
+  // base it's flanking toward — so the wall of allies actually soaks the column
+  // instead of being walked past. Casters ignore the wall and keep shooting the hero.
+  const blockAlly = ranged ? null : nearestAlly(world, m.x);
+  const allyDist = blockAlly ? Math.abs(blockAlly.x - m.x) : Infinity;
+  const engageAlly = !!blockAlly && allyDist < aggro
+    && (allyDist <= distHero + 20 || !heroTargetable || flank);
+
+  let goalX, mode, targetX, stopDist, foeAllyId = null;
+  if (engageAlly) {
+    mode = 'meleeAlly';
+    foeAllyId = blockAlly.id;
+    targetX = blockAlly.x;
+    const side = Math.sign(m.x - blockAlly.x) || (m.facing >= 0 ? 1 : -1);
+    goalX = blockAlly.x + side * def.atkRange * 0.55;
+    stopDist = def.atkRange;
+  } else if (chaseHero) {
     targetX = hero.x;
     if (ranged) {
       mode = 'rangedHero';
@@ -414,6 +430,9 @@ export function updateMonster(m, world, dt, now) {
       if (mode === 'rangedHero') {
         m.pose = POSE.punch; m.poseTime = 0;
         castMonsterSkill(world, m, hero, now);
+      } else if (mode === 'meleeAlly') {
+        m.startAttack(HEAVY(m), now);
+        m._pendingAllyHit = foeAllyId;
       } else if (mode === 'meleeHero') {
         m.startAttack(HEAVY(m), now);
         m._pendingHeroHit = true;
@@ -495,6 +514,16 @@ export function nearestMonster(world, x) {
     if (m.hp <= 0) continue;
     const d = Math.abs(m.x - x);
     if (d < bd) { bd = d; best = m; }
+  }
+  return best;
+}
+
+export function nearestAlly(world, x) {
+  let best = null, bd = Infinity;
+  for (const a of world.allies || []) {
+    if (a.hp <= 0) continue;
+    const d = Math.abs(a.x - x);
+    if (d < bd) { bd = d; best = a; }
   }
   return best;
 }

@@ -57,6 +57,13 @@ export class TDViewport {
       drawMonsterPlate(ctx, m);
     }
 
+    // Allied reinforcements (friendly cyan, with a slim HP bar so you can read them).
+    for (const a of world.allies || []) {
+      if (a.hp <= 0) continue;
+      drawStickman(ctx, a, GROUND_Y, now);
+      drawAllyBar(ctx, a);
+    }
+
     if (world.hero.hp > 0) drawStickman(ctx, world.hero, GROUND_Y, now);
 
     drawTDProjectiles(ctx, world.projectiles, now);
@@ -250,6 +257,14 @@ function drawMonsterPlate(ctx, m) {
 
   // HP bar directly under the badges.
   drawHpBar(ctx, cx, top, m.hp / m.maxHp, w, '#e0533a');
+}
+
+// Slim friendly HP bar above an ally's head — no STR/INT plate, just enough to
+// read it as one of yours and track its health at a glance.
+function drawAllyBar(ctx, a) {
+  const scale = a.scale || 1;
+  const top = GROUND_Y + a.y - 120 * scale - 26;
+  drawHpBar(ctx, a.x, top, Math.max(0, a.hp) / a.maxHp, Math.max(42, 44 * scale), '#5bd6ff');
 }
 
 function roundRect(ctx, x, y, w, h, r) {

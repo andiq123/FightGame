@@ -65,6 +65,29 @@ export const TD = {
     baseHealStamPerSec: 70,  // bonus stamina/sec while sheltering at the base
   },
 
+  // ── Allied reinforcements ────────────────────────────────────────────────
+  // The base periodically musters friendly fighters who march out, intercept the
+  // enemy column, and soak the front line — buying the hero time to farm gold and
+  // invest in real upgrades instead of just band-aiding. Their kills credit the
+  // hero's purse. Tuned to RELIEVE pressure, not trivialise the run.
+  ALLY: {
+    color: '#5bd6ff',          // friendly cyan-blue — distinct from hero teal & enemies
+    capeColor: '#2f7fd0',
+    power: 5, intelligence: 9, // base levels (scale up with the wave)
+    powerPerWave: 0.5, intPerWave: 0.6,
+    hp: 150, hpPerWave: 22,    // explicit HP pool (they're meant to trade and die)
+    dmg: 15, dmgPerWave: 1.5,
+    speed: 250,
+    attackRange: 96,
+    atkCdMs: 680,
+    spawnIntervalMs: 7000,     // muster one this often…
+    firstSpawnMs: 2500,        // …with a short grace before the first
+    maxAlive: 3,               // concurrent cap…
+    capPerWave: 0.5,           // …+0.5 per wave (so later waves get more help)
+    capMax: 7,
+    lineAhead: 720,            // hold this far ahead of the base when no enemy is near
+  },
+
   // ── Enemy roster — deliberately diverse in intelligence, role and skills. ──
   // Strength (power) drives HP/damage, intelligence drives how aggressively and
   // smartly they hunt the hero. A `ranged` block makes that archetype a caster.

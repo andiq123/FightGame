@@ -11,6 +11,7 @@ import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.
 import { TDViewport } from './render.js';
 import { initSetup, readLoadout } from './setup.js';
 import { initShop, toggleShop, tickShop, hasAffordable, aiAutoBuy, openShop, isShopOpen } from './shop.js';
+import { updateAllySpawning, updateAlly, resolveAllyAttacks, reapAllies } from './allies.js';
 import { POWERS } from '../entities/powers.js';
 
 const SKILL_LABEL = Object.fromEntries(
@@ -34,6 +35,8 @@ function newWorld() {
     rng: secureRandom,
     hero: createHero(readLoadout()),
     monsters: [],
+    allies: [],
+    _nextAllyAt: 0,
     playerTower: createTower('player'),
     enemyTower: createTower('enemy'),
     particles: [],
@@ -141,6 +144,20 @@ function update(dt, now) {
     if (wasAir && m.y >= -1) spawnLandingDust(world.particles, m.x, TD.GROUND_Y, 90, world.rng); // leap landing
   }
   separateMonsters(world);
+
+  // Allied reinforcements — mustered from the base, they march out and intercept
+  // the enemy column (their kills credit the hero's gold).
+  updateAllySpawning(world, now);
+  for (const a of world.allies) {
+    if (a.hp <= 0) continue;
+    const wasAir = a.y < -6;
+    updateAlly(a, world, sdt, now);
+    a.update(sdt, now);
+    integrate(a, sdt);
+    if (a.needsDashDust) { spawnDashDust(world.particles, a.x, TD.GROUND_Y, a.facing, world.rng); a.needsDashDust = false; }
+    if (wasAir && a.y >= -1) spawnLandingDust(world.particles, a.x, TD.GROUND_Y, 90, world.rng);
+  }
+
   fireTowers(now);
   updateProjectiles(world, sdt, now);
 
@@ -149,8 +166,10 @@ function update(dt, now) {
     resolveHeroAttacks(world, now);
     resolveHeroVsEnemyTower(world, now);
   }
+  resolveAllyAttacks(world, now);
   resolveMonsterAttacks(world, now);
   reapDead(world, now);
+  reapAllies(world);
 
   maybeAutoBuy(now);
   observeAudio(now);

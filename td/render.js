@@ -2,6 +2,7 @@ import {
   drawStickman, drawBackground, drawHitEffect, drawDamageNumber,
   drawParticles, drawHitVignette,
 } from '../engine/renderer.js';
+import { drawRagdoll } from '../engine/ragdoll.js';
 import { TD } from './config.js';
 
 export const LOGICAL_WIDTH = 1920;
@@ -48,27 +49,26 @@ export class TDViewport {
 
     drawTower(ctx, world.playerTower, now);
     drawTower(ctx, world.enemyTower, now);
-    drawAegisBarrier(ctx, world, now);
+    drawAegisBarrier(ctx, world.baseAegisFx, now);
+    drawAegisBarrier(ctx, world.enemyAegisFx, now);
+
+    // A unit that's been hit hard tumbles as a physics ragdoll; otherwise it's the
+    // normal stickman with its STR/INT plate.
+    const drawUnit = (u, plateColor) => {
+      if (u.staggerRagdoll) { drawRagdoll(ctx, u.staggerRagdoll, u.color); return; }
+      drawStickman(ctx, u, GROUND_Y, now);
+      drawStatPlate(ctx, u, plateColor);
+    };
 
     // Monsters (sorted by scale so brutes read behind small grunts a touch).
     const units = [...world.monsters].filter(m => m.hp > 0);
     units.sort((a, b) => (b.scale || 1) - (a.scale || 1));
-    for (const m of units) {
-      drawStickman(ctx, m, GROUND_Y, now);
-      drawStatPlate(ctx, m, '#e0533a');
-    }
+    for (const m of units) drawUnit(m, '#e0533a');
 
     // Allied reinforcements (friendly cyan), with their STR / INT shown like everyone else.
-    for (const a of world.allies || []) {
-      if (a.hp <= 0) continue;
-      drawStickman(ctx, a, GROUND_Y, now);
-      drawStatPlate(ctx, a, '#5bd6ff');
-    }
+    for (const a of world.allies || []) { if (a.hp > 0) drawUnit(a, '#5bd6ff'); }
 
-    if (world.hero.hp > 0) {
-      drawStickman(ctx, world.hero, GROUND_Y, now);
-      drawStatPlate(ctx, world.hero, '#28d6c8'); // show the hero's STR / INT too
-    }
+    if (world.hero.hp > 0) drawUnit(world.hero, '#28d6c8');
 
     drawTDProjectiles(ctx, world.projectiles, now);
     drawParticles(ctx, world.particles);
@@ -175,13 +175,12 @@ function drawBaseZone(ctx, world, now) {
   ctx.restore();
 }
 
-// The rising Aegis Barrier: an expanding kinetic shock-ring sweeping out from the
-// base when it unleashes its last-resort pulse.
-function drawAegisBarrier(ctx, world, now) {
-  const fx = world.baseAegisFx;
+// The rising Aegis Barrier: an expanding kinetic shock-ring sweeping out from a
+// base (player or enemy) when it unleashes its last-resort pulse.
+function drawAegisBarrier(ctx, fx, now) {
   if (!fx) return;
   const k = (now - fx.startedAt) / fx.dur;
-  if (k < 0 || k > 1) { if (k > 1) world.baseAegisFx = null; return; }
+  if (k < 0 || k > 1) return;
   const ease = 1 - Math.pow(1 - k, 3);
   const radius = 120 + ease * 1500;
   const alpha = (1 - k) * 0.85;

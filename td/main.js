@@ -6,6 +6,7 @@ import { updateHero, updateMonster, nearestMonster } from './ai.js';
 import {
   integrate, resolveHeroAttacks, resolveMonsterAttacks,
   resolveHeroVsEnemyTower, reapDead, separateMonsters,
+  ragdollKnockback, tickRagdolls,
 } from './combat.js';
 import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.js';
 import { TDViewport, LOGICAL_WIDTH } from './render.js';
@@ -39,6 +40,9 @@ function newWorld() {
     baseCharges: TD.BASE_AEGIS.charges, // hidden last-resort Aegis pulses left this run
     baseAegisCdUntil: 0,
     baseAegisFx: null,
+    enemyBaseCharges: TD.BASE_AEGIS.charges, // the enemy keep gets the same 3 pulses
+    enemyAegisCdUntil: 0,
+    enemyAegisFx: null,
     playerTower: createTower('player'),
     enemyTower: createTower('enemy'),
     particles: [],
@@ -120,6 +124,10 @@ function update(dt, now) {
   if (world.slowMo > 0) world.slowMo -= dt * 1000;
   const sdt = dt * slow;
 
+  // Advance any active ragdolls first, so each unit's own update reads the freshly
+  // solved pelvis position when it syncs its body.
+  tickRagdolls(world, sdt, now);
+
   updateWaves(world, world.waveState, dt, now);
 
   // Hero — fully autonomous. When downed, the base must hold on its own until
@@ -174,6 +182,7 @@ function update(dt, now) {
   reapAllies(world);
 
   maybeBaseAegis(now);
+  maybeEnemyAegis(now);
   maybeAutoBuy(now);
   observeAudio(now);
   decayEffects(dt);
@@ -203,12 +212,12 @@ function maybeBaseAegis(now) {
     const dist = Math.abs(m.x - pt.x);
     const prox = 1 - Math.min(1, dist / 2600);          // closer = flung harder
     const boost = 1 + B.proximityBoost * prox;
-    m.vx = Math.abs(B.pushVx) * boost;                  // hurled DOWN-lane, away from base
-    m.vy = B.pushVy * boost;                            // launched up → ballistic arc
-    m.status.set('stun', now + 700);
-    m.currentAttack = null;
-    m.pose = POSE.hit; m.poseTime = 0;
     if (B.damage) m.takeDamage(B.damage, true, pt.x, now);
+    // Hurl every enemy DOWN-lane on a tumbling ragdoll arc (away from the base).
+    if (m.hp > 0 && !ragdollKnockback(world, m, pt.x, Math.abs(B.pushVx) * boost, B.pushVy * boost, now)) {
+      m.vx = Math.abs(B.pushVx) * boost; m.vy = B.pushVy * boost;
+      m.status.set('stun', now + 700); m.currentAttack = null; m.pose = POSE.hit; m.poseTime = 0;
+    }
   }
   reapDead(world, now); // any flung enemy that the chip damage finished credits gold
 
@@ -216,6 +225,41 @@ function maybeBaseAegis(now) {
   world.screenShake = Math.min(44, world.screenShake + 32);
   world.baseAegisFx = { x: pt.x, startedAt: now, dur: 720 };
   world.announce = { text: 'AEGIS BARRIER', until: now + 1700, big: true };
+  playSfx('skill');
+}
+
+// The ENEMY keep wields the same last-resort barrier: when it's about to fall and
+// a charge remains, it blasts the hero AND allies back toward their own base on a
+// ragdoll arc and surges its own structure back to 70%. Symmetric to the player's
+// Aegis — three pulses for the whole run.
+function maybeEnemyAegis(now) {
+  const B = TD.BASE_AEGIS;
+  const et = world.enemyTower;
+  if (et.hp <= 0 || world.enemyBaseCharges <= 0) return;
+  if (now < (world.enemyAegisCdUntil || 0)) return;
+  if (et.hp > et.maxHp * B.hpThreshold) return;
+
+  world.enemyBaseCharges -= 1;
+  world.enemyAegisCdUntil = now + B.cooldownMs;
+  et.hp = Math.max(et.hp, et.maxHp * B.healTo);
+
+  const victims = [world.hero, ...world.allies];
+  for (const u of victims) {
+    if (!u || u.hp <= 0) continue;
+    const dist = Math.abs(u.x - et.x);
+    const prox = 1 - Math.min(1, dist / 2600);
+    const boost = 1 + B.proximityBoost * prox;
+    if (B.damage) u.takeDamage(B.damage, true, et.x, now);
+    // Hurled toward the player base (negative x = away from the enemy keep).
+    if (u.hp > 0 && !ragdollKnockback(world, u, et.x, -Math.abs(B.pushVx) * boost, B.pushVy * boost, now)) {
+      u.vx = -Math.abs(B.pushVx) * boost; u.vy = B.pushVy * boost;
+      u.status.set('stun', now + 700); u.currentAttack = null; u.pose = POSE.hit; u.poseTime = 0;
+    }
+  }
+  world.slowMo = Math.max(world.slowMo, 260);
+  world.screenShake = Math.min(44, world.screenShake + 32);
+  world.enemyAegisFx = { x: et.x, startedAt: now, dur: 720 };
+  world.announce = { text: 'ENEMY AEGIS', until: now + 1700, big: true };
   playSfx('skill');
 }
 

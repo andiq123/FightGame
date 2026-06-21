@@ -96,12 +96,14 @@ export function fireTowerArrow(world, fromX, fromTopY, dir, targetSide, dmg, aim
   });
 }
 
-// A caster monster lobs a bolt at the hero.
-export function castMonsterSkill(world, m, hero, now) {
+// A caster monster lobs a bolt at a FRIENDLY target — hero or ally (the projectile
+// keeps target:'hero' so the hero can still perceive/dodge it, but it damages any
+// friendly it passes through; see stepMonsterProjectile).
+export function castMonsterSkill(world, m, target, now) {
   const r = m.ranged;
-  const dir = Math.sign(hero.x - m.x) || m.facing || -1;
+  const dir = Math.sign(target.x - m.x) || m.facing || -1;
   world.projectiles.push({
-    target: 'hero', owner: m, aimX: hero.x,    // locked on the hero — dodge → overshoot → vanish
+    target: 'hero', owner: m, aimX: target.x,
     x: m.x + dir * 40, y: PROJ_Y, vx: dir * r.speed,
     type: r.type,
     dmg: m.rangedDmg ?? r.damage,
@@ -158,38 +160,52 @@ function stepHeroProjectile(world, p, now) {
 
 function stepMonsterProjectile(world, p, now) {
   const hero = world.hero;
-  if (hero.hp <= 0 || p.hitIds.has(hero.id)) return;
-  if (Math.abs(hero.x - p.x) > p.radius + 26) return;
-  // Hero mid-dodge (i-frames from a read sidestep) → the bolt whiffs past.
-  if (hero.status.active('invincible', now)) {
+  // HERO (has evasion + Sharingan) — engage only when the bolt is actually on it;
+  // otherwise fall through so the bolt can still strike an ally in its path.
+  if (hero.hp > 0 && !p.hitIds.has(hero.id) && Math.abs(hero.x - p.x) <= p.radius + 26) {
+    if (hero.status.active('invincible', now)) {
+      p.hitIds.add(hero.id);
+      world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: 0, block: true });
+      return;
+    }
     p.hitIds.add(hero.id);
-    world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: 0, block: true });
+    p._dead = true;
+    // Sharingan voids the bolt 100% AND blinks the hero onto the enemy that FIRED it.
+    const shooter = (p.owner && p.owner.isMonster && p.owner.hp > 0) ? p.owner : null;
+    if (sharinganNegate(world, hero, shooter, shooter ? shooter.x : p.x, now)) return;
+    const ev = evasionStaminaFactor(hero);
+    const dodge = (hero.traits?.untouchable && world.rng() < 0.99 * ev)
+      || (hero.hasPassive('blur') && world.rng() < 0.15 * ev);
+    if (dodge) {
+      hero.status.set('invincible', now + 120);
+      hero.pose = POSE.dodge; hero.dodgeStartAt = now; hero.dodgeDir = -Math.sign(p.vx) || 1;
+      world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: 0, block: true });
+      return;
+    }
+    const dealt = hero.takeDamage(p.dmg, true, p.x, now);
+    hero.vx += Math.sign(p.vx) * 160;
+    hero.status.set('stun', now + 220);
+    if (p.slowMs) hero.status.set('frozen', now + p.slowMs);
+    world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: dealt, heavy: true });
+    spawnHitParticles(world.particles, hero.x, TD.GROUND_Y + hero.y - 60, true, world.rng);
+    world.screenShake = Math.min(22, world.screenShake + 7);
     return;
   }
-  p.hitIds.add(hero.id);
-  p._dead = true;
-  // Sharingan voids the bolt 100% AND blinks the hero onto the enemy that FIRED it
-  // (p.owner) to punish them — not just where the bolt happened to be.
-  const shooter = (p.owner && p.owner.isMonster && p.owner.hp > 0) ? p.owner : null;
-  if (sharinganNegate(world, hero, shooter, shooter ? shooter.x : p.x, now)) return;
-  // The hero's evade traits/passives apply to ranged hits too — but a near-empty
-  // stamina bar collapses the chance (an exhausted hero eats the bolt).
-  const ev = evasionStaminaFactor(hero);
-  const dodge = (hero.traits?.untouchable && world.rng() < 0.99 * ev)
-    || (hero.hasPassive('blur') && world.rng() < 0.15 * ev);
-  if (dodge) {
-    hero.status.set('invincible', now + 120);
-    hero.pose = POSE.dodge; hero.dodgeStartAt = now; hero.dodgeDir = -Math.sign(p.vx) || 1;
-    world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: 0, block: true });
+  // ALLIES are vulnerable to monster bolts too (no evasion — they just take it).
+  for (const a of world.allies) {
+    if (a.hp <= 0 || p.hitIds.has(a.id)) continue;
+    if (Math.abs(a.x - p.x) > p.radius + 24 * (a.scale || 1)) continue;
+    p.hitIds.add(a.id);
+    p._dead = true;
+    const dealt = a.takeDamage(p.dmg, true, p.x, now);
+    a.vx += Math.sign(p.vx) * 150;
+    a.pose = POSE.hit; a.poseTime = 0;
+    a.status.set('stun', now + 200);
+    if (p.slowMs) a.status.set('frozen', now + p.slowMs);
+    world.hitEffects.push({ x: a.x, y: TD.GROUND_Y + a.y - 70 * (a.scale || 1), t: 0, dmg: dealt, heavy: true });
+    spawnHitParticles(world.particles, a.x, TD.GROUND_Y + a.y - 60, true, world.rng);
     return;
   }
-  const dealt = hero.takeDamage(p.dmg, true, p.x, now);
-  hero.vx += Math.sign(p.vx) * 160;
-  hero.status.set('stun', now + 220);
-  if (p.slowMs) hero.status.set('frozen', now + p.slowMs);
-  world.hitEffects.push({ x: hero.x, y: TD.GROUND_Y + hero.y - 70, t: 0, dmg: dealt, heavy: true });
-  spawnHitParticles(world.particles, hero.x, TD.GROUND_Y + hero.y - 60, true, world.rng);
-  world.screenShake = Math.min(22, world.screenShake + 7);
 }
 
 function damageMonster(world, m, dmg, p, now) {

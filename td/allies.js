@@ -25,7 +25,7 @@ export function nearestEnemy(world, x) {
 // Ally brain — hunt the closest enemy and trade blows; with the lane clear, hold a
 // forward defensive line ahead of the base so the next wave is met away from home.
 export function updateAlly(a, world, dt, now) {
-  if (a.hp <= 0) return;
+  if (a.hp <= 0 || a.staggerRagdoll) return; // tumbling from a hard hit
   const range = a.attackRange;
   const target = nearestEnemy(world, a.x);
 

@@ -94,7 +94,7 @@ function assess(hero, world) {
 }
 
 export function updateHero(hero, world, dt, now) {
-  if (hero.hp <= 0) return {};
+  if (hero.hp <= 0 || hero.staggerRagdoll) return {}; // tumbling — no decisions/skills
 
   const skill = hero.ai?.skill ?? 0.5;          // 0..1 intelligence
   const range = TD.HERO.attackRange;
@@ -359,7 +359,7 @@ function chooseSkill(hero, world, skill, sit, defensive, now) {
 const HEAVY = (m) => (m.scale || 1) > 1.2 ? ATTACK.axeKick : (m.typeKey === 'warlord' ? ATTACK.highKick : ATTACK.cross);
 
 export function updateMonster(m, world, dt, now) {
-  if (m.hp <= 0) return;
+  if (m.hp <= 0 || m.staggerRagdoll) return; // tumbling from a hard hit / the barrier
   // Smart enemies read and DODGE the hero's incoming projectiles too (symmetric
   // perception). Lighter monsters leap aside with i-frames; gated by intelligence.
   if (tryMonsterDodge(m, world, now)) return;
@@ -396,8 +396,10 @@ export function updateMonster(m, world, dt, now) {
   const allyDist = blockAlly ? Math.abs(blockAlly.x - m.x) : Infinity;
   const engageAlly = !!blockAlly && allyDist < aggro
     && (allyDist <= distHero + 20 || !heroTargetable || flank);
+  // Casters lob bolts at the nearest FRIENDLY in sight — hero OR ally.
+  const rangedFoe = ranged ? nearestFriendly(world, m, aggro) : null;
 
-  let goalX, mode, targetX, stopDist, foeAllyId = null;
+  let goalX, mode, targetX, stopDist, foeAllyId = null, rangedTarget = null;
   if (engageAlly) {
     mode = 'meleeAlly';
     foeAllyId = blockAlly.id;
@@ -405,20 +407,19 @@ export function updateMonster(m, world, dt, now) {
     const side = Math.sign(m.x - blockAlly.x) || (m.facing >= 0 ? 1 : -1);
     goalX = blockAlly.x + side * def.atkRange * 0.55;
     stopDist = def.atkRange;
+  } else if (ranged && rangedFoe) {
+    mode = 'rangedFoe';
+    rangedTarget = rangedFoe;
+    targetX = rangedFoe.x;
+    const side = Math.sign(m.x - rangedFoe.x) || 1;     // hold/kite on its side
+    goalX = rangedFoe.x + side * ranged.range * 0.65;
+    stopDist = ranged.range;
   } else if (chaseHero) {
+    mode = 'meleeHero';
     targetX = hero.x;
-    if (ranged) {
-      mode = 'rangedHero';
-      const want = ranged.range * 0.65;
-      const side = Math.sign(m.x - hero.x) || 1;        // hold/kite on its side
-      goalX = (distHero < ranged.range * 0.4) ? hero.x + side * want : hero.x + side * want;
-      stopDist = ranged.range;
-    } else {
-      mode = 'meleeHero';
-      const side = Math.sign(m.x - hero.x) || (m.facing >= 0 ? 1 : -1);
-      goalX = hero.x + side * def.atkRange * 0.55;       // approach from current side → turns around if hero passed
-      stopDist = def.atkRange;
-    }
+    const side = Math.sign(m.x - hero.x) || (m.facing >= 0 ? 1 : -1);
+    goalX = hero.x + side * def.atkRange * 0.55;         // approach from current side → turns around if hero passed
+    stopDist = def.atkRange;
   } else {
     mode = 'tower';
     targetX = towerEdge;
@@ -434,7 +435,7 @@ export function updateMonster(m, world, dt, now) {
 
   m.facing = Math.sign(targetX - m.x) || m.facing;
   const distToTarget = Math.abs(m.x - targetX);
-  const tooClose = ranged && chaseHero && distHero < ranged.range * 0.4; // kite back
+  const tooClose = mode === 'rangedFoe' && distToTarget < ranged.range * 0.4; // kite back
   const arrived = !tooClose && distToTarget <= stopDist && !flinching;
   // Bolder (faster) while the hero is down — press the base relentlessly.
   const speedMul = world.heroDownUntil ? TD.MONSTER.downSpeedBoost : 1;
@@ -456,9 +457,9 @@ export function updateMonster(m, world, dt, now) {
     if (m.onGround() && m.pose !== POSE.punch && m.pose !== POSE.kick) m.pose = POSE.idle;
     if (now >= m.nextAtkAt) {
       m.nextAtkAt = now + (m.atkCdMs ?? def.atkCdMs) * (world.waveEvent?.atkCd || 1);
-      if (mode === 'rangedHero') {
+      if (mode === 'rangedFoe') {
         m.pose = POSE.punch; m.poseTime = 0;
-        castMonsterSkill(world, m, hero, now);
+        castMonsterSkill(world, m, rangedTarget, now);
       } else if (mode === 'meleeAlly') {
         m.startAttack(HEAVY(m), now);
         m._pendingAllyHit = foeAllyId;
@@ -586,6 +587,20 @@ export function nearestAlly(world, x) {
   for (const a of world.allies || []) {
     if (a.hp <= 0) continue;
     const d = Math.abs(a.x - x);
+    if (d < bd) { bd = d; best = a; }
+  }
+  return best;
+}
+
+// Nearest FRIENDLY fighter (hero or ally) to a monster, within maxDist — what a
+// caster shoots at, so allies are valid ranged targets, not just the hero.
+function nearestFriendly(world, m, maxDist) {
+  let best = null, bd = maxDist;
+  const hero = world.hero;
+  if (hero.hp > 0 && !world.heroDownUntil) { const d = Math.abs(hero.x - m.x); if (d < bd) { bd = d; best = hero; } }
+  for (const a of world.allies || []) {
+    if (a.hp <= 0) continue;
+    const d = Math.abs(a.x - m.x);
     if (d < bd) { bd = d; best = a; }
   }
   return best;

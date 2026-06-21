@@ -49,6 +49,7 @@ export class TDViewport {
     drawTower(ctx, world.playerTower, now);
     drawTower(ctx, world.enemyTower, now);
     drawMusterGauge(ctx, world);
+    drawAegisBarrier(ctx, world, now);
 
     // Monsters (sorted by scale so brutes read behind small grunts a touch).
     const units = [...world.monsters].filter(m => m.hp > 0);
@@ -196,6 +197,32 @@ function drawMusterGauge(ctx, world) {
   roundRect(ctx, x, y, w, 8, 4); ctx.fill();
   ctx.fillStyle = ratio >= 1 ? '#9bffd0' : '#5bd6ff';
   roundRect(ctx, x, y, w * ratio, 8, 4); ctx.fill();
+  ctx.restore();
+}
+
+// The rising Aegis Barrier: an expanding kinetic shock-ring sweeping out from the
+// base when it unleashes its last-resort pulse.
+function drawAegisBarrier(ctx, world, now) {
+  const fx = world.baseAegisFx;
+  if (!fx) return;
+  const k = (now - fx.startedAt) / fx.dur;
+  if (k < 0 || k > 1) { if (k > 1) world.baseAegisFx = null; return; }
+  const ease = 1 - Math.pow(1 - k, 3);
+  const radius = 120 + ease * 1500;
+  const alpha = (1 - k) * 0.85;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // A vertical kinetic wall rising from the base, expanding outward.
+  ctx.strokeStyle = `rgba(120,225,255,${alpha})`;
+  ctx.lineWidth = 6 + (1 - k) * 10;
+  ctx.beginPath();
+  ctx.ellipse(fx.x, GROUND_Y - 120, radius, 320 + ease * 120, 0, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.strokeStyle = `rgba(190,245,255,${alpha * 0.6})`;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(fx.x, GROUND_Y - 120, radius * 0.78, 260 + ease * 90, 0, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
   ctx.restore();
 }
 

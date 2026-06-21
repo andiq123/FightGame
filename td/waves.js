@@ -83,6 +83,9 @@ export function updateWaves(world, ws, dt, now) {
       world.waveEvent = null;
       ws.phase = 'breather';
       ws.timer = TD.WAVE.breatherMs;
+      // Surviving the final wave is the victory condition (a defensive run, not a
+      // keep-rush) — flag it for the orchestrator's end check.
+      if (ws.wave >= TD.WIN_WAVE) world._survivedAll = true;
       world.announce = { text: `WAVE ${ws.wave} CLEARED`, until: now + 2000 };
     }
     return;

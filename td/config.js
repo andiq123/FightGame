@@ -22,10 +22,28 @@ export const TD = {
   PLAYER_TOWER_X: -1950,    // your base — defend this
   ENEMY_TOWER_X: 1950,      // enemy spawner — destroy this to win
   TOWER_HP: 1000,
-  ENEMY_TOWER_HP: 2600,
+  ENEMY_TOWER_HP: 16000,    // the keep is a fortress — you WIN by surviving, not rushing it
+  WIN_WAVE: 20,             // survive (clear) this many waves → victory
   TOWER_W: 150,
   TOWER_H: 360,
   TOWER_RANGE: 150,         // how close a monster must be to start hitting a tower
+
+  // ── Aegis Barrier ─────────────────────────────────────────────────────────
+  // A hidden, automatic last-resort the base unleashes when it's about to fall: a
+  // rising kinetic barrier that hurls EVERY enemy far down the lane on a ballistic
+  // arc (gravity does the rest) and surges the base's structure back to 70%. A
+  // scarce lifeline — only a few charges for the whole run — so a near-death base
+  // can claw back into the fight, making each collapse a dramatic recovery.
+  BASE_AEGIS: {
+    hpThreshold: 0.25,       // fires when base HP drops below this fraction…
+    healTo: 0.70,            // …and restores the base up to this fraction
+    charges: 3,              // total uses for the whole run (~20 waves)
+    cooldownMs: 3500,        // brief lockout so one trigger = one pulse
+    pushVx: 1250,            // base horizontal launch (down-lane, away from base)
+    pushVy: -720,            // upward launch → real ballistic arc under gravity
+    proximityBoost: 0.7,     // extra fling for enemies right on top of the base
+    damage: 30,              // a jolt of chip damage as they're flung
+  },
 
   // Towers auto-fire arrows at threats in range (classic TD). Your base rains
   // arrows on monsters; the enemy keep snipes the hero (who can dodge them).
@@ -146,8 +164,11 @@ export const TD = {
     { id: 'horde', name: 'HORDE — overwhelming numbers!', countMul: 1.6 },
     { id: 'champion', name: 'CHAMPION approaches!', addWarlord: 1 },
     { id: 'swift', name: 'SWIFT — a sprinting pack!', speed: 1.45, addRunner: 3 },
+    { id: 'elite', name: 'ELITE GUARD — armoured vanguard!', addWarlord: 2, atkCd: 0.85 },
+    { id: 'berserk', name: 'BERSERK — a relentless tide!', speed: 1.2, atkCd: 0.6, jumpy: 1.3 },
+    { id: 'siege', name: 'SIEGE — they rush the base!', countMul: 1.3, speed: 1.15, addWarlord: 1 },
   ],
-  EVENT_CHANCE: 0.5,         // chance a wave (from 2 on) rolls an event
+  EVENT_CHANCE: 0.55,        // chance a wave (from 2 on) rolls an event
 
   // Between-wave shop — spend gold on upgrades. Costs scale with current level.
   SHOP: {

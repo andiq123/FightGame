@@ -1,5 +1,5 @@
 import { TD } from './config.js';
-import { createHero } from './units.js';
+import { createHero, POSE } from './units.js';
 import { createTower } from './towers.js';
 import { createWaveState, updateWaves } from './waves.js';
 import { updateHero, updateMonster, nearestMonster } from './ai.js';
@@ -37,6 +37,9 @@ function newWorld() {
     monsters: [],
     allies: [],
     musterEnergy: TD.ALLY.musterStart, // base "power" accumulating toward the next ally
+    baseCharges: TD.BASE_AEGIS.charges, // hidden last-resort Aegis pulses left this run
+    baseAegisCdUntil: 0,
+    baseAegisFx: null,
     playerTower: createTower('player'),
     enemyTower: createTower('enemy'),
     particles: [],
@@ -172,12 +175,50 @@ function update(dt, now) {
   reapDead(world, now);
   reapAllies(world);
 
+  maybeBaseAegis(now);
   maybeAutoBuy(now);
   observeAudio(now);
   decayEffects(dt);
   updateCamera(dt);
   updateHUD(now);
   checkEnd();
+}
+
+// Hidden Aegis Barrier: when the base is about to fall (HP under the threshold)
+// and a charge remains, it unleashes a rising kinetic pulse — flinging every
+// enemy far down the lane on a real ballistic arc (gravity finishes the throw)
+// and surging the base back to 70%. A scarce lifeline that turns a near-death
+// collapse into a dramatic comeback.
+function maybeBaseAegis(now) {
+  const B = TD.BASE_AEGIS;
+  const pt = world.playerTower;
+  if (pt.hp <= 0 || world.baseCharges <= 0) return;
+  if (now < (world.baseAegisCdUntil || 0)) return;
+  if (pt.hp > pt.maxHp * B.hpThreshold) return;
+
+  world.baseCharges -= 1;
+  world.baseAegisCdUntil = now + B.cooldownMs;
+  pt.hp = Math.max(pt.hp, pt.maxHp * B.healTo); // structure surges back to 70%
+
+  for (const m of world.monsters) {
+    if (m.hp <= 0) continue;
+    const dist = Math.abs(m.x - pt.x);
+    const prox = 1 - Math.min(1, dist / 2600);          // closer = flung harder
+    const boost = 1 + B.proximityBoost * prox;
+    m.vx = Math.abs(B.pushVx) * boost;                  // hurled DOWN-lane, away from base
+    m.vy = B.pushVy * boost;                            // launched up → ballistic arc
+    m.status.set('stun', now + 700);
+    m.currentAttack = null;
+    m.pose = POSE.hit; m.poseTime = 0;
+    if (B.damage) m.takeDamage(B.damage, true, pt.x, now);
+  }
+  reapDead(world, now); // any flung enemy that the chip damage finished credits gold
+
+  world.slowMo = Math.max(world.slowMo, 260);
+  world.screenShake = Math.min(44, world.screenShake + 32);
+  world.baseAegisFx = { x: pt.x, startedAt: now, dur: 720 };
+  world.announce = { text: 'AEGIS BARRIER', until: now + 1700, big: true };
+  playSfx('skill');
 }
 
 // Continuous auto-buy: while enabled (the default), the hero keeps spending its
@@ -307,8 +348,9 @@ function updateCamera(dt) {
 }
 
 function checkEnd() {
-  if (world.enemyTower.hp <= 0) endGame('win');
-  else if (world.playerTower.hp <= 0) endGame('lose');
+  if (world.playerTower.hp <= 0) endGame('lose');           // base fell → defeat
+  else if (world._survivedAll) endGame('win');              // outlasted all 20 waves → victory
+  else if (world.enemyTower.hp <= 0) endGame('win');        // (or razed the fortress, if you can)
 }
 
 function endGame(result) {
@@ -324,6 +366,7 @@ function endGame(result) {
 const els = {
   baseHp: document.getElementById('baseHp'),
   baseHpVal: document.getElementById('baseHpVal'),
+  aegisPips: document.getElementById('aegisPips'),
   enemyHp: document.getElementById('enemyHp'),
   enemyHpVal: document.getElementById('enemyHpVal'),
   heroHp: document.getElementById('heroHp'),
@@ -400,6 +443,16 @@ function updateHUD(now) {
   const pt = world.playerTower, et = world.enemyTower, h = world.hero;
   if (els.baseHp) els.baseHp.style.width = `${100 * pt.hp / pt.maxHp}%`;
   if (els.baseHpVal) els.baseHpVal.textContent = Math.ceil(pt.hp);
+  if (els.aegisPips) {
+    const total = TD.BASE_AEGIS.charges, left = world.baseCharges;
+    const sig = left + '/' + total;
+    if (els.aegisPips._sig !== sig) {
+      els.aegisPips._sig = sig;
+      let s = '';
+      for (let i = 0; i < total; i++) s += `<span class="pip${i < left ? '' : ' spent'}">⛨</span>`;
+      els.aegisPips.innerHTML = s;
+    }
+  }
   if (els.enemyHp) els.enemyHp.style.width = `${100 * et.hp / et.maxHp}%`;
   if (els.enemyHpVal) els.enemyHpVal.textContent = Math.ceil(et.hp);
   if (els.heroHp) els.heroHp.style.width = `${100 * Math.max(0, h.hp) / h.maxHp}%`;

@@ -133,8 +133,12 @@ export function updateHero(hero, world, dt, now) {
   // decide). A dull hero doesn't read the danger and stands its ground. ──
   const sit = assess(hero, world);
   const reads = skill >= 0.4;                    // INT ~lvl 9+ recognizes the trap
-  if (reads && !finishing && (sit.overwhelmed || sit.rangedPressure)) hero._regroup = true;
-  else if (sit.melee === 0 && !sit.rangedPressure) hero._regroup = false; // danger passed
+  // BASE IN DANGER: when the base is low a smart hero abandons the offence and
+  // rushes home to hold the line (the dramatic last stand that buys the Aegis
+  // barrier time to recharge the run).
+  const baseLow = world.playerTower.hp < world.playerTower.maxHp * 0.35;
+  if (reads && !finishing && (sit.overwhelmed || sit.rangedPressure || baseLow)) hero._regroup = true;
+  else if (sit.melee === 0 && !sit.rangedPressure && !baseLow) hero._regroup = false; // danger passed
   const tacticalRetreat = reads && !!hero._regroup;
   const regroup = recovering || tacticalRetreat;
 

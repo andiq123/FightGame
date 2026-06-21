@@ -146,26 +146,21 @@
     .ov-btn.ghost.active { background: rgba(40,214,200,.16); border-color: rgba(40,214,200,.6); color: #bdf6ef; }
     .shop-hint { margin: 10px 2px 0; font-size: 11.5px; color: #8b9ab0; text-align: center; }
 
-    /* Floating shop button + "deals available" nudge (left edge). */
-    .shop-fab { position: fixed; left: calc(16px + var(--sal)); top: 50%; transform: translateY(-50%);
-      z-index: 10; display: inline-flex; align-items: center; gap: 7px;
-      background: rgba(14,18,26,.82); color: #e7edf5; border: 1px solid rgba(255,255,255,.12);
-      border-radius: 12px; padding: 11px 15px; font: inherit; font-weight: 700; font-size: 14px;
+    /* Top control row — Upgrades + game speed, sitting in the HUD row (centred
+       between the keep panel and the stats), so it never overlaps them. */
+    #topControls { display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+    .shop-fab, .speed-fab { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      white-space: nowrap; background: rgba(14,18,26,.82); color: #e7edf5; border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px; padding: 10px 15px; font: inherit; font-weight: 700; font-size: 14px;
       cursor: pointer; transition: all .15s ease; }
-    .shop-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
-    /* Fast-forward toggle — sits just below the Upgrades button. */
-    .speed-fab { position: fixed; left: calc(16px + var(--sal)); top: calc(50% + 52px); transform: translateY(-50%);
-      z-index: 10; min-width: 64px; text-align: center; background: rgba(14,18,26,.82); color: #e7edf5;
-      border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 11px 15px;
-      font: inherit; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer;
-      transition: all .15s ease; }
-    .speed-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
+    .speed-fab { min-width: 60px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .shop-fab:hover, .speed-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
     .speed-fab.boosted { border-color: #ffd66b; color: #ffe39a; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
     .shop-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
     .shop-fab.has-deals { border-color: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
     .shop-fab.has-deals .shop-dot { background: #ffd66b; box-shadow: 0 0 8px #ffd66b; }
-    .shop-toast { position: fixed; left: calc(16px + var(--sal)); top: calc(50% + 104px); transform: translateY(-50%);
-      z-index: 10; max-width: 210px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px;
+    .shop-toast { position: fixed; top: calc(56px + var(--sat)); left: 50%; transform: translateX(-50%);
+      z-index: 10; max-width: 280px; text-align: center; padding: 8px 14px; border-radius: 10px; font-size: 12.5px;
       color: #ffe39a; background: rgba(255,214,107,.12); border: 1px solid rgba(255,214,107,.4);
       opacity: 0; pointer-events: none; transition: opacity .3s ease; }
     .shop-toast.show { opacity: 1; }
@@ -229,9 +224,10 @@
       .skill .sk-name { font-size: 9px; padding: 0 5px; }
       .skill .sk-timer { font-size: 11px; }
       #announce { font-size: 32px; top: 32%; }
-      .shop-fab, .speed-fab { padding: 7px 10px; font-size: 12px; border-radius: 10px; }
-      .speed-fab { top: calc(50% + 40px); min-width: 52px; }
-      .shop-toast { top: calc(50% + 78px); font-size: 10px; max-width: 150px; padding: 7px 9px; }
+      #topControls { top: calc(7px + var(--sat)); gap: 6px; }
+      .shop-fab, .speed-fab { padding: 7px 11px; font-size: 12px; border-radius: 10px; }
+      .speed-fab { min-width: 52px; }
+      .shop-toast { top: calc(46px + var(--sat)); font-size: 10px; max-width: 220px; padding: 6px 11px; }
       .aegis-pips { font-size: 9px; }
       #overlay { align-items: flex-start; overflow-y: auto; -webkit-overflow-scrolling: touch; }
       .ov-card { padding: calc(12px + var(--sat)) 20px 20px; max-width: 560px; }
@@ -312,6 +308,15 @@
 
     <div class="spacer"></div>
 
+    <div id="topControls">
+      <button id="shopBtn" class="shop-fab" type="button" aria-label="Open upgrades">
+        🛒 Upgrades <span class="shop-dot"></span>
+      </button>
+      <button id="speedBtn" class="speed-fab" type="button" aria-label="Game speed">▶ 1×</button>
+    </div>
+
+    <div class="spacer"></div>
+
     <div class="panel">
       <div class="stats">
         <div class="stat"><div class="n" id="waveNum">0</div><div class="l">Wave</div></div>
@@ -362,10 +367,6 @@
     </div>
   </div>
 
-  <button id="shopBtn" class="shop-fab" type="button" aria-label="Open upgrades">
-    🛒 Upgrades <span class="shop-dot"></span>
-  </button>
-  <button id="speedBtn" class="speed-fab" type="button" aria-label="Game speed">▶ 1×</button>
   <div id="shopToast" class="shop-toast">Upgrades available — press B to shop</div>
 
   <div id="shop">

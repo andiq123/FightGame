@@ -408,12 +408,24 @@ export function updateMonster(m, world, dt, now) {
     goalX = blockAlly.x + side * def.atkRange * 0.55;
     stopDist = def.atkRange;
   } else if (ranged && rangedFoe) {
-    mode = 'rangedFoe';
-    rangedTarget = rangedFoe;
     targetX = rangedFoe.x;
-    const side = Math.sign(m.x - rangedFoe.x) || 1;     // hold/kite on its side
-    goalX = rangedFoe.x + side * ranged.range * 0.65;
-    stopDist = ranged.range;
+    const dFoe = Math.abs(rangedFoe.x - m.x);
+    if (dFoe <= def.atkRange * 1.15) {
+      // CORNERED CASTER → fights with FISTS. When a friendly closes to melee range
+      // the caster stops kiting and PUNCHES it (hero or ally) instead of standing
+      // there useless. This is the "use melee when close" the player wanted.
+      const side = Math.sign(m.x - rangedFoe.x) || (m.facing >= 0 ? 1 : -1);
+      goalX = rangedFoe.x + side * def.atkRange * 0.5;
+      stopDist = def.atkRange;
+      if (rangedFoe.isAlly) { mode = 'meleeAlly'; foeAllyId = rangedFoe.id; }
+      else { mode = 'meleeHero'; }
+    } else {
+      mode = 'rangedFoe';
+      rangedTarget = rangedFoe;
+      const side = Math.sign(m.x - rangedFoe.x) || 1;   // hold/kite on its side
+      goalX = rangedFoe.x + side * ranged.range * 0.65;
+      stopDist = ranged.range;
+    }
   } else if (chaseHero) {
     mode = 'meleeHero';
     targetX = hero.x;

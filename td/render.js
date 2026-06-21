@@ -48,7 +48,6 @@ export class TDViewport {
 
     drawTower(ctx, world.playerTower, now);
     drawTower(ctx, world.enemyTower, now);
-    drawMusterGauge(ctx, world);
     drawAegisBarrier(ctx, world, now);
 
     // Monsters (sorted by scale so brutes read behind small grunts a touch).
@@ -173,30 +172,6 @@ function drawBaseZone(ctx, world, now) {
   ctx.beginPath();
   ctx.moveTo(cx + zone, GROUND_Y - 50); ctx.lineTo(cx + zone, GROUND_Y + 40);
   ctx.stroke();
-  ctx.restore();
-}
-
-// "MUSTER" charge gauge above the player base — visualises the base accumulating
-// power toward deploying the next allied fighter.
-function drawMusterGauge(ctx, world) {
-  if (world.over) return;
-  if (world.waveState.wave < TD.ALLY.startWave) return; // only once mustering unlocks
-  const t = world.playerTower;
-  if (!t || t.hp <= 0) return;
-  const cost = TD.ALLY.musterCost;
-  const ratio = Math.max(0, Math.min(1, (world.musterEnergy ?? 0) / cost));
-  const w = t.w * 0.9, x = t.x - w / 2, y = GROUND_Y - t.h - 34;
-  ctx.save();
-  ctx.font = '700 12px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(155,200,235,0.85)';
-  ctx.fillText('MUSTER', t.x, y - 8);
-  // Track + fill.
-  ctx.fillStyle = 'rgba(8,11,16,0.78)';
-  roundRect(ctx, x, y, w, 8, 4); ctx.fill();
-  ctx.fillStyle = ratio >= 1 ? '#9bffd0' : '#5bd6ff';
-  roundRect(ctx, x, y, w * ratio, 8, 4); ctx.fill();
   ctx.restore();
 }
 

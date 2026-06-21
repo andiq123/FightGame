@@ -1,39 +1,15 @@
-// Allied reinforcements: friendly fighters the base musters to intercept the
-// enemy column. They use the same Fighter body and combat resolution as everyone
-// else, with a compact "hunt the nearest enemy, hold a forward line otherwise"
-// brain. Their kills credit the hero's gold (via killMonster), so a wall of
-// allies buys the hero breathing room to farm and upgrade instead of just healing.
+// Allied reinforcements: friendly fighters the player RECRUITS from the shop to
+// intercept the enemy column. They use the same Fighter body and combat resolution
+// as everyone else, with a compact "hunt the nearest enemy, hold a forward line
+// otherwise" brain. Their kills credit the hero's gold (via killMonster), so a wall
+// of allies buys the hero breathing room to farm and upgrade instead of just healing.
 import { POSE } from '../entities/fighter.js';
 import { ATTACK } from '../entities/attacks.js';
 import { TD } from './config.js';
-import { createAlly } from './units.js';
 import { killMonster } from './combat.js';
 import { spawnHitParticles } from '../services/particleSystem.js';
 
 const ALLY_COMBO = [ATTACK.jab, ATTACK.cross, ATTACK.hook, ATTACK.highKick];
-
-// Muster allies as the base accumulates power: it slowly charges up and deploys a
-// single fighter only when fully charged — a resource-paced trickle, not a fast
-// timer. Charge holds (ready) at the cap so a fresh ally deploys the instant a
-// slot opens. Cap scales up a little with the wave.
-export function updateAllySpawning(world, dt, now) {
-  if (world.over) return;
-  const A = TD.ALLY;
-  const wave = world.waveState.wave;
-  if (wave < A.startWave) return;        // reinforcements only unlock in later waves
-  const cap = A.maxAlive;                // hard cap, never scales up
-  if (world.allies.length >= cap) {
-    world.musterEnergy = Math.min(world.musterEnergy ?? 0, A.musterCost); // hold ready, don't overflow
-    return;
-  }
-  const rate = A.musterRate + (wave - 1) * A.musterRatePerWave;
-  world.musterEnergy = (world.musterEnergy ?? 0) + rate * dt;
-  if (world.musterEnergy < A.musterCost) return;
-  world.musterEnergy -= A.musterCost;
-  const a = createAlly(wave);
-  a.needsDashDust = true;
-  world.allies.push(a);
-}
 
 // Nearest live enemy to a lane position (shared by the ally brain).
 export function nearestEnemy(world, x) {

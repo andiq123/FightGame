@@ -162,10 +162,17 @@ export const TD = {
   MONSTER: {
     separation: 36,          // half-gap baseline for the marching column
     downSpeedBoost: 1.25,    // with the hero down, monsters press the base harder
-    // Athleticism — monsters leap and lunge to close gaps (smarter ones more so).
-    jumpGapMin: 120, jumpGapMax: 360, // leap when the target is this far
-    jumpVy: -540, jumpVx: 420, jumpCdMs: 1700,
-    lungeGap: 150, lungeVx: 560, lungeCdMs: 2200, // sudden dash-in
+    // Athleticism — monsters leap, lunge, and JUKE to close gaps and bait whiffs
+    // (smarter ones more so). Velocities are randomised per move so the advance
+    // never reads as a repetitive march — agile, springy, hard to pin down.
+    jumpGapMin: 110, jumpGapMax: 380, // leap when the target is this far
+    jumpVy: -560, jumpVx: 470, jumpCdMs: 1300,
+    lungeGap: 165, lungeVx: 600, lungeCdMs: 1700, // sudden dash-in
+    // JUKE: a quick hop (usually backward) right in the hero's face to bait an
+    // attack and slip it — what makes them genuinely hard to hit.
+    jukeGap: 135, jukeVx: 420, jukeVy: -360, jukeCdMs: 1300,
+    // Even the BIG brutes are agile: a heavy crashing leap that closes ground.
+    bruteLeapGapMin: 180, bruteLeapGapMax: 560, bruteLeapVy: -480, bruteLeapVx: 400, bruteLeapCdMs: 2400,
     runnerFleeHp: 0.22,      // wounded runners briefly recoil (scared)
   },
 
@@ -189,6 +196,8 @@ export const TD = {
     healHero: 45,                       // full-heal the hero
     staminaUp: 50, staminaAmount: 30,   // +max stamina
     learnSkill: 110,                    // unlock an unequipped power skill
+    recruitAlly: 120,                   // summon an allied fighter (base cost…
+    recruitAllyPerOwned: 70,            // …+this for each ally already fighting)
   },
 
   CAMERA_SMOOTH: 6.5,

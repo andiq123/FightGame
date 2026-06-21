@@ -481,40 +481,74 @@ function shouldFlank(m, world, now) {
   return false;
 }
 
-// Smart, agile monsters dodge the hero's bolts: a quick i-frame leap aside.
+// Agile monsters dodge the hero's bolts with a quick i-frame leap aside. Even the
+// heavy brutes can now sidestep — clumsier and rarer, but no longer sitting ducks.
 function tryMonsterDodge(m, world, now) {
   if (m.status.active('invincible', now)) return true;
-  if (m.scale > 1.4 || !m.canAct(now) || now < (m._evadeAt || 0)) return false; // brutes can't
+  if (!m.canAct(now) || now < (m._evadeAt || 0)) return false;
+  const big = (m.scale || 1) > 1.4;
   const intel = statT(m.intelligence || 5);
   const threat = inboundProjectile(world, m, 'monster');
   if (!threat) return false;
   const tMs = threat.t * 1000;
   if (tMs > 90 + intel * 360 || tMs < 30) return false;
-  if (world.rng() > gate(intel, 0.04)) return false; // less reliable than the hero
-  m._evadeAt = now + 700;
-  m.status.set('invincible', now + 170);
-  if (m.onGround()) { m.vy = TD.MONSTER.jumpVy; m.pose = POSE.jump; m.needsDashDust = true; }
+  // Brutes are heavier and clumsier — a much lower chance and a longer recovery.
+  if (world.rng() > gate(intel, 0.04) * (big ? 0.45 : 1)) return false;
+  m._evadeAt = now + (big ? 1100 : 700);
+  m.status.set('invincible', now + (big ? 150 : 170));
+  if (m.onGround()) {
+    m.vy = TD.MONSTER.jumpVy * (big ? 0.62 : 1);
+    m.vx += (world.rng() < 0.5 ? -1 : 1) * 120 * (big ? 0.5 : 1); // weave sideways
+    m.pose = POSE.jump; m.needsDashDust = true;
+  }
   return true;
 }
 
-// Athletic flourishes: smarter/quicker monsters LEAP to close a medium gap or
-// LUNGE-dash when fairly close — makes the advance dynamic and unpredictable.
+// Athletic flourishes that make the advance dynamic and hard to read: a randomised
+// LEAP to close a medium gap, a sudden LUNGE-dash, a JUKE (hop back in the hero's
+// face to bait a whiff and slip it), and — for the big brutes — a heavy crashing
+// leap. Every velocity is jittered so no two moves look the same.
 function maybeAthleticMove(m, world, dir, dist, now) {
-  if (!m.onGround() || m.scale > 1.4) return; // brutes are too heavy to leap
+  if (!m.onGround()) return;
   const M = TD.MONSTER;
   const smart = statT(m.intelligence || 5);
   const jumpy = world.waveEvent?.jumpy || 1;
+  const big = (m.scale || 1) > 1.4;
+  const r = world.rng;
+
+  // JUKE — point-blank bait-and-slip. Usually hop backward (whiff bait), sometimes
+  // dart through. This is what makes melee against them feel slippery.
+  if (dist < M.jukeGap && now >= (m._jukeAt || 0) && r() < (0.013 + 0.05 * smart) * jumpy) {
+    m._jukeAt = now + M.jukeCdMs;
+    const back = r() < 0.62 ? -1 : 1;
+    m.vx = back * dir * M.jukeVx * (0.7 + r() * 0.6);
+    m.vy = M.jukeVy * (0.55 + r() * 0.6);
+    m.pose = POSE.jump; m.needsDashDust = true;
+    return;
+  }
+
+  if (big) {
+    // Heavy crashing leap — brutes are agile in bursts, not lumbering.
+    if (dist > M.bruteLeapGapMin && dist < M.bruteLeapGapMax && now >= (m._jumpAt || 0)
+        && r() < (0.006 + 0.02 * smart) * jumpy) {
+      m._jumpAt = now + M.bruteLeapCdMs;
+      m.vy = M.bruteLeapVy * (0.85 + r() * 0.4);
+      m.vx = dir * M.bruteLeapVx * (0.85 + r() * 0.5);
+      m.pose = POSE.jump; m.needsDashDust = true;
+    }
+    return;
+  }
+
+  // Nimble types: springy leap or sudden lunge, both with randomised power.
   if (dist > M.jumpGapMin && dist < M.jumpGapMax && now >= (m._jumpAt || 0)
-      && world.rng() < (0.010 + 0.035 * smart) * jumpy) {
+      && r() < (0.014 + 0.05 * smart) * jumpy) {
     m._jumpAt = now + M.jumpCdMs;
-    m.vy = M.jumpVy;
-    m.vx = dir * M.jumpVx;
-    m.pose = POSE.jump;
-    m.needsDashDust = true;
-  } else if (dist < M.lungeGap && now >= (m._lungeAt || 0)
-      && world.rng() < (0.008 + 0.03 * smart)) {
+    m.vy = M.jumpVy * (0.8 + r() * 0.5);
+    m.vx = dir * M.jumpVx * (0.8 + r() * 0.6);
+    m.pose = POSE.jump; m.needsDashDust = true;
+  } else if (dist < M.lungeGap && now >= (m._lungeAt || 0) && r() < (0.012 + 0.045 * smart)) {
     m._lungeAt = now + M.lungeCdMs;
-    m.vx = dir * M.lungeVx;
+    m.vx = dir * M.lungeVx * (0.85 + r() * 0.5);
     m.needsDashDust = true;
   }
 }

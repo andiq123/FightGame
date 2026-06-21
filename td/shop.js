@@ -5,6 +5,7 @@
 import { getAIStats } from '../config/stats.js';
 import { POWERS } from '../entities/powers.js';
 import { SKILLS, SUPPORTED_SKILL_IDS, TD } from './config.js';
+import { createAlly } from './units.js';
 
 const POWER_LIST = Array.isArray(POWERS) ? POWERS : Object.values(POWERS);
 const SKILL_NAME = Object.fromEntries(POWER_LIST.map(p => [p.id, p.name]));
@@ -67,10 +68,10 @@ function items(world) {
       buy: () => { h.maxStamina += S.staminaAmount; h.stamina = h.maxStamina; },
     },
     {
-      id: 'heal', name: 'Heal Hero', desc: `Restore the hero to full HP (${Math.ceil(h.hp)}/${h.maxHp})`,
-      cost: S.healHero,
-      can: () => h.hp < h.maxHp,
-      buy: () => { h.hp = h.maxHp; },
+      id: 'ally', name: 'Recruit Ally', desc: `Summon an allied fighter (${world.allies.length}/${TD.ALLY.maxAlive})`,
+      cost: S.recruitAlly + world.allies.length * S.recruitAllyPerOwned,
+      can: () => world.allies.length < TD.ALLY.maxAlive,
+      buy: () => { const a = createAlly(world.waveState.wave); a.needsDashDust = true; world.allies.push(a); },
     },
   ];
   // Learn an unequipped power skill.
@@ -92,17 +93,13 @@ export function hasAffordable(world) {
 }
 
 // ── AI auto-buy ────────────────────────────────────────────────────────────
-// The hero spends like an investor, not a patient. PERMANENT power — intelligence,
-// strength, and a skill kit — is what actually wins the run: it compounds every
-// wave, so the hero buys it first and hardest while the stats are still low. The
-// two consumables are deliberately deprioritised:
-//   • Heal is almost never worth gold — the hero already respawns at FULL HP when
-//     downed and heals for free in the base zone, so a paid heal buys nothing the
-//     game wasn't about to hand over. It's valued below the buy threshold, so the
-//     hero banks that gold toward a real upgrade instead.
-//   • Repair only matters when the base (the lose condition, which barely
-//     self-heals) is genuinely in danger — then it spikes above everything.
-// Returns a 0..~130 priority.
+// The hero spends like an investor with a taste for variety. PERMANENT power —
+// intelligence, strength, the skill kit — compounds every wave, so it's bought
+// first and hardest while the stats are low; allies and stamina round out the
+// build. Crucially NOTHING is parked below the buy threshold, so given enough gold
+// the hero EVENTUALLY buys everything on offer (every stat to 20, every skill,
+// a full squad of allies, deeper stamina). Returns a 0..~130 base priority that
+// the buy loop then jitters, so the order of acquisition varies run to run.
 function valueOf(it, world) {
   const h = world.hero;
   const skillCount = (h.skills || []).length;
@@ -113,37 +110,48 @@ function valueOf(it, world) {
     case it.id === 'int':   return 60 + (20 - h.intelligence) * 2.6;   // ~110 @1 … ~60 @20
     case it.id === 'power': return 55 + (20 - h.power) * 2.3;          // ~99 @1 … ~55 @20
     // Filling out the kit — a hero with NO skills desperately needs one (AoE to
-    // clear crowds, a heal/buff to survive); value tapers as the arsenal rounds out.
+    // clear crowds); value tapers but stays buyable so the WHOLE kit is learned.
     case it.id.startsWith('skill:'):
-      return skillCount === 0 ? 115 : skillCount === 1 ? 78 : skillCount === 2 ? 45 : 18;
-    // Consumable heal — kept below MIN_VALUE so it's effectively never auto-bought
-    // (respawn + free base healing already cover HP). Tiny non-zero only as a
-    // last-ditch tiebreak if the hero is somehow loaded and at death's door.
-    case it.id === 'heal':  return h.hp < h.maxHp * 0.15 ? 16 : 0;
-    case it.id === 'stam':  return 14;
-    default: return 8;
+      return skillCount === 0 ? 115 : skillCount === 1 ? 80 : skillCount === 2 ? 56 : 36;
+    // Recruit allies — extra bodies on the line. Worth more the fewer you have and
+    // the more your base is hurting (they soak the siege that bleeds it).
+    case it.id === 'ally': {
+      const count = world.allies.length;
+      const baseDanger = 1 - world.playerTower.hp / world.playerTower.maxHp;
+      return (74 - count * 14) + baseDanger * 70;
+    }
+    // Deeper stamina pool — modest, but well above the floor so it's steadily
+    // stocked once the big-ticket upgrades are in.
+    case it.id === 'stam':  return 30;
+    default: return 12;
   }
 }
-// Below this, the hero banks the gold and waits for a worthwhile upgrade instead
-// of frittering it on a marginal buy (stamina, or a heal it doesn't really need).
-const MIN_VALUE = 22;
+// A low floor: anything genuinely useful clears it, so surplus gold keeps flowing
+// into the build rather than sitting idle — everything gets bought in time.
+const MIN_VALUE = 18;
 
-// Let the hero spend its own gold on whatever improves it most. Buys greedily by
-// priority until nothing worthwhile is affordable — otherwise it BANKS the gold
-// toward the next real upgrade rather than wasting it. Returns the names bought.
+// Let the hero spend its own gold on the build. Each option's desire is JITTERED
+// (±~25%) and there's a chance it splurges on something other than the strict best
+// — so the acquisition order is a little random and varied run to run, while still
+// favouring the highest-impact upgrades. Buys until nothing worthwhile is
+// affordable. Returns the names bought.
 export function aiAutoBuy(world) {
   const bought = [];
-  for (let guard = 0; guard < 16; guard++) {
+  for (let guard = 0; guard < 20; guard++) {
     const opts = items(world)
       .filter(it => it.can() && world.gold >= it.cost)
-      .map(it => ({ it, v: valueOf(it, world) }))
+      .map(it => ({ it, v: valueOf(it, world) * (0.8 + world.rng() * 0.45) })) // jittered desire
       .filter(o => o.v >= MIN_VALUE)
       .sort((a, b) => b.v - a.v);
     if (!opts.length) break;
-    const best = opts[0].it;
-    world.gold -= best.cost;
-    best.buy();
-    bought.push(best.name);
+    // Usually take the best; ~20% of the time grab a random other affordable pick
+    // — keeps builds varied and guarantees the long tail eventually gets bought.
+    const pick = (opts.length > 1 && world.rng() < 0.2)
+      ? opts[1 + Math.floor(world.rng() * (opts.length - 1))]
+      : opts[0];
+    world.gold -= pick.it.cost;
+    pick.it.buy();
+    bought.push(pick.it.name);
   }
   return bought;
 }

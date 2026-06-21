@@ -11,7 +11,7 @@ import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.
 import { TDViewport } from './render.js';
 import { initSetup, readLoadout } from './setup.js';
 import { initShop, toggleShop, tickShop, hasAffordable, aiAutoBuy, openShop, isShopOpen } from './shop.js';
-import { updateAllySpawning, updateAlly, resolveAllyAttacks, reapAllies } from './allies.js';
+import { updateAlly, resolveAllyAttacks, reapAllies } from './allies.js';
 import { POWERS } from '../entities/powers.js';
 
 const SKILL_LABEL = Object.fromEntries(
@@ -36,7 +36,6 @@ function newWorld() {
     hero: createHero(readLoadout()),
     monsters: [],
     allies: [],
-    musterEnergy: TD.ALLY.musterStart, // base "power" accumulating toward the next ally
     baseCharges: TD.BASE_AEGIS.charges, // hidden last-resort Aegis pulses left this run
     baseAegisCdUntil: 0,
     baseAegisFx: null,
@@ -149,9 +148,8 @@ function update(dt, now) {
   }
   separateMonsters(world);
 
-  // Allied reinforcements — mustered from the base, they march out and intercept
+  // Allied reinforcements — recruited from the shop, they march out and intercept
   // the enemy column (their kills credit the hero's gold).
-  updateAllySpawning(world, dt, now);
   for (const a of world.allies) {
     if (a.hp <= 0) continue;
     const wasAir = a.y < -6;

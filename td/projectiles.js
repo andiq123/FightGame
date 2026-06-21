@@ -1,6 +1,7 @@
 import { TD } from './config.js';
 import { POSE } from '../entities/fighter.js';
 import { sharinganNegate } from './combat.js';
+import { evasionStaminaFactor } from './perception.js';
 import { spawnHitParticles, spawnFireballLaunch, spawnFrost, spawnDashDust, spawnDragonFire } from '../services/particleSystem.js';
 
 const PROJ_Y = -70; // chest height (matches drawProjectiles' offset)
@@ -116,21 +117,16 @@ export function updateProjectiles(world, dt, now) {
     p.x += p.vx * dt;
     if (p.arc) { p.vy = (p.vy || 0) + p.arc * dt; p.y += p.vy * dt; } // true ballistic fall
     p.spin = (p.spin || 0) + dt * (p.type === 'shuriken' ? 26 : p.type === 'ice' ? 9 : 0) * Math.sign(p.vx || 1);
-    p.life -= dt;
     // Travelling trails: fire embers, frost shards.
     if (p.type === 'fireball' && world.rng() < 0.6) spawnDragonFire(world.particles, p.x, TD.GROUND_Y + PROJ_Y, Math.sign(p.vx), world.rng);
     else if (p.type === 'ice' && world.rng() < 0.4) spawnFrost(world.particles, p.x, TD.GROUND_Y + PROJ_Y, world.rng);
-    if (Math.abs(p.x) > TD.STAGE_HALF || p.life <= 0) { p._dead = true; continue; }
-    // GROUND IMPACT: an arcing shot that reaches the floor without connecting
-    // buries itself there — no skidding or drifting across the arena.
+    // No artificial range/time cap: a flat projectile flies all the way across the
+    // visible arena, hitting anything it passes through, until it leaves the map
+    // edge. Only the very edge of the stage despawns it.
+    if (Math.abs(p.x) > TD.STAGE_HALF) { p._dead = true; continue; }
+    // GROUND IMPACT: an arcing shot (tower arrow) that reaches the floor without
+    // connecting buries itself there — gravity is the only thing that stops it.
     if (p.arc && p.y >= 0) { p.y = 0; fizzle(world, p); p._dead = true; continue; }
-    // MISS → VANISH: a flat shot aimed at a target that overshoots its aim point
-    // (because the target dodged or moved) fizzles instead of flying on forever.
-    if (p.aimX != null && !p.arc) {
-      const margin = p.radius + 70;
-      const overshot = (p.vx > 0 && p.x > p.aimX + margin) || (p.vx < 0 && p.x < p.aimX - margin);
-      if (overshot) { fizzle(world, p); p._dead = true; continue; }
-    }
     // Arrows only connect once they've descended near body height (so they
     // visibly rain down onto the target rather than clip it on the way up).
     if (p.arc && p.y < PROJ_Y - 45) continue;
@@ -174,9 +170,11 @@ function stepMonsterProjectile(world, p, now) {
   p._dead = true;
   // Sharingan negates ranged hits too (no melee attacker to counter).
   if (sharinganNegate(world, hero, null, p.x, now)) return;
-  // The hero's evade traits/passives apply to ranged hits too.
-  const dodge = (hero.traits?.untouchable && world.rng() < 0.99)
-    || (hero.hasPassive('blur') && world.rng() < 0.15);
+  // The hero's evade traits/passives apply to ranged hits too — but a near-empty
+  // stamina bar collapses the chance (an exhausted hero eats the bolt).
+  const ev = evasionStaminaFactor(hero);
+  const dodge = (hero.traits?.untouchable && world.rng() < 0.99 * ev)
+    || (hero.hasPassive('blur') && world.rng() < 0.15 * ev);
   if (dodge) {
     hero.status.set('invincible', now + 120);
     hero.pose = POSE.dodge; hero.dodgeStartAt = now; hero.dodgeDir = -Math.sign(p.vx) || 1;

@@ -2,7 +2,7 @@ import { POSE } from '../entities/fighter.js';
 import { ATTACK } from '../entities/attacks.js';
 import { gate, statT } from '../config/stats.js';
 import { castMonsterSkill } from './projectiles.js';
-import { inboundProjectile, senseTarget } from './perception.js';
+import { inboundProjectile, senseTarget, evasionStaminaFactor } from './perception.js';
 import { TD } from './config.js';
 
 // ── Hero brain (fully autonomous) ────────────────────────────────────────────
@@ -27,13 +27,60 @@ function tryDodgeProjectile(hero, world, skill, now) {
   const tMs = threat.t * 1000;
   const readWindow = 110 + skill * 560;        // smarter = sees it sooner
   if (tMs > readWindow || tMs < 30) return false;
-  if (world.rng() > gate(skill, 0.12)) return false; // sometimes fails to react
+  // An exhausted hero can barely weave — stamina gates the evade chance, so near
+  // empty (<5%) it almost always eats the bolt.
+  if (world.rng() > gate(skill, 0.12) * evasionStaminaFactor(hero)) return false;
   hero._evadeAt = now + 320;
   if (!hero.startDash?.(threat.evadeDir, now)) {     // i-frame weave (DASH_STAMINA)
     hero.status.set('invincible', now + 160);        // fallback: brief slip if too tired to dash
     hero.pose = POSE.dodge; hero.dodgeStartAt = now; hero.dodgeDir = threat.evadeDir;
   }
   return true;
+}
+
+// ── Situational awareness ────────────────────────────────────────────────────
+// One read of the battlefield the hero reasons about: how many enemies crowd it,
+// how much RANGED pressure it's under, where the densest cluster sits (for AoE),
+// and which enemy most threatens the base. Every decision site gates its use of
+// this by intelligence, so a dull hero ignores most of it and a sharp one plays
+// the whole board. Counts use lane distance; the cluster scan is the only O(n²)
+// part and n (live monsters on screen) is small.
+const LANE_NEAR = 780;        // "in my fight" window
+function assess(hero, world) {
+  const range = TD.HERO.attackRange;
+  const baseX = world.playerTower.x;
+  let melee = 0, near = 0, casters = 0, inbound = 0, baseThreat = null;
+  const ahead = [];
+  const dir = hero.facing;
+  for (const m of world.monsters) {
+    if (m.hp <= 0) continue;
+    const d = Math.abs(m.x - hero.x);
+    if (d <= range * 1.45) melee++;
+    if (d <= LANE_NEAR) near++;
+    if (m.ranged && d <= (m.ranged.range || 560) * 1.2) casters++;
+    if (!baseThreat || m.x < baseThreat.x) baseThreat = m;       // smallest x = closest to base
+    const rel = (m.x - hero.x) * dir;
+    if (rel > -40 && rel < 1500) ahead.push(m);
+  }
+  for (const p of world.projectiles) {
+    if (p.target !== 'hero') continue;
+    if (Math.sign(hero.x - p.x) === Math.sign(p.vx)) inbound++;   // bearing down on the hero
+  }
+  // Densest AoE aim point: the enemy around which the most others sit within an
+  // AoE-sized window — so the hero throws fireball/ice where it lands the most.
+  let clusterCount = 0, clusterX = null;
+  for (const a of ahead) {
+    let c = 0;
+    for (const b of ahead) if (Math.abs(b.x - a.x) <= 115) c++;
+    if (c > clusterCount) { clusterCount = c; clusterX = a.x; }
+  }
+  return {
+    melee, near, casters, inbound, baseThreat, clusterCount, clusterX,
+    // Being swarmed in melee, or a big crowd with several already on us.
+    overwhelmed: melee >= 3 || (near >= 5 && melee >= 2),
+    // Under enough ranged fire that standing in the open is a bad idea.
+    rangedPressure: inbound >= 2 || casters >= 2,
+  };
 }
 
 export function updateHero(hero, world, dt, now) {
@@ -68,6 +115,19 @@ export function updateHero(hero, world, dt, now) {
   else if (stamRatio >= TD.HERO.recoverRatio) hero._recovering = false;
   else if (stamRatio <= TD.HERO.windedRatio && !finishing) hero._recovering = true;
   const recovering = !!hero._recovering;
+
+  // ── TACTICAL REGROUP (intelligence-gated): a sharp hero that's being SWARMED or
+  // pelted by ranged fire falls back toward the base — into the tower's covering
+  // arrows and the heal zone — instead of brawling in the open and getting
+  // collapsed on. It keeps zoning the crowd with skills on the way back (see
+  // decide). A dull hero doesn't read the danger and stands its ground. ──
+  const sit = assess(hero, world);
+  const reads = skill >= 0.4;                    // INT ~lvl 9+ recognizes the trap
+  if (reads && !finishing && (sit.overwhelmed || sit.rangedPressure)) hero._regroup = true;
+  else if (sit.melee === 0 && !sit.rangedPressure) hero._regroup = false; // danger passed
+  const tacticalRetreat = reads && !!hero._regroup;
+  const regroup = recovering || tacticalRetreat;
+
   hero._winded = recovering || fleeing; // drives the HUD dim
   hero._scared = fleeing;
   if (recovering && !fleeing) hero.stamina = Math.min(hero.maxStamina, hero.stamina + dt * TD.HERO.windedRegen);
@@ -75,7 +135,7 @@ export function updateHero(hero, world, dt, now) {
   let intent = {};
   if (now >= (hero._nextDecisionAt || 0)) {
     hero._nextDecisionAt = now + (hero.ai?.reactionIntervalMs ?? 200);
-    intent = decide(hero, world, skill, recovering || fleeing, now);
+    intent = decide(hero, world, skill, sit, regroup || fleeing, now);
     target = hero._targetId != null ? world.monsters.find(m => m.id === hero._targetId && m.hp > 0) : null;
   }
 
@@ -93,15 +153,18 @@ export function updateHero(hero, world, dt, now) {
   // CORNERED: while sheltering/recovering, if an enemy reaches melee range there
   // is no escape — the hero fights back (and keeps healing at the base). Survival
   // over caution.
-  const nearestThreat = (fleeing || recovering) ? nearestMonster(world, hero.x) : null;
+  const nearestThreat = (fleeing || regroup) ? nearestMonster(world, hero.x) : null;
   const cornered = !!nearestThreat && Math.abs(nearestThreat.x - hero.x) <= range * 1.05 && Math.abs(hero.y) < 60;
 
   let goalX, faceX, inRange, retreating = false;
   if (cornered) {
-    // Stand ground and swing at whatever caught us; healing continues passively.
+    // Caught in melee. If we're trying to pull back (tacticalRetreat), do a
+    // FIGHTING RETREAT — keep shuffling home toward the tower while swinging at
+    // whatever's on us — instead of rooting in place and getting collapsed on.
     faceX = nearestThreat.x;
-    goalX = hero.x;
     inRange = true;
+    if (tacticalRetreat && Math.abs(hero.x - baseSpot) > 40) { goalX = baseSpot; retreating = true; }
+    else goalX = hero.x;
   } else if (fleeing) {
     // Sprint home, glancing back at the pursuers (scared backpedal read).
     const threat = nearestThreat;
@@ -109,13 +172,16 @@ export function updateHero(hero, world, dt, now) {
     goalX = baseSpot;
     inRange = false;
     retreating = true;
-  } else if (recovering) {
-    // Retreat from the nearest threat toward the base until safely spaced, then
-    // hold and recover. Stamina climbs; the hero re-engages once rested.
+  } else if (regroup) {
+    // Fall back toward the base, facing the crowd. When SWARMED or under ranged
+    // fire (tacticalRetreat) the hero pulls all the way home into the tower's
+    // covering arrows and heal zone; when merely catching its breath it just
+    // backs off to a safe rest distance. Either way it keeps zoning on the way.
     const threat = nearestThreat;
     const gap = threat ? Math.abs(threat.x - hero.x) : Infinity;
     faceX = threat ? threat.x : hero.x + hero.facing;
-    if (gap >= TD.HERO.restSafeDist) { goalX = hero.x; }
+    if (tacticalRetreat && Math.abs(hero.x - baseSpot) > 40) { goalX = baseSpot; retreating = true; }
+    else if (gap >= TD.HERO.restSafeDist) { goalX = hero.x; }
     else { const away = threat ? (Math.sign(hero.x - threat.x) || -1) : -1; goalX = hero.x + away * (TD.HERO.restSafeDist + 60); retreating = true; }
     inRange = false;
   } else if (target) {
@@ -143,7 +209,7 @@ export function updateHero(hero, world, dt, now) {
   // ── Movement. Sprint to chase a far target, OR to flee while retreating. ──
   const dx = goalX - hero.x;
   if (hero.canAct(now)) {
-    if (Math.abs(dx) > 14 && !inRange) {
+    if (Math.abs(dx) > 14 && (!inRange || retreating)) {
       const canRun = Math.abs(dx) > 200 && (retreating || (!recovering && hero.stamina > hero.maxStamina * 0.25));
       const targetSpeed = Math.sign(dx) * (canRun ? TD.HERO.run : TD.HERO.walk);
       hero.isRunning = canRun;
@@ -174,54 +240,83 @@ export function updateHero(hero, world, dt, now) {
   return intent;
 }
 
-// Intelligence-gated decision: choose a target and maybe cast a power skill.
-function decide(hero, world, skill, recovering, now) {
+// Intelligence-gated decision: choose a target and maybe cast a power skill, both
+// informed by the situational read (`sit`). `defensive` = the hero is falling
+// back (flee/regroup), so it only throws offensive skills from the safety of the
+// base — zoning the crowd rather than committing forward.
+function decide(hero, world, skill, sit, defensive, now) {
   const monsters = world.monsters.filter(m => m.hp > 0);
   const intent = {};
-
-  if (monsters.length) {
-    // Anything already on the hero gets answered first; otherwise a sharp hero
-    // defends the BASE (leftmost threat), a dull one chases whatever's nearest.
-    const onMe = monsters.filter(m => Math.abs(m.x - hero.x) < 150);
-    if (onMe.length) {
-      hero._targetId = onMe.reduce((a, b) => (a.x < b.x ? a : b)).id; // base-ward of those on me
-    } else {
-      const smart = monsters.reduce((a, b) => (b.x < a.x ? b : a));   // nearest base
-      const lazy = monsters.reduce((a, b) => Math.abs(b.x - hero.x) < Math.abs(a.x - hero.x) ? b : a);
-      hero._targetId = (world.rng() < gate(skill, 0.1)) ? smart.id : lazy.id;
-    }
-  } else {
-    hero._targetId = null;
-  }
-
-  // ── Power-skill selection (no special — skills are the kit). ──
+  hero._targetId = monsters.length ? pickTarget(hero, world, skill, now) : null;
   if (hero.skills?.length && hero.stamina > TD.HERO.skillStaminaCost) {
-    const tgt = hero._targetId != null ? world.monsters.find(m => m.id === hero._targetId) : null;
-    const dir = hero.facing;
-    const ahead = monsters.filter(m => { const rel = (m.x - hero.x) * dir; return rel > -40 && rel < 760; });
-    const pressed = monsters.some(m => Math.abs(m.x - hero.x) < 170); // something on us
-    // Sheltering at the base: keep ZONING the approach with projectiles even while
-    // recovering/fleeing — a smart hero kites the incoming crowd from safety.
-    const atBase = Math.abs(hero.x - world.playerTower.x) < TD.HERO.baseHealZone;
-    for (const s of hero.skills) {
-      if ((hero.powerCooldowns[s.id] ?? 0) > now) continue;
-      if (s.kind === 'buff') {
-        // Sharingan: pop it when pressured or hurt (defensive cooldown).
-        if (!hero.status.active('sharingan', now) && (pressed || hero.hp < hero.maxHp * 0.5) && world.rng() < gate(skill, 0.25)) {
-          intent.skill = s; break;
-        }
-      } else if (s.kind === 'heal') {
-        if (hero.hp < hero.maxHp * 0.55 && world.rng() < gate(skill, 0.12)) { intent.skill = s; break; }
-      } else { // projectile — fire when facing a target in range; ok at base
-        const canFire = !recovering || atBase;
-        if (canFire && ahead.length && tgt && Math.sign(tgt.x - hero.x) === dir
-            && Math.abs(tgt.x - hero.x) < s.range && world.rng() < gate(skill, atBase ? 0.22 : 0.12)) {
-          intent.skill = s; break;
-        }
-      }
-    }
+    intent.skill = chooseSkill(hero, world, skill, sit, defensive, now) || undefined;
   }
   return intent;
+}
+
+// Target choice. Dull hero: nearest body. Sharp hero: defend the base, but bump
+// CASTERS (silence the ranged pelting) and nearly-dead enemies (finish to thin
+// the crowd) up the priority order — encoded as a virtual "closer to base" shift.
+function pickTarget(hero, world, skill, now) {
+  const monsters = world.monsters.filter(m => m.hp > 0);
+  // Anything already on the hero is answered first (base-ward of those on us).
+  const onMe = monsters.filter(m => Math.abs(m.x - hero.x) < 150);
+  if (onMe.length) return onMe.reduce((a, b) => (a.x < b.x ? a : b)).id;
+  const lazy = monsters.reduce((a, b) => Math.abs(b.x - hero.x) < Math.abs(a.x - hero.x) ? b : a);
+  if (world.rng() > gate(skill, 0.1)) return lazy.id;          // dull: just the nearest
+  const baseX = world.playerTower.x;
+  let best = lazy, bestKey = Infinity;
+  for (const m of monsters) {
+    let key = Math.abs(m.x - baseX);                            // closest to base wins
+    if (m.ranged) key -= 360;                                   // prioritise casters
+    if (m.hp <= TD.HERO.finishHp * 1.5) key -= 260;             // pick off the nearly-dead
+    if (key < bestKey) { bestKey = key; best = m; }
+  }
+  return best.id;
+}
+
+// Power-skill selection — the heart of "melee vs skill, used correctly":
+//   • Sharingan (buff): defensive panic button when SWARMED or hurt.
+//   • Heal: when wounded and reasonably safe (or desperate).
+//   • AoE projectile (fireball/ice): saved for a CLUSTER — thrown where it hits
+//     the most enemies. Wasted on a lone target.
+//   • Single-target projectile (shuriken): for a real target that's out of fist
+//     range or when a crowd is closing — NOT a lone enemy already in melee, which
+//     the hero simply punches (saves stamina & cooldowns).
+function chooseSkill(hero, world, skill, sit, defensive, now) {
+  const tgt = hero._targetId != null ? world.monsters.find(m => m.id === hero._targetId) : null;
+  const dir = hero.facing;
+  const atBase = Math.abs(hero.x - world.playerTower.x) < TD.HERO.baseHealZone;
+  const range = TD.HERO.attackRange;
+  const tgtAhead = tgt && Math.sign(tgt.x - hero.x) === dir;
+  const tgtDist = tgt ? Math.abs(tgt.x - hero.x) : Infinity;
+  const loneMeleeTarget = sit.near <= 1 && tgt && tgtDist <= range; // just punch it
+
+  for (const s of hero.skills) {
+    if ((hero.powerCooldowns[s.id] ?? 0) > now) continue;
+    if (s.kind === 'buff') {
+      if (!hero.status.active('sharingan', now) && (sit.melee >= 2 || hero.hp < hero.maxHp * 0.5)
+          && world.rng() < gate(skill, 0.3)) return s;
+    } else if (s.kind === 'heal') {
+      const safeish = sit.melee === 0 || atBase;
+      if (hero.hp < hero.maxHp * 0.55 && (safeish || hero.hp < hero.maxHp * 0.3)
+          && world.rng() < gate(skill, 0.14)) return s;
+    } else { // projectile
+      if (defensive && !atBase) continue;                       // only zone from home while falling back
+      const clusterHit = sit.clusterCount >= 2 && sit.clusterX != null
+        && Math.sign(sit.clusterX - hero.x) === dir && Math.abs(sit.clusterX - hero.x) < s.range;
+      let worth, eager;
+      if (s.aoe) {
+        worth = clusterHit;                                     // AoE only earns its cooldown on a crowd
+        eager = 0.55;
+      } else {
+        worth = tgtAhead && tgtDist < s.range && !loneMeleeTarget; // chip ranged/incoming, not a lone brawl
+        eager = atBase ? 0.24 : (sit.near >= 2 ? 0.2 : 0.12);
+      }
+      if (worth && world.rng() < gate(skill, eager)) return s;
+    }
+  }
+  return null;
 }
 
 // ── Monster brain ────────────────────────────────────────────────────────────
@@ -247,7 +342,12 @@ export function updateMonster(m, world, dt, now) {
   const heroTargetable = hero.hp > 0 && !world.heroDownUntil && see.clear;
   const aggro = (m.aggro ?? 320) * (0.85 + 0.4 * statT(m.intelligence || 5));
   const distHero = see.dist;
-  const chaseHero = heroTargetable && distHero < aggro;
+  // FLANKING: when the hero is already mobbed, smart back-line melee peel off and
+  // rush the BASE instead of piling onto the same target — a pincer the hero must
+  // answer by falling back (see the hero's tacticalRetreat). Casters always prefer
+  // shooting the hero, so they don't flank.
+  const flank = shouldFlank(m, world, now);
+  const chaseHero = heroTargetable && distHero < aggro && !flank;
   const ranged = m.ranged;
 
   let goalX, mode, targetX, stopDist;
@@ -314,6 +414,31 @@ export function updateMonster(m, world, dt, now) {
       }
     }
   }
+}
+
+// Decide whether this monster should break off the hero and siege the base. Only
+// back-line melee with enough wits flank, and only once the hero is genuinely
+// mobbed (≥3 attackers on it) — so the front line keeps the hero pinned while the
+// rest swing wide. The choice is sticky (a few seconds) so they commit instead of
+// dithering at the threshold.
+function shouldFlank(m, world, now) {
+  if (m.ranged || m.scale > 1.4) return false;                 // casters shoot; brutes are too slow
+  if (now < (m._flankUntil || 0)) return true;                 // committed
+  const hero = world.hero;
+  if (hero.hp <= 0 || world.heroDownUntil) return false;       // no hero to pin → just rush
+  const reach = (m.def?.atkRange || 90) * 1.5;
+  if (Math.abs(m.x - hero.x) < reach) return false;            // front-liner: keep the hero
+  let attackers = 0;
+  for (const o of world.monsters) {
+    if (o.hp <= 0 || o.ranged) continue;
+    if (Math.abs(o.x - hero.x) <= (o.def?.atkRange || 90) * 1.45) attackers++;
+  }
+  if (attackers < 3) return false;
+  if (now < (m._flankCheckAt || 0)) return false;              // re-roll occasionally, not every frame
+  m._flankCheckAt = now + 700;
+  const intel = statT(m.intelligence || 5);
+  if (world.rng() < 0.15 + 0.55 * intel) { m._flankUntil = now + 4200; return true; }
+  return false;
 }
 
 // Smart, agile monsters dodge the hero's bolts: a quick i-frame leap aside.

@@ -30,6 +30,17 @@ export function senseTarget(unit, target, blockers = []) {
   };
 }
 
+// Evading — weaving, sidestepping, dash-slipping — burns explosive stamina. As a
+// fighter's gas runs out its ability to dodge collapses: below ~5% stamina it can
+// barely move out of the way and simply EATS attacks and projectiles. Returns a
+// 0…1 multiplier applied to every evade/dodge chance (melee and ranged alike).
+export function evasionStaminaFactor(fighter) {
+  const ratio = (fighter.stamina ?? 1) / (fighter.maxStamina || 1);
+  if (ratio <= 0.05) return 0.03;                 // almost zero — exhausted, eats the hit
+  if (ratio >= 0.20) return 1;                    // plenty of gas → full evasive ability
+  return 0.03 + (ratio - 0.05) / 0.15 * 0.97;     // ramp 5%→20% stamina
+}
+
 // The most urgent projectile inbound on `unit` — a ray-vs-body test against every
 // projectile whose `target` side matches. Returns time-to-impact and an evade
 // direction, or null. `targetSide` is the projectile.target that can hit `unit`.

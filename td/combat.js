@@ -1,6 +1,7 @@
 import { POSE } from '../entities/fighter.js';
 import { PASSIVE } from '../config/passives.js';
 import { TD } from './config.js';
+import { evasionStaminaFactor } from './perception.js';
 import { spawnHitParticles } from '../services/particleSystem.js';
 
 // Integrate one Fighter-body's position with simple gravity + ground clamp.
@@ -69,9 +70,12 @@ export function resolveMonsterAttacks(world, now) {
         m._pendingHeroHit = false;
         // Sharingan: negate a clean hit and warp behind for a counter.
         if (sharinganNegate(world, hero, m, m.x, now)) continue;
-        // Untouchable trait (~99%) / Blur passive (15%) let the hero slip the hit.
-        const dodge = (hero.traits?.untouchable && world.rng() < 0.99)
-          || (hero.hasPassive('blur') && world.rng() < 0.15);
+        // Untouchable trait (~99%) / Blur passive (15%) let the hero slip the hit,
+        // but stamina gates the chance — near empty (<5%) the hero is too gassed to
+        // weave and takes the blow.
+        const ev = evasionStaminaFactor(hero);
+        const dodge = (hero.traits?.untouchable && world.rng() < 0.99 * ev)
+          || (hero.hasPassive('blur') && world.rng() < 0.15 * ev);
         if (dodge) {
           hero.status.set('invincible', now + 120);
           hero.dodgeDir = Math.sign(hero.x - m.x) || hero.facing;

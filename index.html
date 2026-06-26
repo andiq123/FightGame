@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <!-- Lock scale, fill the notch/safe areas (viewport-fit=cover) for a real app feel. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Stick Defense</title>
+  <title>Stick Wars</title>
   <meta name="description" content="Build a stick hero, then watch it defend the base across 20 escalating waves." />
   <meta name="theme-color" content="#0b0e14" />
 
@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Stick Defense" />
+  <meta name="apple-mobile-web-app-title" content="Stick Wars" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <style>
     :root {
@@ -62,6 +62,24 @@
     .teamstats b { color: #e7edf5; font-weight: 800; }
     .panel.team-l { min-width: 220px; }
     .panel.team-r { min-width: 220px; }
+    .aimode { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 6px;
+      font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+    .mode-def { background: rgba(255,100,80,.18); color: #ff9a88; }
+    .mode-build { background: rgba(255,210,90,.15); color: #ffd66b; }
+    .mode-push { background: rgba(120,255,160,.12); color: #7dffb0; }
+    .mode-grow { background: rgba(120,180,255,.12); color: #8ec5ff; }
+    .mode-broke { background: rgba(255,255,255,.08); color: #aab7c8; }
+    .mode-full { background: rgba(180,180,200,.1); color: #c8cdd8; }
+    .mode-down { background: rgba(0,0,0,.3); color: #666; }
+    .aiplan { margin-top: 5px; font-size: 11px; line-height: 1.35; color: #8b9ab0; max-width: 240px; }
+    .ailast { margin-top: 4px; font-size: 10px; color: #6a7a90; font-variant-numeric: tabular-nums; }
+    .aipicks { margin-top: 3px; font-size: 10px; color: #5cd8ff; font-variant-numeric: tabular-nums; }
+    .panel.team-r .aiplan, .panel.team-r .ailast, .panel.team-r .aipicks { margin-left: auto; text-align: right; max-width: 240px; }
+    #eventTicker { position: fixed; bottom: calc(14px + var(--sab)); left: 50%; transform: translateX(-50%);
+      padding: 6px 16px; border-radius: 999px; background: rgba(10,14,20,.78); border: 1px solid rgba(255,255,255,.08);
+      font-size: 11px; font-weight: 700; letter-spacing: .06em; color: #aab7c8; pointer-events: none; z-index: 5;
+      backdrop-filter: blur(8px); max-width: min(90vw, 420px); text-align: center; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
 
     .spacer { flex: 1; }
     .stats { display: flex; gap: 22px; justify-content: flex-end; }
@@ -129,6 +147,10 @@
       .panel h3[style] { margin-top: 6px !important; }
       .bar { height: 8px; border-radius: 5px; }
       .barval { font-size: 9px; margin-top: 2px; }
+      .aimode { margin-top: 4px; font-size: 8px; padding: 1px 6px; }
+      .aiplan { font-size: 9px; margin-top: 3px; }
+      .ailast, .aipicks { font-size: 8px; }
+      #eventTicker { font-size: 9px; padding: 4px 10px; bottom: calc(8px + var(--sab)); }
       .stats { gap: 11px; }
       .stat .n { font-size: 16px; }
       .stat .l { font-size: 7px; margin-top: 1px; }
@@ -199,7 +221,7 @@
   <div id="rotate">
     <div class="rot-icon">📱</div>
     <h2>Rotate your device</h2>
-    <p>Stick Defense plays in landscape.</p>
+    <p>Stick Wars plays in landscape.</p>
   </div>
 
   <div id="hud">
@@ -212,6 +234,10 @@
         <span>💀 <b id="killsL">0</b></span>
         <span>⚔ <b id="countL">0</b></span>
       </div>
+      <div class="aimode mode-grow" id="modeL">GROW</div>
+      <div class="aiplan" id="planL">Evaluating…</div>
+      <div class="ailast" id="lastL"></div>
+      <div class="aipicks" id="picksL"></div>
     </div>
 
     <div class="spacer"></div>
@@ -231,16 +257,23 @@
         <span>💀 <b id="killsR">0</b></span>
         <span>⚔ <b id="countR">0</b></span>
       </div>
+      <div class="aimode mode-grow" id="modeR">GROW</div>
+      <div class="aiplan" id="planR">Evaluating…</div>
+      <div class="ailast" id="lastR"></div>
+      <div class="aipicks" id="picksR"></div>
     </div>
   </div>
+
+  <div id="eventTicker"></div>
 
   <div id="announce"></div>
 
   <div id="overlay">
     <div class="ov-card">
       <h1 class="ov-title">STICK WARS</h1>
-      <p class="ov-sub">Two AI bases. Endless gold. Watch them fight.</p>
+      <p class="ov-sub">Two AI bases. Lane gold. Counter-build wars.</p>
       <button class="ov-btn">Start Battle</button>
+      <p style="margin-top:20px;font-size:14px"><a href="./pit.html" style="color:#c4a574;text-decoration:none">The Pit — 4v4 colosseum brawl →</a></p>
     </div>
   </div>
 

@@ -1,9 +1,10 @@
 import { POSE } from '../entities/fighter.js';
 import { ATTACK, ATTACK_POWER_PUNCH } from '../entities/attacks.js';
 import { applyKnockback, applyAttackerRecoil } from './physics.js';
-import { createRagdoll } from './ragdoll.js';
+import { beginRagdollLaunch } from './ragdoll.js';
 import { createHitEffect } from '../core/hitEffectFactory.js';
-import { getRagdollOriginY, getHitEffectY } from '../core/coordinates.js';
+import { getHitEffectY } from '../core/coordinates.js';
+import { meleeOverlapX, arenaMeleeVertical } from '../core/hitbox.js';
 import { secureRandom } from '../utils.js';
 import { COMBAT, FIGHTER, SHARINGAN } from '../config/constants.js';
 import { PASSIVE } from '../config/passives.js';
@@ -45,10 +46,6 @@ function applyHitResult(attacker, defender, dmg, now, hitEffects, options = {}) 
   }
 }
 
-function hitboxOverlap(hb, targetX) {
-  return Math.abs(targetX - hb.x) < hb.w + COMBAT.HITBOX_EXTRA;
-}
-
 // A protective wall standing between the two fighters blocks a melee strike.
 function wallBetween(ax, bx, obstacles) {
   if (!obstacles?.length) return null;
@@ -57,18 +54,10 @@ function wallBetween(ax, bx, obstacles) {
   return obstacles.find(o => o.x > lo && o.x < hi) || null;
 }
 
-// Vertical reach: ground pokes can't hit someone leaping overhead; only
-// launchers (uppercut / high kick / kick-launch moves) reach high into the air.
-function withinVerticalReach(hb, attacker, defender) {
-  const gap = Math.abs((attacker.y || 0) - (defender.y || 0));
-  const isLauncher = hb.kickLaunch || hb.type === ATTACK.uppercut || hb.type === ATTACK.highKick;
-  return gap <= (isLauncher ? (COMBAT.VERTICAL_REACH_HIGH ?? 180) : (COMBAT.VERTICAL_REACH ?? 95));
-}
-
 export function checkCloneHit(attacker, clones, opponentId, now) {
   const hb = attacker.getAttackHitbox(now);
   if (!hb) return null;
-  return clones.find(c => c.ownerId === opponentId && hitboxOverlap(hb, c.x)) || null;
+  return clones.find(c => c.ownerId === opponentId && meleeOverlapX(hb, attacker, { x: c.x, scale: 1 })) || null;
 }
 
 function getComboScale(comboCount) {
@@ -85,8 +74,8 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
   if (swing?.resolved) return;
 
   // 1. Accurate reach: must be in horizontal range AND vertical reach.
-  if (!hitboxOverlap(hb, defender.x)) return;
-  if (!withinVerticalReach(hb, attacker, defender)) return;
+  if (!meleeOverlapX(hb, attacker, defender)) return;
+  if (!arenaMeleeVertical(hb, attacker, defender)) return;
 
   // 1a. EVADED: the strike would have connected, but the defender slipped it.
   // An UNTOUCHABLE defender (e.g. One Strike) auto-slips everything; an i-frame
@@ -241,10 +230,8 @@ function processHit(attacker, defender, now, hitEffects, obstacles = []) {
     const push = (COMBAT.KNOCKDOWN_PUSH ?? 420) + (hb.knockback || 0) * 1.6;
     defender.vx = Math.max(-950, Math.min(950, defender.vx + knockDir * push));
     defender.vy = Math.min(defender.vy, -(COMBAT.KNOCKDOWN_LIFT ?? 200));
-    defender.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
     defender.currentAttack = null;
-    defender.pose = POSE.stagger;
-    defender.staggerRagdoll = createRagdoll(defender.x, getRagdollOriginY(defender), defender.facing, defender.vx, defender.vy, attacker.x, hb.type === ATTACK.uppercut, now);
+    beginRagdollLaunch(defender, attacker.x, defender.vx, defender.vy, now, 160, hb.type === ATTACK.uppercut);
   }
 
   const punchDir = defender.x > attacker.x ? 1 : -1;

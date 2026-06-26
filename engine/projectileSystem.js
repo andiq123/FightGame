@@ -1,8 +1,9 @@
 import { POSE } from '../entities/fighter.js';
 import { applyKnockback } from './physics.js';
-import { createRagdoll } from './ragdoll.js';
+import { beginRagdollLaunch } from './ragdoll.js';
 import { createHitEffect } from '../core/hitEffectFactory.js';
-import { getHitEffectY, getCloneDissolveY, getRagdollOriginY } from '../core/coordinates.js';
+import { getHitEffectY, getCloneDissolveY } from '../core/coordinates.js';
+import { projSegmentHitsUnit } from '../core/hitbox.js';
 import { spawnHitParticles, spawnCloneDissolve } from '../services/particleSystem.js';
 import { ARENA_BOUNDS } from './physics.js';
 import { COMBAT, PROJECTILE } from '../config/constants.js';
@@ -14,10 +15,6 @@ function getProjectileHitRadius(p) {
 
 function getProjectileY(p) {
   return p.y || 0;
-}
-
-function segmentOverlapsInterval(segMin, segMax, center, radius) {
-  return segMin <= center + radius && segMax >= center - radius;
 }
 
 function closestPointOnSegment(px, py, ax, ay, bx, by) {
@@ -128,7 +125,7 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
 
     // 1. Clone Collision
     const enemyClone = clones.find(c =>
-      c.ownerId === oppId && (Math.abs(p.x - c.x) < hitRadius || (prevX - c.x) * (p.x - c.x) <= 0) && Math.abs(p.y || 0) < 50
+      c.ownerId === oppId && projSegmentHitsUnit(prevX, prevY, p.x, p.y || 0, hitRadius, { x: c.x, scale: 1 })
     );
     if (enemyClone) {
       hitClones.add(enemyClone);
@@ -137,18 +134,10 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
     }
 
     // 2. Fighter Collision (X & Y check)
-    const segMinX = Math.min(prevX, p.x);
-    const segMaxX = Math.max(prevX, p.x);
-    const hitX = segmentOverlapsInterval(segMinX, segMaxX, targetFighter.x, hitRadius);
+    const py = p.y || 0;
+    const hit = projSegmentHitsUnit(prevX, prevY, p.x, py, hitRadius, targetFighter);
 
-    // Check if Y is within fighter height (roughly -80 to 0)
-    const fighterTop = (targetFighter.y || 0) - 85;
-    const fighterBottom = (targetFighter.y || 0);
-    const segMinY = Math.min(prevY, p.y || 0);
-    const segMaxY = Math.max(prevY, p.y || 0);
-    const hitY = segMinY <= fighterBottom && segMaxY >= fighterTop;
-
-    if (hitX && hitY) {
+    if (hit) {
       // Height-based evasion: a successful duck/jump is a full evade, not a chip block.
       // These must run before any block/damage logic so the projectile keeps flying.
       const projectileIsHigh = p.high !== false; // fireball/shuriken/flameShower are HIGH; iceSpikes is LOW
@@ -200,12 +189,8 @@ export function processProjectileHits(projectiles, fighter1, fighter2, clones, h
       if (p.knockback && !blocking) applyKnockback(targetFighter, p.knockback, fromX, p.heavy, false, false, now);
 
       if (!blocking && p.heavy && !targetFighter.traits?.unbreakable && !targetFighter.status.active('stagger', now) && targetFighter.hp > 0) {
-        targetFighter.status.set('stagger', now + COMBAT.STAGGER_DURATION_MS);
         targetFighter.currentAttack = null;
-        targetFighter.pose = POSE.stagger;
-        targetFighter.staggerRagdoll = createRagdoll(
-          targetFighter.x, getRagdollOriginY(targetFighter), targetFighter.facing, targetFighter.vx, targetFighter.vy, fromX, false
-        );
+        beginRagdollLaunch(targetFighter, fromX, targetFighter.vx, targetFighter.vy, now);
       }
 
       hitEffects.push(createHitEffect(targetFighter.x, {

@@ -1,47 +1,231 @@
 import { POSE } from '../entities/fighter.js';
-import { ATTACK } from '../entities/attacks.js';
+import { ATTACK, GRAB } from '../entities/attacks.js';
 import { statT } from '../config/stats.js';
 import { castCreepBolt } from './projectiles.js';
 import { TD, opp } from './config.js';
+import { eachNear } from './spatial.js';
+import { aggroMul } from './events.js';
+import { tryCreepSkill } from './skills.js';
+import { nearestGoldNode, collectGold, depositMiner } from './gold.js';
 
-// One brain for every creep. Fighters hunt the nearest enemy creep in aggro
-// range, else march on the enemy base; casters kite and shoot. Miners shuttle a
-// safe patch near home and flee when threatened (their gold is earned passively
-// in td/spawner.js by counting the living). Traits flavour the behaviour.
+// Fighters hunt enemies; miners haul gold (gold.js). Traits flavour behaviour.
 const HEAVY = (c) => ((c.scale || 1) > 1.2 ? ATTACK.axeKick : ATTACK.cross);
+
+function pickFoe(world, c) {
+  const mul = aggroMul(world);
+  const range = c.aggro * mul;
+  let best = null, bd = Infinity, miner = null, md = Infinity;
+  const scan = (o) => {
+    if (o.team === c.team) return;
+    const d = Math.abs(o.x - c.x);
+    if (d > range) return;
+    if (o.role === 'miner') { if (d < md) { md = d; miner = o; } return; }
+    if (d < bd) { bd = d; best = o; }
+  };
+  if (world._aliveByX) eachNear(world._aliveByX, c.x, range, scan);
+  else for (const o of world.creeps) { if (o.hp <= 0 || o.team === c.team) continue; scan(o); }
+  if (best) return best;
+  const home = world.bases[c.team];
+  if (miner && Math.abs(c.x - home.x) > 520) return miner;
+  return null;
+}
+
+// Flyers snipe anything ahead on the lane, else the enemy base — no range cap.
+function flyTarget(world, c) {
+  const base = world.bases[opp(c.team)];
+  const baseEdge = base.x - c.dir * (base.w / 2);
+  let best = null, bd = Infinity;
+  for (const o of world.creeps) {
+    if (o.hp <= 0 || o.team === c.team || o.role === 'miner') continue;
+    if ((o.x - c.x) * c.dir < -80) continue;
+    const d = Math.abs(o.x - c.x);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best || { x: baseEdge, y: 0 };
+}
+
+function updateFlying(c, world, dt, now) {
+  const tgt = flyTarget(world, c);
+  const foe = tgt.id ? tgt : null;
+  if (foe && tryCreepSkill(c, world, foe, now)) return;
+
+  const F = TD.FLY;
+  const home = c.hoverY ?? -140;
+  const hideY = Math.min(-340, home * (F.hideMul ?? 1.52));
+  let threat = false;
+  for (const o of world.creeps) {
+    if (o.hp <= 0 || o.team === c.team || o.flying || o.role === 'miner') continue;
+    if (Math.abs(o.x - c.x) < 500) { threat = true; break; }
+  }
+  c._flyStam = Math.min(F.staminaMax ?? 100, (c._flyStam ?? F.staminaMax) + dt * (F.cruiseRegen ?? 12));
+  if (threat && c.canAct(now) && now >= (c._hideAt || 0) && world.rng() < 0.014 + dt * 1.8) {
+    c._hideUntil = now + (F.hideMinMs ?? 1400) + world.rng() * 1400;
+    c._hideAt = now + 3200;
+  }
+  const hiding = (c._hideUntil || 0) > now && (c._flyStam ?? 100) > 10;
+  if (hiding) {
+    c._hoverY = hideY;
+    c._flyStam = Math.max(0, (c._flyStam ?? 100) - dt * (F.hideDrain ?? 34));
+  } else {
+    c._hoverY = home;
+  }
+  if ((c._flyStam ?? 100) < 8) {
+    c._hideUntil = 0;
+    c._hoverY = home;
+    c._flyExhaustUntil = now + 1200;
+  }
+  if ((c._flyExhaustUntil || 0) > now) c._hoverY = home + 35;
+
+  c.facing = Math.sign(tgt.x - c.x) || c.dir;
+  if (c.canAct(now)) {
+    const drift = c.x + c.dir * 120;
+    const sp = Math.sign(drift - c.x) * c.moveSpeed * 0.4;
+    c.vx += Math.sign(sp - c.vx) * 2400 * dt;
+    if ((c._flyShootT || 0) > 0) {
+      c._flyShootT = Math.max(0, c._flyShootT - dt);
+      c.pose = POSE.punch;
+    } else {
+      c.pose = POSE.air;
+    }
+    if (now >= c.nextAtkAt && !(c.traits?.chill && !c.traits?.tireless && world.rng() > 0.55)) {
+      c.nextAtkAt = now + c.atkCdMs;
+      c._flyShootT = 0.32; c.poseTime = 0;
+      castCreepBolt(world, c, tgt, now);
+    }
+  }
+}
 
 // Nearest living enemy creep to a creep (or to any x for a given team).
 export function nearestEnemy(world, c) { return nearestEnemyCreep(world, c.team, c.x); }
 export function nearestEnemyCreep(world, team, x) {
   let best = null, bd = Infinity;
-  for (const o of world.creeps) {
-    if (o.hp <= 0 || o.team === team) continue;
+  let miner = null, md = Infinity;
+  const scan = (o) => {
+    if (o.team === team) return;
     const d = Math.abs(o.x - x);
+    if (o.role === 'miner') { if (d < md) { md = d; miner = o; } return; }
     if (d < bd) { bd = d; best = o; }
+  };
+  if (world._aliveByX) eachNear(world._aliveByX, x, TD.STAGE_HALF, scan);
+  else for (const o of world.creeps) { if (o.hp <= 0 || o.team === team) continue; scan(o); }
+  return best ?? miner;
+}
+
+function syncGroundAirPose(c) {
+  if (c.flying || c.staggerRagdoll || c.hp <= 0 || c._heldBy) return;
+  if (c.onGround()) { c._antiAir = false; c._antiAirUntil = 0; c._airTime = 0; return; }
+  if (c.pose === POSE.hit || c.pose === POSE.punch || c.pose === POSE.kick || c.currentAttack) return;
+  c.pose = c.vy < -50 ? POSE.jump : POSE.air;
+}
+
+function maybeGrab(c, foe, world, now, reason) {
+  const G = TD.GRAB ?? {};
+  if (!foe || c.ranged || c.role === 'miner' || c._grabbing || c._heldBy) return false;
+  if ((c.scale || 1) < (foe.scale || 1) * (G.scaleMin ?? 0.68)) return false;
+  if (Math.abs(foe.x - c.x) > (G.range ?? 94)) return false;
+  if (now < (c._grabAt || 0) || !c.canAct(now)) return false;
+  let chance = (G.base ?? 0.032) + statT(c.intelligence || 5) * (G.smart ?? 0.05);
+  if ((c.scale || 1) > 1.25) chance += G.big ?? 0.14;
+  if (reason === 'antiAir' || reason === 'frustrated') chance += G.antiAir ?? 0.32;
+  else chance += 0.06;
+  if (world.rng() > chance) return false;
+  c._grabAt = now + (G.cdMs ?? 1200);
+  c.nextAtkAt = now + c.atkCdMs;
+  c.startAttack(GRAB, now);
+  return true;
+}
+
+function maybeAntiAirJump(c, foe, world, now) {
+  if (!foe?.flying || c.flying || c.ranged || !c.onGround() || c._heldBy || c._grabbing) return false;
+  if (Math.abs(foe.x - c.x) > 280) return false;
+  if (now < (c._antiAirAt || 0) || !c.canAct(now)) return false;
+  const smart = statT(c.intelligence || 5);
+  if (world.rng() > 0.025 + smart * 0.1) return false;
+  const M = TD.MOVE;
+  const aimY = (foe.y || -200) - 20;
+  const lift = Math.abs(aimY - (c.y || 0));
+  c._antiAirAt = now + 1100;
+  c._antiAirUntil = now + (M.antiAirMs ?? 920);
+  c._airTime = 0;
+  c.vy = -(M.antiAirVyBase ?? 720) - lift * (M.antiAirVyScale ?? 1.35);
+  c.vx = Math.sign(foe.x - c.x || c.dir) * Math.min(520, Math.abs(foe.x - c.x) / 0.38);
+  c.pose = POSE.jump;
+  c.poseTime = 0;
+  c.needsDashDust = true;
+  return true;
+}
+
+function updateBowler(c, world, dt, now) {
+  if (c._heldBy) return;
+  const B = TD.BOWLER;
+  const foe = pickFoe(world, c);
+  const base = world.bases[opp(c.team)];
+  const targetX = foe ? foe.x : (base.x - c.dir * (base.w / 2));
+  c.facing = Math.sign(targetX - c.x) || c.dir;
+  const dist = Math.abs(targetX - c.x);
+
+  if (!c._bowlerJump && c.onGround() && c.canAct(now) && now >= (c._bowlLaunchAt || 0) && dist > 140 && dist < 1500) {
+    const dir = Math.sign(targetX - c.x) || c.dir;
+    c._bowlerJump = true;
+    c._bowlLaunchAt = now + (B.jumpCdMs ?? 2100);
+    c.vy = B.jumpVy ?? -400;
+    c.vx = dir * Math.min(B.jumpVxMax ?? 960, dist / (B.jumpFlight ?? 0.78));
+    c.pose = POSE.jump;
+    c.poseTime = 0;
+    c.needsDashDust = true;
+    return;
   }
-  return best;
+
+  if (c._bowlerJump || !c.onGround()) {
+    c.pose = POSE.jump;
+    const dir = Math.sign(targetX - c.x) || c.dir;
+    c.vx += dir * 620 * dt;
+    syncGroundAirPose(c);
+    return;
+  }
+
+  const sp = Math.sign(targetX - c.x) * c.moveSpeed;
+  c.vx += Math.sign(sp - c.vx) * 3000 * dt;
+  c.pose = Math.abs(c.vx) > c.moveSpeed * 0.82 ? POSE.run : POSE.walk;
+}
+
+function finishFlyerGround(c, world, now) {
+  if (!c.flying || !c._hoverOff || !c.onGround() || c.staggerRagdoll) return;
+  if ((c._groundFightUntil || 0) > now) return;
+  c._hoverOff = false;
+  const F = TD.FLY ?? {};
+  c._hideUntil = now + (F.reclimbHideMs ?? 900) + world.rng() * 700;
+  c._hoverY = Math.min(-320, (c.hoverY ?? -140) * (F.hideMul ?? 1.52));
+  c._flyStam = Math.max(10, (c._flyStam ?? 60) - 18);
 }
 
 export function updateCreep(c, world, dt, now) {
-  if (c.hp <= 0 || c.staggerRagdoll) return;
+  if (c.hp <= 0 || c.staggerRagdoll || c._ragdollLaunch || c._heldBy) return;
   if (c.role === 'miner') return updateMiner(c, world, dt, now);
+  if (c.role === 'bowler') { updateBowler(c, world, dt, now); return; }
+  if (c.flying && c._hoverOff && !c.onGround()) return;
+  if (c.flying && c.ranged && !c._hoverOff) { updateFlying(c, world, dt, now); return; }
 
-  const foe = nearestEnemy(world, c);
+  const foe = pickFoe(world, c);
   const enemyBase = world.bases[opp(c.team)];
   const baseEdge = enemyBase.x - c.dir * (enemyBase.w / 2);
   const range = c.attackRange;
+  const aggro = c.aggro * aggroMul(world);
   const foeDist = foe ? Math.abs(foe.x - c.x) : Infinity;
   const useRanged = !!c.ranged;
 
+  if (foe && foeDist <= aggro && tryCreepSkill(c, world, foe, now)) return;
+  const cantReachSky = foe?.flying && !c.flying && !useRanged && Math.abs((foe.y || 0) - (c.y || 0)) > 100;
+
   let mode, targetX, goalX, stopDist, rangedTarget = null;
-  if (foe && foeDist <= c.aggro) {
+  if (foe && foeDist <= aggro) {
     targetX = foe.x;
     if (useRanged && foeDist > range * 1.15) {
       mode = 'shoot'; rangedTarget = foe;
       const side = Math.sign(c.x - foe.x) || -c.dir;
-      goalX = foe.x + side * c.ranged.range * 0.65; stopDist = c.ranged.range;
+      goalX = foe.x + side * c.ranged.range * (c.flying ? 0.42 : 0.65); stopDist = c.ranged.range;
     } else {
-      mode = 'melee'; c._meleeFoe = foe.id;
+      mode = 'melee';
       const side = Math.sign(c.x - foe.x) || -c.dir;
       goalX = foe.x + side * range * 0.55; stopDist = range;
     }
@@ -62,50 +246,90 @@ export function updateCreep(c, world, dt, now) {
   }
 
   if ((!arrived || tooClose) && c.canAct(now)) {
+    if (cantReachSky) maybeAntiAirJump(c, foe, world, now);
+    if (mode === 'melee' && foe && dist < 100) maybeGrab(c, foe, world, now, cantReachSky ? 'antiAir' : 'random');
     const sp = Math.sign(goalX - c.x) * c.moveSpeed;
     const accel = c.traits?.athletic ? 9000 : 3600;
     c.vx += Math.sign(sp - c.vx) * accel * dt;
     if (Math.sign(sp) === Math.sign(c.vx) && Math.abs(c.vx) > Math.abs(sp)) c.vx = sp;
-    if (c.onGround()) c.pose = POSE.walk;
-    maybeAthleticMove(c, world, Math.sign(goalX - c.x), dist, now);
+    if (c.flying && !c._hoverOff) c.pose = Math.abs(c.vx) > 40 ? POSE.air : POSE.idle;
+    else if (c.onGround()) c.pose = Math.abs(c.vx) > c.moveSpeed * 0.82 ? POSE.run : POSE.walk;
+    if (!c.flying || c._hoverOff) maybeAthleticMove(c, world, Math.sign(goalX - c.x), dist, now);
+    syncGroundAirPose(c);
   } else if (c.canAct(now)) {
     c.vx *= 0.8;
-    if (c.onGround() && c.pose !== POSE.punch && c.pose !== POSE.kick) c.pose = POSE.idle;
+    if (c.flying && !c._hoverOff) c.pose = POSE.idle;
+    else if (c.onGround() && c.pose !== POSE.punch && c.pose !== POSE.kick && c.pose !== POSE.grab) c.pose = POSE.idle;
     if (now >= c.nextAtkAt) {
-      const lazy = c.traits?.chill && world.rng() > 0.45; // Chill: strikes only now and then
+      const lazy = !c.traits?.tireless && c.traits?.chill && world.rng() > 0.45;
       if (!lazy) {
         c.nextAtkAt = now + c.atkCdMs;
         if (mode === 'shoot') { c.pose = POSE.punch; c.poseTime = 0; castCreepBolt(world, c, rangedTarget, now); }
-        else if (mode === 'melee') { c.startAttack(HEAVY(c), now); c._pendingHit = c._meleeFoe; }
+        else if (mode === 'melee') {
+          const grabReason = cantReachSky ? 'antiAir' : 'random';
+          if (!maybeGrab(c, foe, world, now, grabReason)) {
+            const atk = (c._antiAirUntil || 0) > now ? ATTACK.uppercut : HEAVY(c);
+            c.startAttack(atk, now);
+          }
+        }
         else if (Math.abs(c.x - baseEdge) <= TD.BASE_RANGE + range) { c.startAttack(HEAVY(c), now); c._pendingBaseHit = true; }
       }
     }
   }
+  syncGroundAirPose(c);
+  finishFlyerGround(c, world, now);
 }
 
-// Miner: work a safe patch out from home, flee back when an enemy closes. Income
-// itself is passive (counted in the economy), so survival is the whole job.
+// Miner: haul gold from lane veins, panic-run home when fighters get close.
+function minerMove(c, goalX, dt, mul) {
+  const sp = Math.sign(goalX - c.x) * c.moveSpeed * mul;
+  c.vx += Math.sign(sp - c.vx) * 4400 * dt;
+  if (Math.sign(sp) === Math.sign(c.vx) && Math.abs(c.vx) > Math.abs(sp)) c.vx = sp;
+}
+
 function updateMiner(c, world, dt, now) {
   const home = world.bases[c.team];
-  const mineX = home.x + c.dir * 380;
+  const scareDist = TD.ECONOMY.scareDist ?? 500;
   const foe = nearestEnemy(world, c);
-  const threat = foe && Math.abs(foe.x - c.x) < 520;
-  const goalX = threat ? home.x + c.dir * 90 : mineX;
-  c.facing = threat ? (Math.sign(foe.x - c.x) || c.dir) : c.dir;
+  const scared = foe && foe.role !== 'miner' && Math.abs(foe.x - c.x) < scareDist;
+  c.carryMax = c.carryMax || TD.ECONOMY.minerCarryMax || 28;
+  c.facing = scared ? (Math.sign(home.x - c.x) || c.dir) : c.dir;
 
   if (!c.canAct(now)) return;
-  if (Math.abs(goalX - c.x) > 20) {
-    const sp = Math.sign(goalX - c.x) * c.moveSpeed * (threat ? 1.3 : 0.7);
-    c.vx += Math.sign(sp - c.vx) * 4200 * dt;
-    if (Math.sign(sp) === Math.sign(c.vx) && Math.abs(c.vx) > Math.abs(sp)) c.vx = sp;
-    if (c.onGround()) c.pose = POSE.walk;
-  } else {
-    c.vx *= 0.8;
-    if (c.onGround()) {
-      c.pose = POSE.idle;
-      if (!threat && now >= (c._mineAt || 0)) { c._mineAt = now + 700; c.vy = -120; c.needsDashDust = true; } // "mining" hop
-    }
+  if (depositMiner(c, world)) { c.vx *= 0.4; c.pose = POSE.idle; return; }
+
+  if (scared) {
+    c._targetNode = null;
+    minerMove(c, home.x + c.dir * 55, dt, 1.5);
+    c.pose = POSE.run;
+    return;
   }
+
+  const full = (c.carry || 0) >= c.carryMax * 0.92;
+  if (full) {
+    minerMove(c, home.x + c.dir * 55, dt, 0.9);
+    c.pose = POSE.walk;
+    return;
+  }
+
+  let node = c._targetNode;
+  if (!node || node.gold < 4) node = c._targetNode = nearestGoldNode(world, c);
+  if (!node) {
+    minerMove(c, home.x + c.dir * 120, dt, 0.5);
+    c.pose = POSE.walk;
+    return;
+  }
+
+  if (Math.abs(c.x - node.x) > 26) {
+    minerMove(c, node.x, dt, 0.78);
+    c.pose = POSE.walk;
+    return;
+  }
+
+  c.vx *= 0.65;
+  c.pose = POSE.idle;
+  collectGold(c, node, dt);
+  if ((c.carry || 0) >= c.carryMax * 0.92 || node.gold < 4) c._targetNode = null;
 }
 
 // Athletic flourishes — leaps, lunges, point-blank jukes — so the advance reads

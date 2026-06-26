@@ -1,12 +1,16 @@
-import { TD } from './config.js';
+import { TD, battlePhase } from './config.js';
+import { aliveByX } from './spatial.js';
 import { createBase } from './towers.js';
-import { updateCreep, nearestEnemyCreep } from './ai.js';
+import { updateCreep } from './ai.js';
 import {
   integrate, resolveCreepAttacks, resolveCreepVsBase,
-  reapCreeps, separateCreeps, tickRagdolls,
+  reapCreeps, separateCreeps, tickRagdolls, tickGrapples, tickAirBalance, tickBowler, tickFlyerLandings,
 } from './combat.js';
-import { updateProjectiles, fireBaseArrow } from './projectiles.js';
-import { runEconomy } from './spawner.js';
+import { updateProjectiles } from './projectiles.js';
+import { runEconomy, refreshBaseHud } from './spawner.js';
+import { initEvents, tickEvents } from './events.js';
+import { tickBaseDefense } from './skills.js';
+import { initGoldNodes } from './gold.js';
 import { TDViewport, LOGICAL_WIDTH } from './render.js';
 import { tickParticles, spawnLandingDust, spawnDashDust } from '../services/particleSystem.js';
 import { secureRandom } from '../utils.js';
@@ -20,10 +24,11 @@ let world = null;
 let lastTime = performance.now();
 
 function newWorld() {
-  return {
-    rng: secureRandom,
+  const rng = secureRandom;
+  const w = {
+    rng,
     creeps: [],
-    bases: { L: createBase('L'), R: createBase('R') },
+    bases: { L: createBase('L', rng), R: createBase('R', rng) },
     particles: [],
     projectiles: [],
     hitEffects: [],
@@ -34,7 +39,13 @@ function newWorld() {
     over: null,        // winning team 'L' | 'R' | 'draw' once decided
     time: 0,
     level: 0,          // slow global ramp so battles escalate and resolve
+    activeBuffs: { L: {}, R: {} },
+    eventLog: [],
   };
+  initEvents(w);
+  initGoldNodes(w);
+  w._announce = announce;
+  return w;
 }
 
 function start() {
@@ -75,7 +86,9 @@ function update(dt, now) {
 
   world.time += dt;
   world.level = Math.floor(world.time / 30); // every 30s the next creeps get a touch stronger
+  aliveByX(world.creeps, world._aliveByX || (world._aliveByX = []));
 
+  tickEvents(world, dt);
   tickRagdolls(world, sdt, now);
   runEconomy(world, dt, now);
 
@@ -84,13 +97,17 @@ function update(dt, now) {
     const wasAir = c.y < -6;
     updateCreep(c, world, sdt, now);
     c.update(sdt, now);
-    integrate(c, sdt);
+    integrate(c, sdt, now);
     if (c.needsDashDust) { spawnDashDust(world.particles, c.x, TD.GROUND_Y, c.facing, world.rng); c.needsDashDust = false; }
     if (wasAir && c.y >= -1) spawnLandingDust(world.particles, c.x, TD.GROUND_Y, 90, world.rng);
   }
+  tickGrapples(world, now);
+  tickFlyerLandings(world, now);
+  tickAirBalance(world, sdt, now);
+  tickBowler(world, now);
   separateCreeps(world);
 
-  fireBases(now);
+  tickBaseDefense(world, now);
   updateProjectiles(world, sdt, now);
 
   resolveCreepAttacks(world, now);
@@ -99,22 +116,9 @@ function update(dt, now) {
 
   observeAudio(now);
   decayEffects(dt);
-  updateCamera(dt);
-  updateHUD();
+  updateCamera(dt, now);
+  if (!world._hudAt || now - world._hudAt > 100) { updateHUD(); world._hudAt = now; }
   checkEnd();
-}
-
-// Both bases auto-fire arrows at the nearest enemy creep in range.
-function fireBases(now) {
-  const F = TD.BASE_FIRE;
-  for (const team of ['L', 'R']) {
-    const base = world.bases[team];
-    if (base.hp <= 0 || now < (base.nextFireAt || 0)) continue;
-    const tgt = nearestEnemyCreep(world, team, base.x);
-    if (!tgt || Math.abs(tgt.x - base.x) > F.range) continue;
-    base.nextFireAt = now + F.cooldownMs;
-    fireBaseArrow(world, base, tgt, now);
-  }
 }
 
 function observeAudio(now) {
@@ -130,37 +134,94 @@ function observeAudio(now) {
 }
 
 function decayEffects(dt) {
-  world.particles = tickParticles(world.particles, dt);
-  world.hitEffects = world.hitEffects.filter(h => { h.t += dt; return h.t < 0.9; });
+  tickParticles(world.particles, dt);
+  let n = 0;
+  const fx = world.hitEffects;
+  for (let i = 0; i < fx.length; i++) {
+    fx[i].t += dt;
+    if (fx[i].t < 0.9) fx[n++] = fx[i];
+  }
+  fx.length = n;
+  if (fx.length > 48) fx.splice(0, fx.length - 48);
   world.screenShake *= 0.88;
   if (world.screenShake < 0.5) world.screenShake = 0;
 }
 
-const camClamp = (x) => { const lim = TD.STAGE_HALF - 760; return Math.max(-lim, Math.min(lim, x)); };
+const CAM_HALF = LOGICAL_WIDTH / 2;
 
-// Free camera: drift to the centre of mass of the fighting, draggable by the player.
-function updateCamera(dt) {
-  const now = performance.now();
+function camClamp(x, zoom = 1) {
+  const half = CAM_HALF / Math.max(0.75, zoom);
+  // ponytail: old lim (STAGE_HALF - CAM_HALF) stranded base sieges on screen edges
+  const lim = TD.STAGE_HALF - half * 0.1;
+  return Math.max(-lim, Math.min(lim, x));
+}
+
+// Frame the hottest fight cluster — not a global average that sits in empty mid-lane.
+function fightFrame(world) {
+  const cs = world._aliveByX?.length
+    ? world._aliveByX.filter(c => c.role !== 'miner')
+    : world.creeps.filter(c => c.hp > 0 && c.role !== 'miner');
+  if (!cs.length) return { x: 0, spread: 1100 };
+
+  let best = null, bestScore = 0;
+  for (const c of cs) {
+    let score = 0, minX = c.x, maxX = c.x;
+    for (const o of cs) {
+      if (o.team === c.team) continue;
+      const d = Math.abs(o.x - c.x);
+      if (d > 720) continue;
+      score += 1.2 + (720 - d) / 420;
+      minX = Math.min(minX, o.x, c.x);
+      maxX = Math.max(maxX, o.x, c.x);
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = { minX, maxX, x: (minX + maxX) * 0.5, spread: maxX - minX + (TD.CAMERA_FRAME_PAD ?? 380) };
+    }
+  }
+  if (best) return best;
+
+  let minX = cs[0].x, maxX = cs[0].x;
+  for (const c of cs) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); }
+  return { x: (minX + maxX) * 0.5, spread: Math.max(520, maxX - minX + 520) };
+}
+
+function updateCamera(dt, now) {
   if (camDragging) return;
+  const zoom = world.zoom || 1;
   if (Math.abs(camVel) > 0.4 || now < camManualUntil) {
-    world.camX = camClamp(world.camX + camVel);
+    world.camX = camClamp(world.camX + camVel, zoom);
     camVel *= 0.88;
     if (Math.abs(camVel) < 0.4) camVel = 0;
     return;
   }
-  let sum = 0, n = 0;
-  for (const c of world.creeps) if (c.hp > 0 && c.role !== 'miner') { sum += c.x; n++; }
-  const target = n ? sum / n : 0;
-  if (Math.abs(target - world.camX) > 50) {
-    world.camX += (target - world.camX) * Math.min(1, dt * TD.CAMERA_SMOOTH * 0.7);
-  }
-  world.camX = camClamp(world.camX);
+  const frame = fightFrame(world);
+  world._camFocus = frame.x;
+  world._camSpread = frame.spread;
+  let target = frame.x;
+  const peek = world.camPeek;
+  if (peek && world.time < peek.until) {
+    const blend = 0.4 * (peek.until - world.time) / (peek.dur || 2.6);
+    target = target * (1 - blend) + peek.x * blend;
+  } else if (peek) world.camPeek = null;
+
+  const targetZoom = Math.min(
+    TD.CAMERA_ZOOM_MAX ?? 1.26,
+    Math.max(TD.CAMERA_ZOOM_MIN ?? 0.78, (LOGICAL_WIDTH * 0.82) / frame.spread),
+  );
+  world.zoom = (world.zoom || 1) + (targetZoom - (world.zoom || 1)) * Math.min(1, dt * 10);
+
+  const dist = Math.abs(target - world.camX);
+  const chase = dist > 520 ? (TD.CAMERA_SMOOTH ?? 9) * 2.2 : (TD.CAMERA_SMOOTH ?? 9);
+  world.camX += (target - world.camX) * Math.min(1, dt * chase);
+  world.camX = camClamp(world.camX, world.zoom || 1);
 }
 
 function checkEnd() {
   const L = world.bases.L.hp, R = world.bases.R.hp;
-  if (L > 0 && R > 0) return;
-  endGame(L <= 0 && R <= 0 ? 'draw' : L <= 0 ? 'R' : 'L');
+  if (L <= 0 || R <= 0) {
+    endGame(L <= 0 && R <= 0 ? 'draw' : L <= 0 ? 'R' : 'L');
+  }
 }
 
 function endGame(result) {
@@ -179,9 +240,23 @@ const els = {
   goldL: document.getElementById('goldL'), goldR: document.getElementById('goldR'),
   killsL: document.getElementById('killsL'), killsR: document.getElementById('killsR'),
   countL: document.getElementById('countL'), countR: document.getElementById('countR'),
+  modeL: document.getElementById('modeL'), modeR: document.getElementById('modeR'),
+  planL: document.getElementById('planL'), planR: document.getElementById('planR'),
+  lastL: document.getElementById('lastL'), lastR: document.getElementById('lastR'),
+  picksL: document.getElementById('picksL'), picksR: document.getElementById('picksR'),
+  ticker: document.getElementById('eventTicker'),
   announce: document.getElementById('announce'),
   speedBtn: document.getElementById('speedBtn'),
 };
+
+let announceTimer = 0;
+function announce(text, ms = 2400) {
+  if (!els.announce) return;
+  els.announce.textContent = text;
+  els.announce.classList.add('show');
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => els.announce.classList.remove('show'), ms);
+}
 
 function syncSpeedBtn() {
   if (!els.speedBtn) return;
@@ -190,6 +265,28 @@ function syncSpeedBtn() {
 }
 
 function teamCount(team) { let n = 0; for (const c of world.creeps) if (c.hp > 0 && c.team === team) n++; return n; }
+
+const MODE_CLASS = { DEFEND: 'mode-def', BUILD: 'mode-build', PUSH: 'mode-push', GROW: 'mode-grow', BANK: 'mode-bank', BROKE: 'mode-broke', FULL: 'mode-full', DOWN: 'mode-down' };
+
+function renderBaseHud(team, prefix) {
+  refreshBaseHud(world, team, performance.now());
+  const base = world.bases[team];
+  const h = base.aiHud || {};
+  const modeEl = els[`mode${prefix}`];
+  const planEl = els[`plan${prefix}`];
+  const lastEl = els[`last${prefix}`];
+  const picksEl = els[`picks${prefix}`];
+  if (modeEl) {
+    modeEl.textContent = h.mode || '—';
+    modeEl.className = 'aimode ' + (MODE_CLASS[h.mode] || '');
+  }
+  if (planEl) planEl.textContent = h.plan || '';
+  if (lastEl) lastEl.textContent = h.last ? `Last: ${h.last}` : '';
+  if (picksEl) {
+    const picks = (h.top || []).map(p => `${p.name} ${p.pct}%`).join(' · ');
+    picksEl.textContent = picks ? `Next roll: ${picks}` : (h.nextIn ? `Decide in ${h.nextIn}` : '');
+  }
+}
 
 function updateHUD() {
   const L = world.bases.L, R = world.bases.R;
@@ -203,6 +300,13 @@ function updateHUD() {
   if (els.killsR) els.killsR.textContent = R.kills;
   if (els.countL) els.countL.textContent = teamCount('L');
   if (els.countR) els.countR.textContent = teamCount('R');
+  renderBaseHud('L', 'L');
+  renderBaseHud('R', 'R');
+  if (els.ticker) {
+    const phase = battlePhase(world.level || 0);
+    const ev = world.eventLog?.length ? world.eventLog[world.eventLog.length - 1].text : '';
+    els.ticker.textContent = ev ? `${phase} · ${ev}` : `${phase} · ${Math.floor(world.time)}s`;
+  }
 }
 
 // ── Overlay ──────────────────────────────────────────────────────────────────
@@ -213,7 +317,7 @@ function showOverlay(result) {
     : (result === 'L' ? 'BLUE WINS' : 'RED WINS');
   const sub = result
     ? `${world.bases.L.kills} vs ${world.bases.R.kills} kills · ${Math.floor(world.time)}s`
-    : 'Two AI bases. Endless gold. Watch them fight.';
+    : 'Mine the lane. Counter-build. Events decide the rest.';
   overlay.querySelector('.ov-title').textContent = title;
   overlay.querySelector('.ov-sub').textContent = sub;
   overlay.querySelector('.ov-btn').textContent = result ? 'Battle Again' : 'Start Battle';
@@ -244,7 +348,7 @@ function camPanMove(clientX) {
   if (Math.abs(dxPx) > 1) camMoved = true;
   const dxWorld = dxPx * worldPerPx();
   camLastX = clientX;
-  world.camX = camClamp(world.camX - dxWorld);
+  world.camX = camClamp(world.camX - dxWorld, world.zoom || 1);
   camVel = camVel * 0.5 - dxWorld * 0.5;
   camVel = Math.max(-90, Math.min(90, camVel));
 }

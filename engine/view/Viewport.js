@@ -66,15 +66,15 @@ export class Viewport {
         if (world.ragdollPhase > 0 && world.activeRagdolls.length > 0) {
             const loserId = world.pendingRoundEnd?.roundWinner === 1 ? 1 : 0;
             if (loserId === 0) {
-                drawRagdoll(ctx, world.activeRagdolls[0].ragdoll, world.activeRagdolls[0].color);
+                drawRagdoll(ctx, world.activeRagdolls[0].ragdoll, world.activeRagdolls[0].color, now);
                 drawStickman(ctx, world.fighter2, GROUND_Y, now);
             } else {
                 drawStickman(ctx, world.fighter1, GROUND_Y, now);
-                drawRagdoll(ctx, world.activeRagdolls[0].ragdoll, world.activeRagdolls[0].color);
+                drawRagdoll(ctx, world.activeRagdolls[0].ragdoll, world.activeRagdolls[0].color, now);
             }
         } else {
             [world.fighter1, world.fighter2].forEach(f => {
-                if (f.staggerRagdoll) drawRagdoll(ctx, f.staggerRagdoll, f.color);
+                if (f.staggerRagdoll) drawRagdoll(ctx, f.staggerRagdoll, f.color, now);
                 else drawStickman(ctx, f, GROUND_Y, now);
             });
         }

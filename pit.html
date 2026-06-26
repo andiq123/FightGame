@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Stick Wars — The Pit</title>
+  <meta name="theme-color" content="#0a0618" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0618; color: #e7edf5;
+      font-family: system-ui, sans-serif; touch-action: none; user-select: none; }
+    #canvas { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
+    #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 50% 35%, rgba(40,24,48,.88), rgba(8,6,12,.96)); z-index: 10; }
+    #overlay.hidden { display: none; }
+    .card { text-align: center; padding: 36px 48px; max-width: 520px; }
+    h1 { margin: 0 0 8px; font-size: 56px; font-weight: 900;
+      background: linear-gradient(90deg,#c4a574,#ff6b7a); -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; }
+    p { margin: 0 0 24px; color: #9fb0c4; line-height: 1.5; }
+    .btn { font: inherit; font-size: 17px; font-weight: 700; border: 0; border-radius: 12px; cursor: pointer;
+      padding: 14px 32px; background: linear-gradient(90deg,#c4a574,#e8c890); color: #1a1208;
+      box-shadow: 0 8px 28px rgba(196,165,116,.35); }
+    .link { display: inline-block; margin-top: 18px; color: #7ec5ff; text-decoration: none; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="overlay">
+    <div class="card">
+      <h1>THE PIT</h1>
+      <p>Four vs four in a torch-lit sand bowl. No bases, no gold — last team standing.</p>
+      <button class="ov-btn btn" type="button">Enter the Pit</button>
+      <br />
+      <a class="link" href="./index.html">← Lane War mode</a>
+    </div>
+  </div>
+  <script type="module" src="./pit/main.js"></script>
+</body>
+</html>

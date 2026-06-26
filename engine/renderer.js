@@ -16,7 +16,14 @@ import {
   getRunCycle,
   getHitReaction,
   getDodgePose,
-  strikeImpactPulse
+  strikeImpactPulse,
+  mergeRest,
+  scaleWalkCycle,
+  getProfileIdle,
+  getFlyPose,
+  getGrabPose,
+  getAntiAirPose,
+  getJumpAirPose,
 } from './fightAnimations.js';
 
 // Tint the swipe arc + anticipation glow by attack "weight" (its base damage).
@@ -185,6 +192,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const face = fighter.facing || 1;
   const pose = fighter.pose;
   const scale = fighter.scale || 1;
+  const lite = !!fighter.tdCreep;
 
   ctx.save();
   // Global Scale for Bosses
@@ -196,6 +204,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   }
 
   // 0. Premium Visual Overlays
+  if (!lite) {
   // Spectral / After-image Trails
   if (fighter.status.active('invincible', now)) {
     const hist = fighter.poseHistory || [];
@@ -335,8 +344,13 @@ export function drawStickman(ctx, fighter, groundY, now) {
     }
     ctx.restore();
   }
+  }
+
+  const prof = fighter.animProfile;
   const poseT = fighter.poseTime || 0;
-  const rest = REST_STANCE;
+  const rest = mergeRest(REST_STANCE, prof?.rest);
+  const atkMul = prof?.attack?.mult ?? 1;
+  const limbScale = prof?.limb ?? 1;
 
   // 1. Calculate Core Joints (Dual-Bone Torso)
   let pelvisX = x;
@@ -369,13 +383,32 @@ export function drawStickman(ctx, fighter, groundY, now) {
   let rFootAng = rest.rFootAng || 0;
 
   // Basic Animation Logic
-  if (pose === POSE.walk || pose === POSE.run) {
+  // Flying units — hover / cruise / air-shot / air-hit (never ground stomp poses).
+  if (fighter.flying && pose !== POSE.stagger) {
+    const shooting = pose === POSE.punch || (fighter._flyShootT || 0) > 0;
+    let f = getFlyPose(poseT, face, prof, velX, shooting && pose !== POSE.hit);
+    if (pose === POSE.hit) {
+      const hit = getHitReaction(poseT, fighter.hitLastDmg, face, fighter.hitFromX, fighter.x);
+      f = {
+        ...f,
+        lean: f.lean + hit.lean * 0.55,
+        torsoTwist: f.torsoTwist + hit.torsoTwist * 0.5,
+        headTilt: (f.headTilt ?? 0) + hit.headTilt * 0.5,
+        bob: f.bob + hit.bob * 0.3,
+      };
+    }
+    lean = f.lean; torsoTwist = f.torsoTwist; headTilt = f.headTilt ?? headTilt; bob = f.bob;
+    lArmAng = f.lArmAng; rArmAng = f.rArmAng; lForeArmAng = f.lForeArmAng; rForeArmAng = f.rForeArmAng;
+    lLegAng = f.lLegAng; rLegAng = f.rLegAng; lKneeOff = f.lKneeOff; rKneeOff = f.rKneeOff;
+    lFootAng = f.lFootAng; rFootAng = f.rFootAng;
+  } else if (pose === POSE.walk || pose === POSE.run) {
     const baseSpeed = pose === POSE.run ? 11.5 : 7.2;
     const expectedSpeed = pose === POSE.run ? 540 : 280;
     const speedRatio = Math.min(1.25, Math.max(0.55, Math.abs(velX) / expectedSpeed));
-    const cycleSpeed = baseSpeed * speedRatio;
+    const cycleSpeed = baseSpeed * speedRatio * (prof?.walk?.cycleMul ?? 1);
     const phase = (poseT * cycleSpeed) % (2 * Math.PI);
-    const cycle = pose === POSE.run ? getRunCycle(phase, face) : getWalkCycle(phase, face);
+    let cycle = pose === POSE.run ? getRunCycle(phase, face) : getWalkCycle(phase, face);
+    cycle = scaleWalkCycle(cycle, prof?.walk);
 
     bob = cycle.bob;
     lean = cycle.lean;
@@ -392,7 +425,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lFootAng = cycle.lFoot ?? lFootAng;
     rFootAng = cycle.rFoot ?? rFootAng;
   } else if (pose === POSE.idle) {
-    const idle = fighter.traits?.chill ? relaxedIdle(poseT, rest) : idleFromRest(poseT, rest);
+    const idle = getProfileIdle(prof?.idleKind, poseT, rest, fighter.traits?.chill, prof?.air);
     bob = idle.bob;
     torsoTwist = idle.torsoTwist * face;
     lean = idle.lean + (rest.torsoLean || 0) * face;
@@ -407,6 +440,21 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rKneeOff = idle.rKneeAng;
     lFootAng = idle.lFootAng ?? lFootAng;
     rFootAng = idle.rFootAng ?? rFootAng;
+  } else if (pose === POSE.grab) {
+    const throwing = !!(fighter._grabbing && poseT > 0.28);
+    const g = getGrabPose(poseT, face, throwing);
+    lean = g.lean; torsoTwist = g.torsoTwist; headTilt = g.headTilt ?? headTilt; bob = g.bob;
+    lArmAng = g.lArmAng; rArmAng = g.rArmAng; lForeArmAng = g.lForeArmAng; rForeArmAng = g.rForeArmAng;
+    lLegAng = g.lLegAng; rLegAng = g.rLegAng; lKneeOff = g.lKneeOff; rKneeOff = g.rKneeOff;
+    lFootAng = g.lFootAng; rFootAng = g.rFootAng;
+  } else if (pose === POSE.jump || pose === POSE.air) {
+    const j = (fighter._antiAirUntil || 0) > now
+      ? getAntiAirPose(poseT, face)
+      : getJumpAirPose(poseT, pose, face, prof);
+    lean = j.lean; torsoTwist = j.torsoTwist; headTilt = j.headTilt ?? headTilt; bob = j.bob;
+    lArmAng = j.lArmAng; rArmAng = j.rArmAng; lForeArmAng = j.lForeArmAng; rForeArmAng = j.rForeArmAng;
+    lLegAng = j.lLegAng; rLegAng = j.rLegAng; lKneeOff = j.lKneeOff; rKneeOff = j.rKneeOff;
+    lFootAng = j.lFootAng; rFootAng = j.rFootAng;
   } else if (pose === POSE.recover) {
     const recovery = recoveryFromRest(poseT, rest);
     bob = recovery.bob;
@@ -517,8 +565,8 @@ export function drawStickman(ctx, fighter, groundY, now) {
     const WINDUP = 0, STRIKE = 1;
     if (phase === STRIKE) {
       const snap = Math.sin(localT * Math.PI);
-      limbBulge = 0.52 * snap;
-      limbStretch = 12 * snap;
+      limbBulge = 0.52 * snap * atkMul;
+      limbStretch = 12 * snap * (prof?.attack?.stretch ?? atkMul);
       // Extra IMPACT stretch spike right on the contact frame (~50%) — harder hit.
       limbStretch += 10 * strikeImpactPulse(localT);
     }
@@ -560,6 +608,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lFootAng = ext.rearFoot ?? lFootAng;
     pelvisX += ext.pelvisShift || 0;
     bob += ext.bodyLift || 0;
+    if (atkMul !== 1) { pelvisX += face * (atkMul - 1) * 6; limbBulge *= atkMul; }
   } else if (pose === POSE.kick && fighter.currentAttack) {
     const a = fighter.currentAttack;
     const { phase, localT } = getKickPhase(poseT, a.data.duration, a.type);
@@ -573,6 +622,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
       lLegAng = ext.leadHip; lKneeOff = 0.18 + (ext.leadKnee - 0.5) * 0.43;
       rLegAng = ext.supportHip; rKneeOff = ext.supportKnee || 0.18;
     }
+    if (atkMul !== 1) limbBulge *= atkMul;
   }
 
   // SQUASH & STRETCH
@@ -620,7 +670,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     stretchX -= 0.1 * impact * Math.sin(hitT * Math.PI);
   }
 
-  pelvisY -= bob;
+  pelvisY -= fighter.flying ? Math.sin((poseT || 0) * 3.2) * 6 : bob;
 
   // Dual Bone Positioning
   const spineLen = 42 * squashY;
@@ -630,7 +680,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const headY = ribsY - 18 * squashY;
 
   // 2. Render Motion Effects (Smeared Shadows & Trails)
-  if (Math.abs(fighter.vx) > 400) {
+  if (!lite && Math.abs(fighter.vx) > 400) {
     ctx.save();
     const smearCount = 8;
     fighter.poseHistory.forEach((h, i) => {
@@ -652,7 +702,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     ctx.restore();
   }
 
-  if (fighter.attackTrail?.length > 2) {
+  if (!lite && fighter.attackTrail?.length > 2) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.beginPath();
@@ -700,11 +750,11 @@ export function drawStickman(ctx, fighter, groundY, now) {
   // 3. Render Fighter Body
   ctx.lineCap = 'round';
   ctx.shadowColor = shadowColor;
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetY = 3;
+  ctx.shadowBlur = lite ? 0 : 6;
+  ctx.shadowOffsetY = lite ? 0 : 3;
 
   // Legs
-  const thighLen = 30, calfLen = 26;
+  const thighLen = 30 * limbScale, calfLen = 26 * limbScale;
   const lHipX = pelvisX - 7 * face, rHipX = pelvisX + 7 * face;
   const lKneeX = lHipX + Math.sin(lLegAng) * thighLen * face;
   const lKneeY = pelvisY + Math.cos(lLegAng) * thighLen;
@@ -716,10 +766,10 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rAnkleX = rKneeX + Math.sin(rLegAng + rKneeOff) * calfLen * face;
   const rAnkleY = rKneeY + Math.cos(rLegAng + rKneeOff) * calfLen;
 
-  drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
-  drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
-  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6, 5, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
-  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5, 4, baseColor, strokeColor, limbBulge, limbStretch);
+  drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+  drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
+  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
 
   // Feet
   const footLen = 14;
@@ -761,7 +811,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   // ── MOTION SWIPE ARC + ANTICIPATION GLOW ──────────────────────────────────
   // Telegraph the strike: trace the striking limb's tip path with a bright
   // crescent during the active window, and show a faint chamber-glow on windup.
-  if (attackCtx) {
+  if (attackCtx && !lite) {
     // Pick the striking weapon tip. Punches drive the LEAD hand (rendered as the
     // right arm wrist); kicks drive the LEAD foot's toe (side depends on facing).
     let tipX, tipY;
@@ -901,6 +951,8 @@ function drawCapsule(ctx, x1, y1, x2, y2, r, fillColor, strokeColor) {
 }
 
 
+const LOGICAL_WIDTH = 1920;
+const LOGICAL_HEIGHT = 1080;
 const PARALLAX_FAR = 0.28;
 const PARALLAX_MID = 0.58;
 
@@ -917,10 +969,11 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     return;
   }
 
-  // Ensure full coverage for zoom-out (0.8x zoom needs ~1.25x width)
-  const overscan = w * 0.4;
+  // Extra width when zoomed out so edges never show empty canvas
+  const overscan = w * (0.4 + Math.max(0, w / LOGICAL_WIDTH - 1) * 0.35);
   const drawW = w + overscan * 2;
   const drawX = baseX - overscan;
+  const vScale = Math.max(1, h / LOGICAL_HEIGHT);
 
   const sky = ctx.createLinearGradient(drawX, 0, drawX, h);
   sky.addColorStop(0, '#0d1220');
@@ -998,7 +1051,7 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
   ctx.fillStyle = '#0a0f14';
   while (dsx < farRight + deepStep) {
     const x = dsx;
-    const peak = floorY - 560 - (Math.sin(dsx * 0.0013) * 70) - (Math.cos(dsx * 0.0007) * 40);
+    const peak = floorY - 560 * vScale - (Math.sin(dsx * 0.0013) * 70 * vScale) - (Math.cos(dsx * 0.0007) * 40 * vScale);
     ctx.beginPath();
     ctx.moveTo(x - 220, floorY + 20);
     ctx.lineTo(x - 60, peak + 120);
@@ -1010,11 +1063,11 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
     dsx += deepStep;
   }
   // soft haze where distant peaks meet the sky
-  const hazeG = ctx.createLinearGradient(drawX, floorY - 560, drawX, floorY - 280);
+  const hazeG = ctx.createLinearGradient(drawX, floorY - 560 * vScale, drawX, floorY - 280);
   hazeG.addColorStop(0, 'rgba(30,44,60,0)');
   hazeG.addColorStop(1, 'rgba(30,44,60,0.25)');
   ctx.fillStyle = hazeG;
-  ctx.fillRect(drawX, floorY - 560, drawW, 300);
+  ctx.fillRect(drawX, floorY - 560 * vScale, drawW, 300 * vScale);
 
   // --- Layer 1: nearer ridge silhouettes ---
   const step = 320;
@@ -1022,7 +1075,7 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
   ctx.fillStyle = '#0e1412';
   while (sx < farRight + step) {
     const x = sx;
-    const peak = floorY - 380 - (Math.sin(sx * 0.002) * 40);
+    const peak = floorY - 380 * vScale - (Math.sin(sx * 0.002) * 40 * vScale);
     ctx.beginPath();
     ctx.moveTo(x - 80, floorY + 20);
     ctx.lineTo(x - 20, peak + 80);
@@ -1045,9 +1098,9 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
       // pagoda silhouette
       const pw = 120;
       for (let tier = 0; tier < 3; tier++) {
-        const ty = baseY - 60 - tier * 70;
+        const ty = baseY - (60 + tier * 70) * vScale;
         const tw = pw - tier * 28;
-        ctx.fillRect(x - tw / 2, ty, tw, 50);
+        ctx.fillRect(x - tw / 2, ty, tw, 50 * vScale);
         // eaves
         ctx.beginPath();
         ctx.moveTo(x - tw / 2 - 18, ty);
@@ -1059,7 +1112,7 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
       }
     } else {
       // torii gate silhouette
-      const gw = 150, gh = 200;
+      const gw = 150, gh = 200 * vScale;
       ctx.fillRect(x - gw / 2, baseY - gh, 16, gh);
       ctx.fillRect(x + gw / 2 - 16, baseY - gh, 16, gh);
       ctx.fillRect(x - gw / 2 - 26, baseY - gh + 6, gw + 52, 22);
@@ -1107,7 +1160,7 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
   let bx = Math.floor(midWorldLeft / bambooSpacing) * bambooSpacing - bambooSpacing;
   while (bx < midWorldRight + bambooSpacing) {
     const x = bx * PARALLAX_MID + midOff;
-    const top = floorY - 220;
+    const top = floorY - 220 * vScale;
     ctx.strokeStyle = '#1a241a';
     ctx.lineWidth = 10;
     ctx.lineCap = 'round';
@@ -1180,7 +1233,7 @@ export function drawBackground(ctx, w, h, camX, now, world, floorY = 810) {
   let lx = Math.floor(midWorldLeft / lanternSpacing) * lanternSpacing - lanternSpacing;
   while (lx < midWorldRight + lanternSpacing) {
     const x = lx * PARALLAX_MID + midOff;
-    const y = floorY - 120;
+    const y = floorY - 120 * vScale;
     const pulse = 1 + Math.sin(lx * 0.01) * 0.05;
     const r = 22 * pulse;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);

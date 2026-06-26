@@ -215,8 +215,10 @@ class Fighter {
     else if (Math.abs(this.vx) >= PHYSICS.WALK_FAST_THRESH) this.momentumAtAttackStart = 0.35;
     else this.momentumAtAttackStart = 0;
     const staminaCost = getAttackStaminaCost(data, this.momentumAtAttackStart);
-    if (!canSpendStamina(this, staminaCost)) return false;
-    spendStamina(this, staminaCost);
+    if (!this.tdCreep) {
+      if (!canSpendStamina(this, staminaCost)) return false;
+      spendStamina(this, staminaCost);
+    }
     this.airAttack = !this.onGround();
     this.currentAttack = { type, started: now, data, dir: this.facing };
     const isPunch = type <= 2 || type === ATTACK_POWER_PUNCH || type === ATTACK.uppercut;
@@ -324,15 +326,20 @@ class Fighter {
   update(dt, now) {
     this.poseTime += dt;
 
-    // Visual History for Smears/Trails
-    this.poseHistory.unshift({ x: this.x, y: this.y, pose: this.pose, time: now });
-    if (this.poseHistory.length > 10) this.poseHistory.pop();
+    if (!this.tdCreep) {
+      this.poseHistory.unshift({ x: this.x, y: this.y, pose: this.pose, time: now });
+      if (this.poseHistory.length > 10) this.poseHistory.pop();
+      if (this.currentAttack) {
+        this.attackTrail.unshift({ x: this.x, y: this.y, time: now, type: this.currentAttack.type });
+        if (this.attackTrail.length > 8) this.attackTrail.pop();
+      } else if (this.attackTrail.length > 0) {
+        this.attackTrail.shift();
+      }
+    }
 
-    if (this.currentAttack) {
-      this.attackTrail.unshift({ x: this.x, y: this.y, time: now, type: this.currentAttack.type });
-      if (this.attackTrail.length > 8) this.attackTrail.pop();
-    } else {
-      if (this.attackTrail.length > 0) this.attackTrail.shift();
+    if (this._ragdollLaunch) {
+      this.poseTime += dt;
+      return;
     }
 
     if (this.staggerRagdoll) {
@@ -371,20 +378,22 @@ class Fighter {
 
     if (this.lastHitAt > 0 && now - this.lastHitAt > FIGHTER.HITS_DECAY_MS) this.hitsTakenLast5Sec = 0;
 
-    const movementDrain = getMovementStaminaDrain(this, dt);
-    if (movementDrain > 0) {
-      spendStamina(this, movementDrain);
-      if (this.stamina <= 0 && this.pose === POSE.run) {
-        this.isRunning = false;
-        this.pose = Math.abs(this.vx) > PHYSICS.WALK_RUN_IDLE_THRESHOLD ? POSE.walk : POSE.idle;
-        this.poseTime = 0;
+    if (!this.tdCreep) {
+      const movementDrain = getMovementStaminaDrain(this, dt);
+      if (movementDrain > 0) {
+        spendStamina(this, movementDrain);
+        if (this.stamina <= 0 && this.pose === POSE.run) {
+          this.isRunning = false;
+          this.pose = Math.abs(this.vx) > PHYSICS.WALK_RUN_IDLE_THRESHOLD ? POSE.walk : POSE.idle;
+          this.poseTime = 0;
+        }
+      } else {
+        this.stamina = Math.min(this.maxStamina, this.stamina + dt * getStaminaRegenRate(this));
       }
-    } else {
-      this.stamina = Math.min(this.maxStamina, this.stamina + dt * getStaminaRegenRate(this));
     }
 
     // Tireless characters (e.g. One Strike) never run out — endless dodging/punching.
-    if (this.traits?.tireless) this.stamina = this.maxStamina;
+    if (this.tdCreep || this.traits?.tireless) this.stamina = this.maxStamina;
 
     const isFrozen = this.status.active('frozen', now);
 
@@ -408,7 +417,8 @@ class Fighter {
       this.speedMult = 0;
       this.isRunning = false;
       this.vx = 0;
-      this.vy = Math.max(0, this.vy); // Stop vertical movement too if falling
+      if (this.flying) this.vy = 0;
+      else this.vy = Math.max(0, this.vy);
     }
 
     // Anchored: Heavy footed, no jumps or runs
@@ -459,7 +469,7 @@ class Fighter {
       this.status.clear('slide');
       this.pose = POSE.idle;
     }
-    if (this.onGround() && (this.pose === POSE.jump || this.pose === POSE.air)) {
+    if (!this.flying && this.onGround() && (this.pose === POSE.jump || this.pose === POSE.air)) {
       this.pose = POSE.idle;
       this.status.set('landingSquash', now + (FIGHTER.LANDING_SQUASH_MS ?? 150));
       this.needsLandingDust = true;
@@ -494,8 +504,9 @@ class Fighter {
     const activeEnd = a.type === GRAB ? 0.6 : 0.75;
     if (elapsed < a.data.duration * activeStart || elapsed > a.data.duration * activeEnd) return null;
     const dir = a.dir != null ? a.dir : this.facing;
-    const xOffset = a.type === GRAB ? 35 : 55;
-    const width = data.range * 0.6;
+    const s = this.scale || 1;
+    const xOffset = (a.type === GRAB ? 35 : 55) * s;
+    const width = data.range * 0.6 * s;
 
     return {
       x: this.x + xOffset * dir,

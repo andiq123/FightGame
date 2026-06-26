@@ -1,6 +1,6 @@
 {
-  "name": "Stick Defense",
-  "short_name": "Stick Defense",
+  "name": "Stick Wars",
+  "short_name": "Stick Wars",
   "description": "Build a stick hero, then watch it defend the base across 20 escalating waves.",
   "start_url": "./",
   "scope": "./",

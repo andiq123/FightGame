@@ -2,7 +2,9 @@
   "name": "stickman-fight-game",
   "scripts": {
     "start": "vite --host 127.0.0.1 --port 3000",
-    "dev": "vite --host 127.0.0.1 --port 3000"
+    "dev": "vite --host 127.0.0.1 --port 3000",
+    "sim": "node sim/simulate.mjs",
+    "sim:td": "node sim/simulate-td.mjs"
   },
   "devDependencies": {
     "vite": "^8.0.14"

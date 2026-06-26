@@ -534,4 +534,249 @@ export function getHitReaction(poseT, damage, face, hitFromX, fighterX) {
   };
 }
 
+export function mergeRest(base, patch) {
+  return patch ? { ...base, ...patch } : base;
+}
+
+export function scaleWalkCycle(cycle, w = {}) {
+  if (!w || !Object.keys(w).length) return cycle;
+  const m = (v, k, d = 1) => (v ?? 0) * (w[k] ?? d);
+  return {
+    ...cycle,
+    bob: m(cycle.bob, 'bob'),
+    lean: m(cycle.lean, 'lean'),
+    lHip: m(cycle.lHip, 'leg'), rHip: m(cycle.rHip, 'leg'),
+    lKnee: m(cycle.lKnee, 'leg'), rKnee: m(cycle.rKnee, 'leg'),
+    lArm: m(cycle.lArm, 'arm'), rArm: m(cycle.rArm, 'arm'),
+    torsoTwist: m(cycle.torsoTwist, 'arm', 1),
+  };
+}
+
+function heavyIdle(poseT, rest) {
+  const phase = (poseT * 0.85) % (2 * Math.PI);
+  const sway = Math.sin(phase * 0.45);
+  const base = idleFromRest(poseT, rest);
+  return {
+    ...base,
+    lShoulderAng: rest.lShoulderAng + 0.15 + sway * 0.04,
+    rShoulderAng: rest.rShoulderAng - 0.1,
+    lKneeAng: rest.lKneeAng + 0.18 + Math.abs(sway) * 0.06,
+    rKneeAng: rest.rKneeAng + 0.16,
+    lean: rest.torsoLean + sway * 0.03,
+    bob: base.bob * 0.7 + 2,
+  };
+}
+
+function ninjaIdle(poseT, rest) {
+  const phase = (poseT * 1.4) % (2 * Math.PI);
+  const s = Math.sin(phase);
+  return {
+    lShoulderAng: 0.92 + s * 0.06,
+    rShoulderAng: 0.68 - s * 0.05,
+    lElbowAng: -1.35 - Math.abs(s) * 0.08,
+    rElbowAng: -1.55 + Math.abs(s) * 0.06,
+    lHipAng: rest.lHipAng + 0.22 + s * 0.04,
+    rHipAng: rest.rHipAng + 0.18 - s * 0.04,
+    lKneeAng: 0.62 + Math.abs(s) * 0.05,
+    rKneeAng: 0.54 + Math.abs(s) * 0.04,
+    lFootAng: -0.06, rFootAng: 0.04,
+    bob: 1.2 + Math.abs(s) * 0.8,
+    torsoTwist: s * 0.08,
+    lean: rest.torsoLean + 0.04,
+    headTilt: s * 0.05,
+  };
+}
+
+function minerIdle(poseT, rest) {
+  const phase = (poseT * 1.1) % (2 * Math.PI);
+  const swing = Math.sin(phase);
+  const pick = Math.max(0, Math.sin(phase * 2));
+  return {
+    lShoulderAng: 0.35 + pick * 0.55,
+    rShoulderAng: 0.55,
+    lElbowAng: -1.1 - pick * 0.4,
+    rElbowAng: -1.45,
+    lHipAng: rest.lHipAng + swing * 0.03,
+    rHipAng: rest.rHipAng - swing * 0.03,
+    lKneeAng: rest.lKneeAng + 0.08,
+    rKneeAng: rest.rKneeAng + 0.1,
+    lFootAng: rest.lFootAng, rFootAng: rest.rFootAng,
+    bob: pick * 4 + Math.abs(swing) * 0.6,
+    torsoTwist: pick * 0.12,
+    lean: 0.06 + pick * 0.08,
+    headTilt: pick * 0.06,
+  };
+}
+
+function hoverIdle(poseT, rest, air = {}) {
+  const phase = (poseT * 1.6) % (2 * Math.PI);
+  const bob = Math.sin(phase) * (air.bob ?? 4);
+  return {
+    lShoulderAng: 0.62 + Math.sin(phase * 0.5) * 0.08,
+    rShoulderAng: 0.48,
+    lElbowAng: -1.25, rElbowAng: -1.4,
+    lHipAng: -0.35, rHipAng: 0.25,
+    lKneeAng: 0.72, rKneeAng: 0.55,
+    lFootAng: -0.15, rFootAng: 0.1,
+    bob: (air.lift ?? -18) + bob,
+    torsoTwist: Math.sin(phase * 0.7) * 0.05,
+    lean: 0.04,
+    headTilt: Math.sin(phase * 0.4) * 0.03,
+  };
+}
+
+function rangedIdle(poseT, rest) {
+  const phase = (poseT * 0.9) % (2 * Math.PI);
+  const draw = 0.5 + Math.sin(phase * 0.6) * 0.15;
+  const base = idleFromRest(poseT, rest);
+  return {
+    ...base,
+    rShoulderAng: lerp(0.2, -0.35, draw),
+    rElbowAng: lerp(-0.5, -1.05, draw),
+    lShoulderAng: lerp(0.5, 0.72, draw),
+    lElbowAng: lerp(-1.4, -1.65, draw),
+    lean: -0.04 * draw,
+    headTilt: 0.03,
+  };
+}
+
+function alertIdle(poseT, rest) {
+  const phase = (poseT * 1.8) % (2 * Math.PI);
+  const bounce = Math.abs(Math.sin(phase));
+  const base = idleFromRest(poseT, rest);
+  return {
+    ...base,
+    bob: base.bob + bounce * 2.5,
+    lean: rest.torsoLean + 0.06,
+    lKneeAng: rest.lKneeAng + bounce * 0.08,
+    rKneeAng: rest.rKneeAng + bounce * 0.06,
+  };
+}
+
+function castIdle(poseT, rest) {
+  const phase = (poseT * 1.2) % (2 * Math.PI);
+  const charge = 0.5 + Math.sin(phase) * 0.25;
+  return {
+    lShoulderAng: 0.95 + charge * 0.15,
+    rShoulderAng: 0.42,
+    lElbowAng: -1.05 - charge * 0.25,
+    rElbowAng: -1.5,
+    lHipAng: rest.lHipAng + 0.1,
+    rHipAng: rest.rHipAng + 0.08,
+    lKneeAng: rest.lKneeAng + 0.14,
+    rKneeAng: rest.rKneeAng + 0.12,
+    lFootAng: rest.lFootAng, rFootAng: rest.rFootAng,
+    bob: charge * 2,
+    torsoTwist: charge * 0.06,
+    lean: -0.03,
+    headTilt: -0.04,
+  };
+}
+
+export function getProfileIdle(kind, poseT, rest, chill, air) {
+  if (chill) return relaxedIdle(poseT, rest);
+  switch (kind) {
+    case 'heavy': return heavyIdle(poseT, rest);
+    case 'ninja': return ninjaIdle(poseT, rest);
+    case 'miner': return minerIdle(poseT, rest);
+    case 'hover': return hoverIdle(poseT, rest, air);
+    case 'ranged': return rangedIdle(poseT, rest);
+    case 'alert': return alertIdle(poseT, rest);
+    case 'cast': return castIdle(poseT, rest);
+    default: return idleFromRest(poseT, rest);
+  }
+}
+
+export function getFlyPose(poseT, face, prof, velX = 0, shooting = false) {
+  const air = prof?.air || {};
+  const flap = Math.sin(poseT * 2.6) * (air.bob ?? 6);
+  const spd = Math.min(0.28, Math.abs(velX) / 700);
+  const snap = shooting ? Math.sin(Math.min(1, poseT * 5) * Math.PI) : 0;
+  const cruise = velX !== 0 ? Math.sign(velX) : face;
+  return {
+    lean: cruise * (0.04 + spd) + face * 0.02,
+    torsoTwist: Math.sin(poseT * 2.1) * 0.07 * face,
+    headTilt: Math.sin(poseT * 1.4) * 0.05 - snap * 0.04,
+    bob: flap,
+    lArmAng: 0.28 + flap * 0.015 + snap * 0.35,
+    rArmAng: 0.62 + snap * 0.85,
+    lForeArmAng: -1.05 - snap * 0.15,
+    rForeArmAng: -0.65 - snap * 0.75,
+    lLegAng: -0.48 - spd * 0.35,
+    rLegAng: 0.22 + spd * 0.25,
+    lKneeOff: 0.68 + Math.abs(flap) * 0.04,
+    rKneeOff: 0.52 + Math.abs(flap) * 0.03,
+    lFootAng: -0.14, rFootAng: 0.1,
+  };
+}
+
+export function getGrabPose(poseT, face, throwing = false) {
+  const throwT = throwing ? Math.sin(Math.min(1, Math.max(0, poseT - 0.22) * 3.8) * Math.PI) : 0;
+  return {
+    lean: face * (0.12 + throwT * 0.38),
+    torsoTwist: face * (0.1 + throwT * 0.22),
+    headTilt: throwT * face * 0.07,
+    bob: -throwT * 24,
+    lArmAng: 1.05 + throwT * 0.55, rArmAng: -0.12 - throwT * 0.35,
+    lForeArmAng: -0.32 - throwT * 0.6, rForeArmAng: -0.92,
+    lLegAng: 0.2 + throwT * 0.28, rLegAng: -0.16,
+    lKneeOff: 0.4, rKneeOff: 0.36,
+    lFootAng: 0.06, rFootAng: -0.08,
+  };
+}
+
+export function getAntiAirPose(poseT, face) {
+  const t = Math.min(1, poseT * 3.8);
+  const strike = Math.sin(Math.min(1, poseT * 2.6) * Math.PI);
+  return {
+    lean: face * (0.16 + strike * 0.24),
+    torsoTwist: face * t * 0.14,
+    headTilt: -strike * 0.09,
+    bob: -16 - t * 38 - strike * 14,
+    lArmAng: -0.4 - strike * 1.15, rArmAng: 0.5 + strike * 0.55,
+    lForeArmAng: -0.95 - strike * 0.45, rForeArmAng: -1.2,
+    lLegAng: -0.62 * t, rLegAng: 0.48 * t,
+    lKneeOff: 0.8 * t, rKneeOff: 0.52 * t,
+    lFootAng: -0.2 * t, rFootAng: 0.14 * t,
+  };
+}
+
+export function getJumpAirPose(poseT, pose, face, prof) {
+  const air = prof?.air || {};
+  if (pose === 'jump') {
+    const t = easeOutCubic(Math.min(1, poseT * 3.5));
+    return {
+      lean: face * (0.12 + t * 0.14),
+      torsoTwist: face * t * 0.12,
+      headTilt: -t * 0.06,
+      bob: -6 - t * 14,
+      lArmAng: -0.6 - t * 0.7, rArmAng: 0.5 + t * 0.35,
+      lForeArmAng: -0.9 - t * 0.3, rForeArmAng: -1.2,
+      lLegAng: -0.55 * t, rLegAng: 0.45 * t,
+      lKneeOff: 0.85 * t, rKneeOff: 0.55 * t,
+      lFootAng: -0.2 * t, rFootAng: 0.15 * t,
+    };
+  }
+  const hover = Math.sin(poseT * 2.8) * (air.bob ?? 4);
+  return {
+    lean: face * 0.06,
+    torsoTwist: Math.sin(poseT * 2) * 0.06 * face,
+    headTilt: Math.sin(poseT * 1.5) * 0.04,
+    bob: (air.lift ?? -20) + hover,
+    lArmAng: 0.55, rArmAng: 0.42,
+    lForeArmAng: -1.2, rForeArmAng: -1.35,
+    lLegAng: -0.28, rLegAng: 0.18,
+    lKneeOff: 0.48, rKneeOff: 0.38,
+    lFootAng: -0.1, rFootAng: 0.08,
+  };
+}
+
 export const ATTACK = { jab: 0, cross: 1, hook: 2, lowKick: 3, highKick: 4, powerPunch: 5, uppercut: 6, grab: 7, spinningKick: 8, axeKick: 9, frontKick: 10 };
+
+if (typeof process !== 'undefined' && process.argv[1]?.endsWith('fightAnimations.js')) {
+  const cruise = getFlyPose(0.4, 1, { air: { bob: 6 } }, -240, false);
+  const shot = getFlyPose(0.15, 1, {}, 0, true);
+  console.assert(cruise.lean < 0, 'fly lean follows velocity');
+  console.assert(shot.rArmAng > 0.9, 'fly shoot raises bow arm');
+  console.log('fightAnimations ok');
+}

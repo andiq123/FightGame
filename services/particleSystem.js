@@ -160,11 +160,16 @@ export function spawnDashDust(particles, x, y, dir, rng) {
 
 
 export function tickParticles(particles, dt) {
-  return particles.filter(p => {
+  let n = 0;
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.vy += PARTICLE_GRAVITY * dt;
     p.life += dt * PARTICLE_LIFE_RATE;
-    return p.life < 1;
-  }).slice(-MAX_PARTICLES);
+    if (p.life < 1) particles[n++] = p;
+  }
+  particles.length = n;
+  if (n > MAX_PARTICLES) particles.splice(0, n - MAX_PARTICLES);
+  return particles;
 }

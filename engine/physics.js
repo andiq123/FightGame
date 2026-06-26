@@ -18,7 +18,7 @@ function applyDodgeMotion(fighter, now) {
   fighter.vx = (fighter.dodgeDir ?? 1) * PHYSICS.DODGE_PEAK_SPEED * speedMult * ease;
 }
 
-function applyGravity(fighter, dt) {
+export function applyGravity(fighter, dt) {
   const vy = fighter.vy;
   const nearApex = vy > PHYSICS.APEX_VY_LOW && vy < PHYSICS.APEX_VY_HIGH && fighter.y < 0;
   let mult = vy < 0 ? PHYSICS.GRAVITY_ASCENT : (nearApex ? PHYSICS.GRAVITY_APEX : 1);
@@ -30,7 +30,7 @@ function applyGravity(fighter, dt) {
   if (fighter.y < 0) fighter.vy *= (PHYSICS.AIR_RESISTANCE ?? 0.99);
 }
 
-function applyAirDrag(fighter, dt) {
+export function applyAirDrag(fighter, dt) {
   if (fighter.onGround()) return;
   const speed = Math.hypot(fighter.vx, fighter.vy);
   if (speed < 80) return;
@@ -59,11 +59,12 @@ export function applyFriction(fighter, dt, now) {
   if (Math.abs(fighter.vx) <= (PHYSICS.VELOCITY_DEADZONE ?? 10)) fighter.vx = 0;
 }
 
-function clampToGround(fighter) {
+export function clampToGround(fighter) {
   const gy = fighter.groundY || 0; // floor, or the top of a standable obstacle
   if (fighter.y >= gy) {
     fighter.y = gy;
-    if (Math.abs(fighter.vy) < 45) fighter.vy = 0;
+    if (fighter.vy > 0) fighter.vy = 0; // floor stops downward motion
+    else if (Math.abs(fighter.vy) < 45) fighter.vy = 0;
   }
 }
 

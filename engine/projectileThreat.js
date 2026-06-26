@@ -1,4 +1,5 @@
 import { PROJECTILE } from '../config/constants.js';
+import { bodyYSpan, bodyHalfW } from '../core/hitbox.js';
 
 export function getInboundThreat(fighter, projectiles) {
   const targetId = fighter.id === 0 ? 1 : 0;
@@ -6,8 +7,9 @@ export function getInboundThreat(fighter, projectiles) {
   let best = null;
   let bestT = Infinity;
 
-  const fighterTop = (fighter.y || 0) - 80;
-  const fighterBottom = (fighter.y || 0);
+  const span = bodyYSpan(fighter);
+  const fighterTop = span.top;
+  const hw = bodyHalfW(fighter);
 
   for (const p of inbound) {
     let t = Infinity;
@@ -24,7 +26,7 @@ export function getInboundThreat(fighter, projectiles) {
       if ((p.vy || 0) <= 0 || dy < 0) continue; // Moving up or already below head
 
       // Only a threat if X is close
-      if (Math.abs(dx) > hitRadius + 20) continue;
+      if (Math.abs(dx) > hitRadius + hw) continue;
 
       t = dy / Math.abs(p.vy);
     }

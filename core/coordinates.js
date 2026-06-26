@@ -10,5 +10,6 @@ export function getCloneDissolveY(entityY = 0) {
 }
 
 export function getRagdollOriginY(fighter) {
-  return GROUND_Y - RENDER.STAGGER_ORIGIN_OFFSET + (fighter.y || 0);
+  const s = fighter.scale || 1;
+  return GROUND_Y - RENDER.STAGGER_ORIGIN_OFFSET * s + (fighter.y || 0);
 }

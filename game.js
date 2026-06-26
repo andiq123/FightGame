@@ -251,7 +251,7 @@ function handleRoundEndTransition(now, dt) {
   world.roundHistory.push(rw);
   const loser = world.fighter1.hp <= 0 ? world.fighter1 : world.fighter2;
   const winner = world.fighter1.hp <= 0 ? world.fighter2 : world.fighter1;
-  const rd = createRagdoll(loser.x, getRagdollOriginY(loser), loser.facing, loser.vx, loser.vy, null, false, now, Math.max(0.016, dt));
+  const rd = createRagdoll(loser.x, getRagdollOriginY(loser), loser.facing, loser.vx, loser.vy, null, false, now, Math.max(0.016, dt), loser.scale || 1);
   world.activeRagdolls = [{ ragdoll: rd, color: loser.color }];
   // Stop winner
   winner.vx = 0;

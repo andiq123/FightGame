@@ -1,7 +1,7 @@
 import { updatePhysics, GROUND_Y, ARENA_BOUNDS } from '../physics.js';
 import { spawnLandingDust } from '../../services/particleSystem.js';
-import { COMBAT_EXTRA, PHYSICS_EXTRA } from '../../config/constants.js';
-import { updateRagdoll } from '../ragdoll.js';
+import { updateRagdoll, commitRagdollLaunch } from '../ragdoll.js';
+import { COMBAT, COMBAT_EXTRA, PHYSICS_EXTRA } from '../../config/constants.js';
 
 function markMovementBlocked(fighter, dir, now, reason) {
     if (!dir) return;
@@ -28,6 +28,7 @@ export class PhysicsSystem {
 
             this.resolveObstacleCollision(f, world.obstacles, prevVx, now);
 
+            commitRagdollLaunch(f, now, COMBAT.STAGGER_DURATION_MS);
             if (f.staggerRagdoll) {
                 updateRagdoll(f.staggerRagdoll, scaledDt, now, world.obstacles);
                 const pelvis = f.staggerRagdoll.points[2];
@@ -41,7 +42,7 @@ export class PhysicsSystem {
                 updatePhysics(f, scaledDt, now);
             }
 
-            const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll;
+            const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll || f._ragdollLaunch;
 
             // Detect Wall Slam Damage
             const margin = 25; // Constant.js FIGHTER_MARGIN is 24
@@ -127,7 +128,7 @@ export class PhysicsSystem {
 
     pushOut(f, o, halfW, prevVx, now) {
         const margin = 20;
-        const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll;
+        const isDistressed = f.status.active('stagger', now) || f.pose === 'hit' || f.pose === 'stagger' || f.staggerRagdoll || f._ragdollLaunch;
         if (isDistressed && Math.abs(prevVx) > PHYSICS_EXTRA.IMPACT_DMG_THRESHOLD_WALL && now - (f.lastImpactAt || 0) > 300) {
             const dmg = Math.floor(Math.abs(prevVx) * PHYSICS_EXTRA.IMPACT_DMG_MULT);
             f.takeDamage(dmg, true, o.x, now);

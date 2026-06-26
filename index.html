@@ -120,6 +120,7 @@
       cursor: pointer; transition: all .15s ease; min-width: 60px; font-variant-numeric: tabular-nums; }
     .speed-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
     .speed-fab.boosted { border-color: #ffd66b; color: #ffe39a; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
+    .speed-fab.cam-manual { border-color: rgba(255,140,90,.65); color: #ffc9a8; box-shadow: 0 0 0 2px rgba(255,140,90,.18); }
 
     /* Hide scrollbars (still scrollable by drag/wheel/touch). */
     .ov-card, #overlay { scrollbar-width: none; -ms-overflow-style: none; }
@@ -243,6 +244,7 @@
     <div class="spacer"></div>
 
     <div id="topControls">
+      <button id="autoCamBtn" class="speed-fab" type="button" hidden aria-label="Return to auto camera">🎯 Auto cam</button>
       <button id="speedBtn" class="speed-fab" type="button" aria-label="Game speed">▶ 1×</button>
     </div>
 

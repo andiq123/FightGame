@@ -50,9 +50,12 @@ function newWorld() {
 
 function start() {
   world = newWorld();
+  world.camManual = false;
+  camVel = 0;
   if (import.meta.env?.DEV) window.__td = world;
   running = true;
   hideOverlay();
+  syncAutoCamBtn();
   resumeAudio();
   startMusic();
 }
@@ -189,12 +192,14 @@ function fightFrame(world) {
 function updateCamera(dt, now) {
   if (camDragging) return;
   const zoom = world.zoom || 1;
-  if (Math.abs(camVel) > 0.4 || now < camManualUntil) {
+  if (Math.abs(camVel) > 0.4) {
     world.camX = camClamp(world.camX + camVel, zoom);
     camVel *= 0.88;
     if (Math.abs(camVel) < 0.4) camVel = 0;
     return;
   }
+  if (world.camManual) return;
+
   const frame = fightFrame(world);
   world._camFocus = frame.x;
   world._camSpread = frame.spread;
@@ -247,6 +252,7 @@ const els = {
   ticker: document.getElementById('eventTicker'),
   announce: document.getElementById('announce'),
   speedBtn: document.getElementById('speedBtn'),
+  autoCamBtn: document.getElementById('autoCamBtn'),
 };
 
 let announceTimer = 0;
@@ -262,6 +268,19 @@ function syncSpeedBtn() {
   if (!els.speedBtn) return;
   els.speedBtn.textContent = (gameSpeed > 1 ? '⏩ ' : '▶ ') + gameSpeed + '×';
   els.speedBtn.classList.toggle('boosted', gameSpeed > 1);
+}
+
+function syncAutoCamBtn() {
+  if (!els.autoCamBtn || !world) return;
+  els.autoCamBtn.hidden = !world.camManual;
+  els.autoCamBtn.classList.toggle('cam-manual', world.camManual);
+}
+
+function enableAutoCam() {
+  if (!world) return;
+  world.camManual = false;
+  camVel = 0;
+  syncAutoCamBtn();
 }
 
 function teamCount(team) { let n = 0; for (const c of world.creeps) if (c.hp > 0 && c.team === team) n++; return n; }
@@ -335,11 +354,13 @@ window.addEventListener('keydown', (e) => {
   if (e.key === '3') setSpeed(3);
 });
 els.speedBtn && els.speedBtn.addEventListener('click', cycleSpeed);
+els.autoCamBtn && els.autoCamBtn.addEventListener('click', enableAutoCam);
 syncSpeedBtn();
+syncAutoCamBtn();
 window.addEventListener('resize', () => viewport.resize());
 
 // ── Free camera: drag to pan ──────────────────────────────────────────────────
-let camDragging = false, camLastX = 0, camVel = 0, camManualUntil = 0, camMoved = false;
+let camDragging = false, camLastX = 0, camVel = 0, camMoved = false;
 const worldPerPx = () => LOGICAL_WIDTH / (window.innerWidth * ((world && world.zoom) || 1));
 function camPanStart(clientX) { camDragging = true; camLastX = clientX; camVel = 0; camMoved = false; }
 function camPanMove(clientX) {
@@ -355,8 +376,10 @@ function camPanMove(clientX) {
 function camPanEnd() {
   if (!camDragging) return;
   camDragging = false;
-  if (camMoved) camManualUntil = performance.now() + 3500;
-  else camVel = 0;
+  if (camMoved) {
+    world.camManual = true;
+    syncAutoCamBtn();
+  } else camVel = 0;
 }
 canvas.addEventListener('pointerdown', (e) => camPanStart(e.clientX));
 window.addEventListener('pointermove', (e) => camPanMove(e.clientX));

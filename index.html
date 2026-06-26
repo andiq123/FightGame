@@ -55,6 +55,13 @@
     #enemyHp { background: linear-gradient(90deg,#b5294a,#ff5d7a); }
     #heroHp { background: linear-gradient(90deg,#17a99c,#4ff0e0); }
     #heroStam { background: linear-gradient(90deg,#caa23a,#ffd66b); transition: width .12s linear, opacity .2s ease; }
+    #hpL { background: linear-gradient(90deg,#2f7fd1,#5cc0ff); }
+    #hpR { background: linear-gradient(90deg,#b5294a,#ff5d7a); }
+    .teamstats { display: flex; gap: 14px; margin-top: 7px; font-size: 13px; color: #aab7c8;
+      font-variant-numeric: tabular-nums; }
+    .teamstats b { color: #e7edf5; font-weight: 800; }
+    .panel.team-l { min-width: 220px; }
+    .panel.team-r { min-width: 220px; }
 
     .spacer { flex: 1; }
     .stats { display: flex; gap: 22px; justify-content: flex-end; }
@@ -290,100 +297,44 @@
   </div>
 
   <div id="hud">
-    <div class="panel">
-      <h3>Your Base <span id="aegisPips" class="aegis-pips" title="Aegis barrier charges"></span></h3>
-      <div class="bar"><span id="baseHp"></span></div>
-      <div class="barval"><span id="baseHpVal">0</span> HP</div>
-      <h3 style="margin-top:10px">Hero</h3>
-      <div class="bar" style="height:10px"><span id="heroHp"></span></div>
-      <div class="bar" style="height:7px;margin-top:5px"><span id="heroStam"></span></div>
-      <div class="barval" style="font-size:10px">Stamina</div>
-    </div>
-
-    <div class="panel">
-      <h3>Enemy Keep</h3>
-      <div class="bar"><span id="enemyHp"></span></div>
-      <div class="barval"><span id="enemyHpVal">0</span> HP</div>
+    <div class="panel team-l">
+      <h3>🔵 Blue Base</h3>
+      <div class="bar"><span id="hpL"></span></div>
+      <div class="barval"><span id="hpLVal">0</span> HP</div>
+      <div class="teamstats">
+        <span>⛏ <b id="goldL">0</b></span>
+        <span>💀 <b id="killsL">0</b></span>
+        <span>⚔ <b id="countL">0</b></span>
+      </div>
     </div>
 
     <div class="spacer"></div>
 
     <div id="topControls">
-      <button id="shopBtn" class="shop-fab" type="button" aria-label="Open upgrades">
-        🛒 Upgrades <span class="shop-dot"></span>
-      </button>
       <button id="speedBtn" class="speed-fab" type="button" aria-label="Game speed">▶ 1×</button>
     </div>
 
     <div class="spacer"></div>
 
-    <div class="panel">
-      <div class="stats">
-        <div class="stat"><div class="n" id="waveNum">0</div><div class="l">Wave</div></div>
-        <div class="stat"><div class="n" id="killNum">0</div><div class="l">Kills</div></div>
-        <div class="stat"><div class="n" id="goldNum">0</div><div class="l">Gold</div></div>
+    <div class="panel team-r" style="text-align:right">
+      <h3>🔴 Red Base</h3>
+      <div class="bar"><span id="hpR"></span></div>
+      <div class="barval"><span id="hpRVal">0</span> HP</div>
+      <div class="teamstats" style="justify-content:flex-end">
+        <span>⛏ <b id="goldR">0</b></span>
+        <span>💀 <b id="killsR">0</b></span>
+        <span>⚔ <b id="countR">0</b></span>
       </div>
     </div>
   </div>
 
   <div id="announce"></div>
 
-  <div id="skills"></div>
-
   <div id="overlay">
     <div class="ov-card">
-      <h1 class="ov-title">STICK DEFENSE</h1>
-      <p class="ov-sub">Build your hero, then watch it defend.</p>
-
-      <div class="loadout">
-        <div class="ld-stats">
-          <label class="ld-stat">
-            <span class="ld-lbl">Power <em id="ldPowerVal">14</em></span>
-            <input type="range" id="ldPower" min="1" max="20" step="1" value="14" />
-            <span class="ld-hint">HP · melee &amp; skill damage · defense</span>
-          </label>
-          <label class="ld-stat">
-            <span class="ld-lbl">Intelligence <em id="ldIntVal">14</em></span>
-            <input type="range" id="ldInt" min="1" max="20" step="1" value="14" />
-            <span class="ld-hint">reaction speed · target choice · skill use</span>
-          </label>
-        </div>
-
-        <div class="ld-group">
-          <h4>Traits</h4>
-          <div class="chips" id="ldTraits"></div>
-        </div>
-        <div class="ld-group">
-          <h4>Passives</h4>
-          <div class="chips" id="ldPassives"></div>
-        </div>
-        <div class="ld-group">
-          <h4>Skills</h4>
-          <div class="chips" id="ldSkills"></div>
-        </div>
-      </div>
-
-      <button class="ov-btn">Start</button>
-    </div>
-  </div>
-
-  <div id="shopToast" class="shop-toast">Upgrades available — press B to shop</div>
-
-  <div id="shop">
-    <div class="shop-card">
-      <div class="shop-head">
-        <div>
-          <h2 class="shop-title">Upgrades · Wave <span id="shopWave">1</span></h2>
-          <p class="shop-sub">Spend gold any time — the game keeps running.</p>
-        </div>
-        <div class="shop-gold"><span id="shopGold">0</span><em>gold</em></div>
-      </div>
-      <div id="shopItems" class="shop-items"></div>
-      <div class="shop-actions">
-        <button id="shopAuto" class="ov-btn ghost" type="button">🤖 Auto-buy: ON</button>
-        <button id="shopClose" class="ov-btn" type="button">Close</button>
-      </div>
-      <p class="shop-hint">Auto-buy spends gold for you. Turn it off to shop manually.</p>
+      <h1 class="ov-title">STICK WARS</h1>
+      <p class="ov-sub">Two AI bases. Endless gold. Watch them fight.</p>
+      <button class="ov-btn">Start Battle</button>
     </div>
   </div>
 

@@ -1,28 +1,16 @@
 import { TD } from './config.js';
-import { createHero, POSE } from './units.js';
-import { createTower } from './towers.js';
-import { createWaveState, updateWaves } from './waves.js';
-import { updateHero, updateMonster, nearestMonster } from './ai.js';
+import { createBase } from './towers.js';
+import { updateCreep, nearestEnemyCreep } from './ai.js';
 import {
-  integrate, resolveHeroAttacks, resolveMonsterAttacks,
-  resolveHeroVsEnemyTower, reapDead, separateMonsters,
-  ragdollKnockback, tickRagdolls,
+  integrate, resolveCreepAttacks, resolveCreepVsBase,
+  reapCreeps, separateCreeps, tickRagdolls,
 } from './combat.js';
-import { castHeroSkill, updateProjectiles, fireTowerArrow } from './projectiles.js';
+import { updateProjectiles, fireBaseArrow } from './projectiles.js';
+import { runEconomy } from './spawner.js';
 import { TDViewport, LOGICAL_WIDTH } from './render.js';
-import { initSetup, readLoadout } from './setup.js';
-import { initShop, toggleShop, tickShop, hasAffordable, aiAutoBuy, openShop, isShopOpen } from './shop.js';
-import { updateAlly, resolveAllyAttacks, reapAllies } from './allies.js';
-import { POWERS } from '../entities/powers.js';
-
-const SKILL_LABEL = Object.fromEntries(
-  (Array.isArray(POWERS) ? POWERS : Object.values(POWERS)).map(p => [p.id, p.name])
-);
-import { tickParticles, spawnLandingDust, spawnClonePoof, spawnHealParticles, spawnDashDust } from '../services/particleSystem.js';
+import { tickParticles, spawnLandingDust, spawnDashDust } from '../services/particleSystem.js';
 import { secureRandom } from '../utils.js';
 import { resumeAudio, startMusic, stopMusic, playSfx, toggleMute } from '../services/audio.js';
-
-const HERO_RESPAWN_MS = 3500; // downed time before the hero rallies back at base
 
 const canvas = document.getElementById('canvas');
 const viewport = new TDViewport(canvas);
@@ -34,87 +22,48 @@ let lastTime = performance.now();
 function newWorld() {
   return {
     rng: secureRandom,
-    hero: createHero(readLoadout()),
-    monsters: [],
-    allies: [],
-    baseCharges: TD.BASE_AEGIS.charges, // hidden last-resort Aegis pulses left this run
-    baseAegisCdUntil: 0,
-    baseAegisFx: null,
-    enemyBaseCharges: TD.BASE_AEGIS.charges, // the enemy keep gets the same 3 pulses
-    enemyAegisCdUntil: 0,
-    enemyAegisFx: null,
-    playerTower: createTower('player'),
-    enemyTower: createTower('enemy'),
+    creeps: [],
+    bases: { L: createBase('L'), R: createBase('R') },
     particles: [],
     projectiles: [],
     hitEffects: [],
-    waveState: createWaveState(),
     camX: 0,
     zoom: 1,
     screenShake: 0,
     slowMo: 0,
-    kills: 0,
-    gold: 0,
-    announce: null,
-    waveEvent: null,
-    over: null,        // 'win' | 'lose'
-    heroDownUntil: 0,
-    autoBuy: true,     // hero spends its own gold automatically (default on)
+    over: null,        // winning team 'L' | 'R' | 'draw' once decided
     time: 0,
+    level: 0,          // slow global ramp so battles escalate and resolve
   };
 }
 
 function start() {
   world = newWorld();
-  world.camX = world.hero.x; // open framed on the hero, then drift with the action
-  if (import.meta.env?.DEV) window.__td = world; // dev-only inspection hook
+  if (import.meta.env?.DEV) window.__td = world;
   running = true;
-  nextAutoBuyAt = 0;
-  syncAutoBtn();
   hideOverlay();
   resumeAudio();
   startMusic();
 }
 
-// ── Game speed ───────────────────────────────────────────────────────────────
-// Fast-forward by running N full physics sub-steps per rendered frame, each with
-// a normal-sized dt — so collisions/timers stay stable at 2×/3× instead of
-// ballooning dt (which would tunnel). All gameplay reads a VIRTUAL clock that we
-// advance per sub-step, so cooldowns/decisions speed up in lockstep with motion.
+// ── Game speed (same sub-step model as before) ───────────────────────────────
 const SPEEDS = [1, 2, 3];
 let gameSpeed = 1;
 let gameClock = performance.now();
-
 export function getGameSpeed() { return gameSpeed; }
-function cycleSpeed() {
-  gameSpeed = SPEEDS[(SPEEDS.indexOf(gameSpeed) + 1) % SPEEDS.length];
-  syncSpeedBtn();
-}
+function cycleSpeed() { gameSpeed = SPEEDS[(SPEEDS.indexOf(gameSpeed) + 1) % SPEEDS.length]; syncSpeedBtn(); }
 function setSpeed(n) { if (SPEEDS.includes(n)) { gameSpeed = n; syncSpeedBtn(); } }
 
-// ── Main loop ────────────────────────────────────────────────────────────────
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
   if (running && world) {
     for (let i = 0; i < gameSpeed; i++) { gameClock += dt * 1000; update(dt, gameClock); }
   } else {
-    gameClock += dt * 1000; // keep the clock moving while idle so timers don't jump on resume
+    gameClock += dt * 1000;
   }
   if (world) viewport.render(world, gameClock);
   requestAnimationFrame(loop);
-}
-
-// Dev-only deterministic stepper so the sim can be exercised in headless
-// previews where requestAnimationFrame is throttled. No effect in production.
-if (import.meta.env?.DEV) {
-  window.__clock = () => gameClock; // virtual game clock (advances faster at 2×/3×)
-  let synthNow = performance.now();
-  window.__tick = (frames = 1, dt = 0.016) => {
-    for (let i = 0; i < frames; i++) { synthNow += dt * 1000; if (running && world) update(dt, synthNow); }
-    if (world) viewport.render(world, synthNow);
-    return world && { wave: world.waveState.wave, monsters: world.monsters.length, kills: world.kills };
-  };
 }
 
 function update(dt, now) {
@@ -124,232 +73,59 @@ function update(dt, now) {
   if (world.slowMo > 0) world.slowMo -= dt * 1000;
   const sdt = dt * slow;
 
-  // Advance any active ragdolls first, so each unit's own update reads the freshly
-  // solved pelvis position when it syncs its body.
+  world.time += dt;
+  world.level = Math.floor(world.time / 30); // every 30s the next creeps get a touch stronger
+
   tickRagdolls(world, sdt, now);
+  runEconomy(world, dt, now);
 
-  updateWaves(world, world.waveState, dt, now);
-
-  // Hero — fully autonomous. When downed, the base must hold on its own until
-  // the hero rallies back.
-  const downed = handleHeroDown(now);
-  if (!downed) {
-    const intent = updateHero(world.hero, world, sdt, now);
-    if (intent.skill) {
-      castHeroSkill(world, world.hero, intent.skill, now);
-      playSfx(intent.skill.kind === 'heal' ? 'heal' : intent.skill.kind === 'buff' ? 'sharinganActivate' : 'projectile');
-    }
-    world.hero.update(sdt, now);
-    integrate(world.hero, sdt);
-    applyBaseHeal(sdt, now);
+  for (const c of world.creeps) {
+    if (c.hp <= 0) continue;
+    const wasAir = c.y < -6;
+    updateCreep(c, world, sdt, now);
+    c.update(sdt, now);
+    integrate(c, sdt);
+    if (c.needsDashDust) { spawnDashDust(world.particles, c.x, TD.GROUND_Y, c.facing, world.rng); c.needsDashDust = false; }
+    if (wasAir && c.y >= -1) spawnLandingDust(world.particles, c.x, TD.GROUND_Y, 90, world.rng);
   }
+  separateCreeps(world);
 
-  // Monsters
-  for (const m of world.monsters) {
-    if (m.hp <= 0) continue;
-    const wasAir = m.y < -6;
-    updateMonster(m, world, sdt, now);
-    m.update(sdt, now);
-    integrate(m, sdt);
-    if (m.needsDashDust) { spawnDashDust(world.particles, m.x, TD.GROUND_Y, m.facing, world.rng); m.needsDashDust = false; }
-    if (wasAir && m.y >= -1) spawnLandingDust(world.particles, m.x, TD.GROUND_Y, 90, world.rng); // leap landing
-  }
-  separateMonsters(world);
-
-  // Allied reinforcements — recruited from the shop, they march out and intercept
-  // the enemy column (their kills credit the hero's gold).
-  for (const a of world.allies) {
-    if (a.hp <= 0) continue;
-    const wasAir = a.y < -6;
-    updateAlly(a, world, sdt, now);
-    a.update(sdt, now);
-    integrate(a, sdt);
-    if (a.needsDashDust) { spawnDashDust(world.particles, a.x, TD.GROUND_Y, a.facing, world.rng); a.needsDashDust = false; }
-    if (wasAir && a.y >= -1) spawnLandingDust(world.particles, a.x, TD.GROUND_Y, 90, world.rng);
-  }
-
-  fireTowers(now);
+  fireBases(now);
   updateProjectiles(world, sdt, now);
 
-  // Combat resolution (skip the hero's offence while downed)
-  if (!downed) {
-    resolveHeroAttacks(world, now);
-    resolveHeroVsEnemyTower(world, now);
-  }
-  resolveAllyAttacks(world, now);
-  resolveMonsterAttacks(world, now);
-  reapDead(world, now);
-  reapAllies(world);
+  resolveCreepAttacks(world, now);
+  resolveCreepVsBase(world, now);
+  reapCreeps(world, now);
 
-  maybeBaseAegis(now);
-  maybeEnemyAegis(now);
-  maybeAutoBuy(now);
   observeAudio(now);
   decayEffects(dt);
   updateCamera(dt);
-  updateHUD(now);
+  updateHUD();
   checkEnd();
 }
 
-// Hidden Aegis Barrier: when the base is about to fall (HP under the threshold)
-// and a charge remains, it unleashes a rising kinetic pulse — flinging every
-// enemy far down the lane on a real ballistic arc (gravity finishes the throw)
-// and surging the base back to 70%. A scarce lifeline that turns a near-death
-// collapse into a dramatic comeback.
-function maybeBaseAegis(now) {
-  const B = TD.BASE_AEGIS;
-  const pt = world.playerTower;
-  if (pt.hp <= 0 || world.baseCharges <= 0) return;
-  if (now < (world.baseAegisCdUntil || 0)) return;
-  if (pt.hp > pt.maxHp * B.hpThreshold) return;
-
-  world.baseCharges -= 1;
-  world.baseAegisCdUntil = now + B.cooldownMs;
-  pt.hp = Math.max(pt.hp, pt.maxHp * B.healTo); // structure surges back to 70%
-
-  for (const m of world.monsters) {
-    if (m.hp <= 0) continue;
-    const dist = Math.abs(m.x - pt.x);
-    const prox = 1 - Math.min(1, dist / 2600);          // closer = flung harder
-    const boost = 1 + B.proximityBoost * prox;
-    if (B.damage) m.takeDamage(B.damage, true, pt.x, now);
-    // Hurl every enemy DOWN-lane on a tumbling ragdoll arc (away from the base).
-    if (m.hp > 0 && !ragdollKnockback(world, m, pt.x, Math.abs(B.pushVx) * boost, B.pushVy * boost, now)) {
-      m.vx = Math.abs(B.pushVx) * boost; m.vy = B.pushVy * boost;
-      m.status.set('stun', now + 700); m.currentAttack = null; m.pose = POSE.hit; m.poseTime = 0;
-    }
-  }
-  reapDead(world, now); // any flung enemy that the chip damage finished credits gold
-
-  world.slowMo = Math.max(world.slowMo, 260);
-  world.screenShake = Math.min(44, world.screenShake + 32);
-  world.baseAegisFx = { x: pt.x, startedAt: now, dur: 720 };
-  world.announce = { text: 'AEGIS BARRIER', until: now + 1700, big: true };
-  playSfx('skill');
-}
-
-// The ENEMY keep wields the same last-resort barrier: when it's about to fall and
-// a charge remains, it blasts the hero AND allies back toward their own base on a
-// ragdoll arc and surges its own structure back to 70%. Symmetric to the player's
-// Aegis — three pulses for the whole run.
-function maybeEnemyAegis(now) {
-  const B = TD.BASE_AEGIS;
-  const et = world.enemyTower;
-  if (et.hp <= 0 || world.enemyBaseCharges <= 0) return;
-  if (now < (world.enemyAegisCdUntil || 0)) return;
-  if (et.hp > et.maxHp * B.hpThreshold) return;
-
-  world.enemyBaseCharges -= 1;
-  world.enemyAegisCdUntil = now + B.cooldownMs;
-  et.hp = Math.max(et.hp, et.maxHp * B.healTo);
-
-  const victims = [world.hero, ...world.allies];
-  for (const u of victims) {
-    if (!u || u.hp <= 0) continue;
-    const dist = Math.abs(u.x - et.x);
-    const prox = 1 - Math.min(1, dist / 2600);
-    const boost = 1 + B.proximityBoost * prox;
-    if (B.damage) u.takeDamage(B.damage, true, et.x, now);
-    // Hurled toward the player base (negative x = away from the enemy keep).
-    if (u.hp > 0 && !ragdollKnockback(world, u, et.x, -Math.abs(B.pushVx) * boost, B.pushVy * boost, now)) {
-      u.vx = -Math.abs(B.pushVx) * boost; u.vy = B.pushVy * boost;
-      u.status.set('stun', now + 700); u.currentAttack = null; u.pose = POSE.hit; u.poseTime = 0;
-    }
-  }
-  world.slowMo = Math.max(world.slowMo, 260);
-  world.screenShake = Math.min(44, world.screenShake + 32);
-  world.enemyAegisFx = { x: et.x, startedAt: now, dur: 720 };
-  world.announce = { text: 'ENEMY AEGIS', until: now + 1700, big: true };
-  playSfx('skill');
-}
-
-// Continuous auto-buy: while enabled (the default), the hero keeps spending its
-// own gold on whatever helps it most, throttled so it's not evaluated every
-// frame. Turn it off in the shop panel to take full manual control.
-let nextAutoBuyAt = 0;
-function maybeAutoBuy(now) {
-  if (!world.autoBuy || now < nextAutoBuyAt) return;
-  nextAutoBuyAt = now + 1200;
-  aiAutoBuy(world);
-}
-
-// Both towers auto-fire arrows at threats in range (classic TD): your base rains
-// arrows on the nearest monster, the enemy keep snipes the hero.
-function fireTowers(now) {
-  const F = TD.TOWER_FIRE;
-  shootTower(world.playerTower, nearestMonster(world, world.playerTower.x), 'monster', F.damage, now);
-  const heroTarget = (world.hero.hp > 0 && !world.heroDownUntil) ? world.hero : null;
-  shootTower(world.enemyTower, heroTarget, 'hero', F.damage * F.enemyDamageMul, now);
-}
-function shootTower(tower, target, side, dmg, now) {
-  if (tower.hp <= 0 || !target || target.hp <= 0) return;
-  if (Math.abs(target.x - tower.x) > TD.TOWER_FIRE.range) return;
-  if (now < (tower.nextFireAt || 0)) return;
-  tower.nextFireAt = now + TD.TOWER_FIRE.cooldownMs;
-  const dir = Math.sign(target.x - tower.x) || 1;
-  fireTowerArrow(world, tower.x + dir * (tower.w / 2), -(tower.h - 36), dir, side, Math.round(dmg), target.x, now);
-}
-
-// The base is a safe haven: while the hero is near it, it recovers HP and
-// stamina (faster when actively sheltering/fleeing). Heal sparkles show it.
-let lastHealFxAt = 0;
-function applyBaseHeal(dt, now) {
-  const h = world.hero;
-  if (h.hp <= 0) return;
-  const dist = Math.abs(h.x - world.playerTower.x);
-  if (dist > TD.HERO.baseHealZone) return;
-  if (h.hp < h.maxHp) h.hp = Math.min(h.maxHp, h.hp + dt * TD.HERO.baseHealHpPerSec * h.maxHp);
-  h.stamina = Math.min(h.maxStamina, h.stamina + dt * TD.HERO.baseHealStamPerSec);
-  if (now - lastHealFxAt > 140 && h.hp < h.maxHp) {
-    lastHealFxAt = now;
-    spawnHealParticles(world.particles, h, world.rng);
+// Both bases auto-fire arrows at the nearest enemy creep in range.
+function fireBases(now) {
+  const F = TD.BASE_FIRE;
+  for (const team of ['L', 'R']) {
+    const base = world.bases[team];
+    if (base.hp <= 0 || now < (base.nextFireAt || 0)) continue;
+    const tgt = nearestEnemyCreep(world, team, base.x);
+    if (!tgt || Math.abs(tgt.x - base.x) > F.range) continue;
+    base.nextFireAt = now + F.cooldownMs;
+    fireBaseArrow(world, base, tgt, now);
   }
 }
 
-// Returns true while the hero is down (and not controllable). The hero only
-// permanently fails the run if the BASE falls — otherwise they revive at base.
-function handleHeroDown(now) {
-  const h = world.hero;
-  if (h.hp > 0) return false;
-  if (!world.heroDownUntil) {
-    world.heroDownUntil = now + HERO_RESPAWN_MS;
-    spawnClonePoof(world.particles, h, world.rng);
-    playSfx('ko');
-    world.announce = { text: 'HERO DOWN — HOLD THE LINE', until: now + HERO_RESPAWN_MS };
-  }
-  if (now >= world.heroDownUntil) {
-    world.heroDownUntil = 0;
-    h.hp = h.maxHp;
-    h.stamina = h.maxStamina;
-    h.x = world.playerTower.x + 200;
-    h.vx = h.vy = 0;
-    h.status = h.status.constructor ? new (h.status.constructor)() : h.status;
-    h.pose = 'idle';
-    h.currentAttack = null;
-    spawnLandingDust(world.particles, h.x, TD.GROUND_Y, 180, world.rng);
-    return false;
-  }
-  return true;
-}
-
-// Drive combat sound effects off world state (swings, impacts, landings).
 function observeAudio(now) {
-  // New hit-effects → impact sounds.
   for (const h of world.hitEffects) {
     if (h._sfx) continue;
     h._sfx = true;
-    playSfx(h.crit ? 'crit' : h.heavy ? 'hitHeavy' : 'hit');
+    if (h.dmg > 0 || h.heavy) playSfx(h.heavy ? 'hitHeavy' : 'hit');
   }
-  // Attack swings + landings for the hero and every monster.
-  const units = [world.hero, ...world.monsters];
-  for (const f of units) {
-    if (!f) continue;
-    const atkId = f.currentAttack ? f.currentAttack.started : 0;
-    if (atkId && f._swingSfxId !== atkId) { f._swingSfxId = atkId; playSfx('swing'); }
-    const onG = f.onGround();
-    if (f._prevOnGround && !onG && (f.vy || 0) < -250) playSfx('jump');
-    if (!f._prevOnGround && onG) playSfx('land');
-    f._prevOnGround = onG;
+  for (const c of world.creeps) {
+    const atkId = c.currentAttack ? c.currentAttack.started : 0;
+    if (atkId && c._swingSfxId !== atkId) { c._swingSfxId = atkId; playSfx('swing'); }
   }
 }
 
@@ -362,36 +138,19 @@ function decayEffects(dt) {
 
 const camClamp = (x) => { const lim = TD.STAGE_HALF - 760; return Math.max(-lim, Math.min(lim, x)); };
 
-// Free, battle-framing camera that the PLAYER can override by dragging. While the
-// finger/mouse is panning (or coasting on momentum, or within the grace window
-// after a flick) the auto-follow stands down so you can look around freely; once
-// you let go and it settles, it eases back to the centre of the action — a weighted
-// average of the hero, allies, and nearby enemies — keeping the hero in frame.
+// Free camera: drift to the centre of mass of the fighting, draggable by the player.
 function updateCamera(dt) {
   const now = performance.now();
-  if (camDragging) return;                       // finger is driving the camera directly
+  if (camDragging) return;
   if (Math.abs(camVel) > 0.4 || now < camManualUntil) {
-    world.camX = camClamp(world.camX + camVel);   // momentum glide after a flick
+    world.camX = camClamp(world.camX + camVel);
     camVel *= 0.88;
     if (Math.abs(camVel) < 0.4) camVel = 0;
     return;
   }
-  let target;
-  if (world.hero.hp > 0) {
-    let sum = world.hero.x * 1.5, n = 1.5; // hero stays in frame without dominating
-    for (const a of world.allies) if (a.hp > 0) { sum += a.x; n++; }
-    for (const m of world.monsters) {
-      if (m.hp > 0 && Math.abs(m.x - world.hero.x) < 1600) { sum += m.x; n++; } // ignore distant spawns
-    }
-    target = sum / n;
-    // Keep the hero comfortably on screen (view is ~960px each side): the camera
-    // may lead toward the action, but never so far it loses our hero.
-    const maxLead = 560;
-    target = Math.max(world.hero.x - maxLead, Math.min(world.hero.x + maxLead, target));
-  } else {
-    target = world.playerTower.x; // hero down → watch the base hold the line
-  }
-  // Soft deadzone: don't chase tiny drifts, so the frame feels loose, not locked.
+  let sum = 0, n = 0;
+  for (const c of world.creeps) if (c.hp > 0 && c.role !== 'miner') { sum += c.x; n++; }
+  const target = n ? sum / n : 0;
   if (Math.abs(target - world.camX) > 50) {
     world.camX += (target - world.camX) * Math.min(1, dt * TD.CAMERA_SMOOTH * 0.7);
   }
@@ -399,9 +158,9 @@ function updateCamera(dt) {
 }
 
 function checkEnd() {
-  if (world.playerTower.hp <= 0) endGame('lose');           // base fell → defeat
-  else if (world._survivedAll) endGame('win');              // outlasted all 20 waves → victory
-  else if (world.enemyTower.hp <= 0) endGame('win');        // (or razed the fortress, if you can)
+  const L = world.bases.L.hp, R = world.bases.R.hp;
+  if (L > 0 && R > 0) return;
+  endGame(L <= 0 && R <= 0 ? 'draw' : L <= 0 ? 'R' : 'L');
 }
 
 function endGame(result) {
@@ -409,26 +168,18 @@ function endGame(result) {
   world.over = result;
   running = false;
   stopMusic();
-  playSfx(result === 'win' ? 'skill' : 'ko');
+  playSfx(result === 'draw' ? 'ko' : 'skill');
   showOverlay(result);
 }
 
 // ── HUD ──────────────────────────────────────────────────────────────────────
 const els = {
-  baseHp: document.getElementById('baseHp'),
-  baseHpVal: document.getElementById('baseHpVal'),
-  aegisPips: document.getElementById('aegisPips'),
-  enemyHp: document.getElementById('enemyHp'),
-  enemyHpVal: document.getElementById('enemyHpVal'),
-  heroHp: document.getElementById('heroHp'),
-  heroStam: document.getElementById('heroStam'),
-  wave: document.getElementById('waveNum'),
-  kills: document.getElementById('killNum'),
-  gold: document.getElementById('goldNum'),
+  hpL: document.getElementById('hpL'), hpR: document.getElementById('hpR'),
+  hpLVal: document.getElementById('hpLVal'), hpRVal: document.getElementById('hpRVal'),
+  goldL: document.getElementById('goldL'), goldR: document.getElementById('goldR'),
+  killsL: document.getElementById('killsL'), killsR: document.getElementById('killsR'),
+  countL: document.getElementById('countL'), countR: document.getElementById('countR'),
   announce: document.getElementById('announce'),
-  skills: document.getElementById('skills'),
-  shopBtn: document.getElementById('shopBtn'),
-  shopToast: document.getElementById('shopToast'),
   speedBtn: document.getElementById('speedBtn'),
 };
 
@@ -438,119 +189,43 @@ function syncSpeedBtn() {
   els.speedBtn.classList.toggle('boosted', gameSpeed > 1);
 }
 
-// Equipped-skill bar — rebuild when the kit changes (e.g. learned in the shop),
-// and refresh each cooldown/availability every frame.
-let skillSig = '';
-function updateSkillsHud(now) {
-  const h = world.hero;
-  const skills = h.skills || [];
-  const sig = skills.map(s => s.id).join(',');
-  if (sig !== skillSig) {
-    skillSig = sig;
-    els.skills.innerHTML = '';
-    for (const s of skills) {
-      const d = document.createElement('div');
-      d.className = 'skill';
-      d.innerHTML = `<div class="sk-cd"></div><span class="sk-name">${SKILL_LABEL[s.id] || s.id}</span><span class="sk-timer"></span>`;
-      els.skills.appendChild(d);
-    }
-  }
-  const children = els.skills.children;
-  for (let i = 0; i < skills.length; i++) {
-    const s = skills[i], d = children[i];
-    if (!d) continue;
-    const total = (s.cooldownMs || 1000) * (h.skillCooldownMult || 1);
-    const rem = Math.min(total, Math.max(0, (h.powerCooldowns[s.id] || 0) - now)); // clamp guards clock skew
-    d.querySelector('.sk-cd').style.height = `${Math.min(100, 100 * rem / total)}%`;
-    const onCd = rem > 0;
-    const ready = !onCd && h.stamina >= TD.HERO.skillStaminaCost && h.hp > 0;
-    // Live cooldown countdown in seconds (1 decimal under 10s, whole above).
-    const secs = rem / 1000;
-    d.querySelector('.sk-timer').textContent = onCd ? (secs >= 10 ? Math.ceil(secs) + 's' : secs.toFixed(1) + 's') : '';
-    d.classList.toggle('on-cd', onCd);
-    d.classList.toggle('ready', ready);
-    d.classList.toggle('charging', !ready);
-  }
-}
+function teamCount(team) { let n = 0; for (const c of world.creeps) if (c.hp > 0 && c.team === team) n++; return n; }
 
-// Shop button + "upgrades available" nudge. The toast fires once each time the
-// player crosses from "can't afford anything" to "can afford something" — a
-// simple, non-nagging hint rather than a popup after every wave.
-let wasAffordable = false;
-let toastUntil = 0;
-function updateShopHud(now) {
-  // When auto-buy is on, the hero handles spending — no nagging. The nudge only
-  // appears in manual mode, when the player actually needs to act.
-  const manual = !world.autoBuy;
-  const affordable = manual && hasAffordable(world);
-  const open = isShopOpen();
-  if (els.shopBtn) els.shopBtn.classList.toggle('has-deals', affordable && !open);
-  if (affordable && !wasAffordable && !open) toastUntil = now + 3200;
-  wasAffordable = affordable;
-  if (els.shopToast) els.shopToast.classList.toggle('show', now < toastUntil);
-}
-
-function updateHUD(now) {
-  const pt = world.playerTower, et = world.enemyTower, h = world.hero;
-  if (els.baseHp) els.baseHp.style.width = `${100 * pt.hp / pt.maxHp}%`;
-  if (els.baseHpVal) els.baseHpVal.textContent = Math.ceil(pt.hp);
-  if (els.aegisPips) {
-    const total = TD.BASE_AEGIS.charges, left = world.baseCharges;
-    const sig = left + '/' + total;
-    if (els.aegisPips._sig !== sig) {
-      els.aegisPips._sig = sig;
-      let s = '';
-      for (let i = 0; i < total; i++) s += `<span class="pip${i < left ? '' : ' spent'}">⛨</span>`;
-      els.aegisPips.innerHTML = s;
-    }
-  }
-  if (els.enemyHp) els.enemyHp.style.width = `${100 * et.hp / et.maxHp}%`;
-  if (els.enemyHpVal) els.enemyHpVal.textContent = Math.ceil(et.hp);
-  if (els.heroHp) els.heroHp.style.width = `${100 * Math.max(0, h.hp) / h.maxHp}%`;
-  if (els.heroStam) {
-    els.heroStam.style.width = `${100 * Math.max(0, h.stamina) / h.maxStamina}%`;
-    els.heroStam.style.opacity = h._winded ? '0.55' : '1';
-  }
-  if (els.wave) els.wave.textContent = world.waveState.wave;
-  if (els.kills) els.kills.textContent = world.kills;
-  if (els.gold) els.gold.textContent = world.gold;
-  if (els.skills) updateSkillsHud(now);
-  updateShopHud(now);
-  tickShop(world); // keep the (non-pausing) panel live while it's open
-  if (els.announce) {
-    if (world.announce && now < world.announce.until) {
-      els.announce.textContent = world.announce.text;
-      els.announce.classList.add('show');
-    } else {
-      els.announce.classList.remove('show');
-    }
-  }
+function updateHUD() {
+  const L = world.bases.L, R = world.bases.R;
+  if (els.hpL) els.hpL.style.width = `${100 * Math.max(0, L.hp) / L.maxHp}%`;
+  if (els.hpR) els.hpR.style.width = `${100 * Math.max(0, R.hp) / R.maxHp}%`;
+  if (els.hpLVal) els.hpLVal.textContent = Math.ceil(Math.max(0, L.hp));
+  if (els.hpRVal) els.hpRVal.textContent = Math.ceil(Math.max(0, R.hp));
+  if (els.goldL) els.goldL.textContent = Math.floor(L.gold);
+  if (els.goldR) els.goldR.textContent = Math.floor(R.gold);
+  if (els.killsL) els.killsL.textContent = L.kills;
+  if (els.killsR) els.killsR.textContent = R.kills;
+  if (els.countL) els.countL.textContent = teamCount('L');
+  if (els.countR) els.countR.textContent = teamCount('R');
 }
 
 // ── Overlay ──────────────────────────────────────────────────────────────────
 const overlay = document.getElementById('overlay');
 function showOverlay(result) {
-  const title = result === 'win' ? 'VICTORY' : result === 'lose' ? 'BASE LOST' : 'STICK DEFENSE';
-  const sub = result === 'win'
-    ? `Enemy keep destroyed! ${world.kills} kills.`
-    : result === 'lose'
-      ? `Survived ${world.waveState.wave} waves · ${world.kills} kills.`
-      : 'Defend your base. Smash the enemy keep.';
+  const title = !result ? 'STICK WARS'
+    : result === 'draw' ? 'MUTUAL DESTRUCTION'
+    : (result === 'L' ? 'BLUE WINS' : 'RED WINS');
+  const sub = result
+    ? `${world.bases.L.kills} vs ${world.bases.R.kills} kills · ${Math.floor(world.time)}s`
+    : 'Two AI bases. Endless gold. Watch them fight.';
   overlay.querySelector('.ov-title').textContent = title;
   overlay.querySelector('.ov-sub').textContent = sub;
-  overlay.querySelector('.ov-btn').textContent = result ? 'Play Again' : 'Start';
+  overlay.querySelector('.ov-btn').textContent = result ? 'Battle Again' : 'Start Battle';
   overlay.classList.add('visible');
 }
 function hideOverlay() { overlay.classList.remove('visible'); }
-
 overlay.querySelector('.ov-btn').addEventListener('click', start);
 
-// ── Input ────────────────────────────────────────────────────────────────────
-// The hero is fully autonomous — the only key is mute.
+// ── Input ──────────────────────────────────────────────────────────────────
 window.addEventListener('keydown', (e) => {
   if (e.key === 'm' || e.key === 'M') toggleMute();
-  if ((e.key === 'b' || e.key === 'B') && world && !world.over) toggleShop(world);
-  if (e.key === ' ') { e.preventDefault(); cycleSpeed(); }   // Space cycles 1×→2×→3×
+  if (e.key === ' ') { e.preventDefault(); cycleSpeed(); }
   if (e.key === '1') setSpeed(1);
   if (e.key === '2') setSpeed(2);
   if (e.key === '3') setSpeed(3);
@@ -559,13 +234,9 @@ els.speedBtn && els.speedBtn.addEventListener('click', cycleSpeed);
 syncSpeedBtn();
 window.addEventListener('resize', () => viewport.resize());
 
-// ── Free camera: drag to pan (touch & mouse), with native-feeling momentum ──────
-// Dragging anywhere on the play field pans the camera; the auto-follow stands down
-// while you drag and for a short grace window after, then eases back to the action.
+// ── Free camera: drag to pan ──────────────────────────────────────────────────
 let camDragging = false, camLastX = 0, camVel = 0, camManualUntil = 0, camMoved = false;
-// World units per CSS pixel of drag (accounts for the render scale + zoom).
 const worldPerPx = () => LOGICAL_WIDTH / (window.innerWidth * ((world && world.zoom) || 1));
-
 function camPanStart(clientX) { camDragging = true; camLastX = clientX; camVel = 0; camMoved = false; }
 function camPanMove(clientX) {
   if (!camDragging || !world) return;
@@ -573,41 +244,22 @@ function camPanMove(clientX) {
   if (Math.abs(dxPx) > 1) camMoved = true;
   const dxWorld = dxPx * worldPerPx();
   camLastX = clientX;
-  world.camX = camClamp(world.camX - dxWorld);   // content follows the finger
-  camVel = camVel * 0.5 - dxWorld * 0.5;          // smoothed velocity for the flick
-  camVel = Math.max(-90, Math.min(90, camVel));   // cap so a flick glides, not rockets
+  world.camX = camClamp(world.camX - dxWorld);
+  camVel = camVel * 0.5 - dxWorld * 0.5;
+  camVel = Math.max(-90, Math.min(90, camVel));
 }
 function camPanEnd() {
   if (!camDragging) return;
   camDragging = false;
-  if (camMoved) camManualUntil = performance.now() + 3500; // a tap shouldn't freeze auto-follow
+  if (camMoved) camManualUntil = performance.now() + 3500;
   else camVel = 0;
 }
-
-canvas.addEventListener('pointerdown', (e) => { camPanStart(e.clientX); });
+canvas.addEventListener('pointerdown', (e) => camPanStart(e.clientX));
 window.addEventListener('pointermove', (e) => camPanMove(e.clientX));
 window.addEventListener('pointerup', camPanEnd);
 window.addEventListener('pointercancel', camPanEnd);
 
 // Boot
-initSetup();        // build the loadout chooser from the shared registries
-initShop();         // the optional, non-pausing upgrade panel
-// Shop toggle button (open/close any time). The "let hero choose" button spends
-// gold the same way the hero does automatically between waves.
-els.shopBtn && els.shopBtn.addEventListener('click', () => world && toggleShop(world));
-const shopAutoBtn = document.getElementById('shopAuto');
-function syncAutoBtn() {
-  if (!shopAutoBtn || !world) return;
-  shopAutoBtn.textContent = world.autoBuy ? '🤖 Auto-buy: ON' : '✋ Auto-buy: OFF';
-  shopAutoBtn.classList.toggle('active', world.autoBuy);
-}
-shopAutoBtn && shopAutoBtn.addEventListener('click', () => {
-  if (!world) return;
-  world.autoBuy = !world.autoBuy;
-  if (world.autoBuy) nextAutoBuyAt = 0; // buy immediately when re-enabled
-  syncAutoBtn();
-});
 world = newWorld();
-syncAutoBtn();
 showOverlay(null);
 requestAnimationFrame(loop);

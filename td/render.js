@@ -3,7 +3,7 @@ import {
   drawParticles, drawHitVignette,
 } from '../engine/renderer.js';
 import { drawRagdoll } from '../engine/ragdoll.js';
-import { TD } from './config.js';
+import { TD, TEAM_COLOR } from './config.js';
 
 export const LOGICAL_WIDTH = 1920;
 const LOGICAL_HEIGHT = 1080;
@@ -45,30 +45,20 @@ export class TDViewport {
 
     drawBackground(ctx, LOGICAL_WIDTH, LOGICAL_HEIGHT, camX, now, world, GROUND_Y);
     drawLane(ctx, camX);
-    drawBaseZone(ctx, world, now);
 
-    drawTower(ctx, world.playerTower, now);
-    drawTower(ctx, world.enemyTower, now);
-    drawAegisBarrier(ctx, world.baseAegisFx, now);
-    drawAegisBarrier(ctx, world.enemyAegisFx, now);
+    drawBase(ctx, world.bases.L);
+    drawBase(ctx, world.bases.R);
 
-    // A unit that's been hit hard tumbles as a physics ragdoll; otherwise it's the
-    // normal stickman with its STR/INT plate.
-    const drawUnit = (u, plateColor) => {
+    const drawUnit = (u) => {
       if (u.staggerRagdoll) { drawRagdoll(ctx, u.staggerRagdoll, u.color); return; }
+      if (u.role === 'miner') drawMinerGlow(ctx, u, now);
       drawStickman(ctx, u, GROUND_Y, now);
-      drawStatPlate(ctx, u, plateColor);
+      drawStatPlate(ctx, u, TEAM_COLOR[u.team]);
     };
 
-    // Monsters (sorted by scale so brutes read behind small grunts a touch).
-    const units = [...world.monsters].filter(m => m.hp > 0);
-    units.sort((a, b) => (b.scale || 1) - (a.scale || 1));
-    for (const m of units) drawUnit(m, '#e0533a');
-
-    // Allied reinforcements (friendly cyan), with their STR / INT shown like everyone else.
-    for (const a of world.allies || []) { if (a.hp > 0) drawUnit(a, '#5bd6ff'); }
-
-    if (world.hero.hp > 0) drawUnit(world.hero, '#28d6c8');
+    // Bigger units drawn first so small ones read in front.
+    const units = world.creeps.filter(c => c.hp > 0).sort((a, b) => (b.scale || 1) - (a.scale || 1));
+    for (const c of units) drawUnit(c);
 
     drawTDProjectiles(ctx, world.projectiles, now);
     drawParticles(ctx, world.particles);
@@ -83,8 +73,6 @@ export class TDViewport {
   }
 }
 
-// Per-skill projectile visuals: a glowing fire orb, a spinning steel shuriken,
-// or a faceted ice shard — each reads distinctly in flight.
 function drawTDProjectiles(ctx, projectiles, now) {
   const baseY = GROUND_Y - 55 - 15;
   for (const p of projectiles) {
@@ -92,19 +80,7 @@ function drawTDProjectiles(ctx, projectiles, now) {
     const dir = p.vx > 0 ? 1 : -1;
     ctx.save();
     ctx.translate(p.x, y);
-    if (p.type === 'fireball') {
-      ctx.globalCompositeOperation = 'lighter';
-      const flick = 18 + Math.sin(now * 0.03) * 3;
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, flick + 8);
-      g.addColorStop(0, 'rgba(255,250,210,0.95)');
-      g.addColorStop(0.35, 'rgba(255,170,70,0.9)');
-      g.addColorStop(0.7, 'rgba(220,80,30,0.5)');
-      g.addColorStop(1, 'rgba(180,40,10,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0, 0, flick + 8, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffe9b0';
-      ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill();
-    } else if (p.type === 'ice') {
+    if (p.type === 'ice') {
       ctx.rotate(p.spin || 0);
       ctx.shadowColor = '#9fe8ff'; ctx.shadowBlur = 14;
       const grad = ctx.createLinearGradient(-12, -12, 12, 12);
@@ -113,16 +89,16 @@ function drawTDProjectiles(ctx, projectiles, now) {
       ctx.beginPath();
       for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; const r = i % 2 ? 6 : 14; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
       ctx.closePath(); ctx.fill(); ctx.stroke();
-    } else if (p.type === 'arrow') { // tower arrow — angled along its flight path
+    } else if (p.type === 'arrow') {
       const ang = Math.atan2(p.vy || 0, p.vx || 1);
       ctx.rotate(ang);
       ctx.strokeStyle = '#caa86a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(12, 0); ctx.stroke();
-      ctx.fillStyle = '#e8e2d0'; // arrowhead
+      ctx.fillStyle = '#e8e2d0';
       ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(10, -4); ctx.lineTo(10, 4); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#9a7b3a'; ctx.lineWidth = 2; // fletching
+      ctx.strokeStyle = '#9a7b3a'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(-20, -4); ctx.moveTo(-16, 0); ctx.lineTo(-20, 4); ctx.stroke();
-    } else { // shuriken — spinning four-point steel star
+    } else { // shuriken
       ctx.scale(dir, 1); ctx.rotate(p.spin || 0);
       ctx.shadowColor = 'rgba(180,200,220,0.6)'; ctx.shadowBlur = 8;
       ctx.fillStyle = '#c2ccd8'; ctx.strokeStyle = '#6b7785'; ctx.lineWidth = 1.5;
@@ -135,7 +111,6 @@ function drawTDProjectiles(ctx, projectiles, now) {
   }
 }
 
-// A worn dirt path the monsters march along.
 function drawLane(ctx, camX) {
   ctx.save();
   const grad = ctx.createLinearGradient(0, GROUND_Y - 10, 0, GROUND_Y + 90);
@@ -152,66 +127,29 @@ function drawLane(ctx, camX) {
   ctx.restore();
 }
 
-// A soft green "safe haven" glow on the ground around the base, where the hero
-// heals. Pulses brighter while the hero is actually sheltering there.
-function drawBaseZone(ctx, world, now) {
-  const zone = TD.HERO.baseHealZone;
-  const cx = world.playerTower.x;
-  const hero = world.hero;
-  const sheltering = hero.hp > 0 && Math.abs(hero.x - cx) < zone;
-  const pulse = sheltering ? 0.16 + 0.07 * Math.sin(now * 0.006) : 0.07;
-  ctx.save();
-  const g = ctx.createLinearGradient(0, GROUND_Y - 70, 0, GROUND_Y + 60);
-  g.addColorStop(0, `rgba(60,220,170,0)`);
-  g.addColorStop(1, `rgba(60,220,170,${pulse})`);
-  ctx.fillStyle = g;
-  ctx.fillRect(cx - zone, GROUND_Y - 70, zone * 2, 130);
-  // Edge markers.
-  ctx.strokeStyle = `rgba(80,230,180,${pulse + 0.12})`;
-  ctx.lineWidth = 2; ctx.setLineDash([6, 10]);
-  ctx.beginPath();
-  ctx.moveTo(cx + zone, GROUND_Y - 50); ctx.lineTo(cx + zone, GROUND_Y + 40);
-  ctx.stroke();
-  ctx.restore();
-}
-
-// The rising Aegis Barrier: an expanding kinetic shock-ring sweeping out from a
-// base (player or enemy) when it unleashes its last-resort pulse.
-function drawAegisBarrier(ctx, fx, now) {
-  if (!fx) return;
-  const k = (now - fx.startedAt) / fx.dur;
-  if (k < 0 || k > 1) return;
-  const ease = 1 - Math.pow(1 - k, 3);
-  const radius = 120 + ease * 1500;
-  const alpha = (1 - k) * 0.85;
+// A warm gold aura under a miner so its economic role reads at a glance.
+function drawMinerGlow(ctx, m, now) {
+  const y = GROUND_Y + m.y;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  // A vertical kinetic wall rising from the base, expanding outward.
-  ctx.strokeStyle = `rgba(120,225,255,${alpha})`;
-  ctx.lineWidth = 6 + (1 - k) * 10;
-  ctx.beginPath();
-  ctx.ellipse(fx.x, GROUND_Y - 120, radius, 320 + ease * 120, 0, Math.PI * 1.15, Math.PI * 1.85);
-  ctx.stroke();
-  ctx.strokeStyle = `rgba(190,245,255,${alpha * 0.6})`;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.ellipse(fx.x, GROUND_Y - 120, radius * 0.78, 260 + ease * 90, 0, Math.PI * 1.15, Math.PI * 1.85);
-  ctx.stroke();
+  const pulse = 0.25 + 0.1 * Math.sin(now * 0.006 + m.id);
+  const g = ctx.createRadialGradient(m.x, y - 30, 0, m.x, y - 30, 60);
+  g.addColorStop(0, `rgba(255,210,90,${pulse})`);
+  g.addColorStop(1, 'rgba(255,210,90,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(m.x, y - 30, 60, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
-function drawTower(ctx, t, now) {
+function drawBase(ctx, t) {
   const baseY = GROUND_Y;
   const topY = baseY - t.h;
-  const x = t.x;
-  const w = t.w;
+  const x = t.x, w = t.w;
   const alive = t.hp > 0;
 
   ctx.save();
-  // Crumble + sink when destroyed.
   if (!alive) { ctx.globalAlpha = 0.5; ctx.translate(0, 40); }
 
-  // Body
   const g = ctx.createLinearGradient(x - w / 2, topY, x + w / 2, baseY);
   g.addColorStop(0, t.color);
   g.addColorStop(1, '#11151c');
@@ -221,16 +159,13 @@ function drawTower(ctx, t, now) {
   ctx.lineWidth = 4;
   ctx.strokeRect(x - w / 2, topY, w, t.h);
 
-  // Battlements
   ctx.fillStyle = t.color;
   for (let i = 0; i < 4; i++) {
     const bx = x - w / 2 + i * (w / 4);
     ctx.fillRect(bx + 4, topY - 26, w / 4 - 10, 26);
   }
-  // Door / banner
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(x - 26, baseY - 90, 52, 90);
-  // Brick lines
   ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   ctx.lineWidth = 2;
   for (let yy = topY + 40; yy < baseY; yy += 46) {
@@ -238,29 +173,24 @@ function drawTower(ctx, t, now) {
   }
   ctx.restore();
 
-  // HP bar floating above.
-  drawHpBar(ctx, x, topY - 56, Math.max(0, t.hp / t.maxHp), w, t.side === 'player' ? '#3fa7ff' : '#ff4d6d', true);
-  // Label
+  drawHpBar(ctx, x, topY - 56, Math.max(0, t.hp / t.maxHp), w, TEAM_COLOR[t.team], true);
   ctx.save();
-  ctx.fillStyle = '#cdd6e2';
-  ctx.font = '700 22px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(t.side === 'player' ? 'YOUR BASE' : 'ENEMY KEEP', x, topY - 70);
+  ctx.fillStyle = '#ffd66b';
+  ctx.font = '800 22px system-ui, sans-serif';
+  ctx.fillText('⛏ ' + Math.floor(t.gold), x, topY - 70);
+  ctx.fillStyle = '#9fb0c4';
+  ctx.font = '700 14px system-ui, sans-serif';
+  ctx.fillText((t.team === 'L' ? 'BLUE' : 'RED') + ' BASE', x, topY - 92);
   ctx.restore();
 }
 
-// Floating nameplate over a monster: HP bar + its STRENGTH and INTELLIGENCE
-// levels (both rise each wave), so the threat is readable at a glance.
-// STR / INT badges + HP bar above a unit's head. Shared by enemies, the hero, and
-// allies — only the HP-bar colour differs (red foes, teal hero, cyan allies).
-function drawStatPlate(ctx, m, hpColor = '#e0533a') {
+function drawStatPlate(ctx, m, hpColor) {
   const scale = m.scale || 1;
   const cx = m.x;
   const w = Math.max(48, 46 * scale);
-  // Sit just above the head (head top ≈ -120·scale in body space).
   const top = GROUND_Y + m.y - 120 * scale - 30;
 
-  // STR / INT badges row.
   const str = m.power ?? 1;
   const intel = m.intelligence ?? 1;
   ctx.save();
@@ -275,18 +205,15 @@ function drawStatPlate(ctx, m, hpColor = '#e0533a') {
   const totalW = wA + wB + gap + padX * 2;
   const bx = cx - totalW / 2;
   const by = top - 20;
-  // Plate background.
   ctx.fillStyle = 'rgba(8,11,16,0.78)';
   roundRect(ctx, bx, by, totalW, 18, 5);
   ctx.fill();
-  // STR (amber) · INT (cyan)
   ctx.fillStyle = '#ffb84d';
   ctx.fillText(label, bx + padX, by + 9.5);
   ctx.fillStyle = '#5cd8ff';
   ctx.fillText(label2, bx + padX + wA + gap, by + 9.5);
   ctx.restore();
 
-  // HP bar directly under the badges.
   drawHpBar(ctx, cx, top, Math.max(0, m.hp) / m.maxHp, w, hpColor);
 }
 

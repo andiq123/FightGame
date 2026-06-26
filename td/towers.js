@@ -1,16 +1,17 @@
 import { TD } from './config.js';
 
-export function createTower(side) {
-  const isPlayer = side === 'player';
+// A base: HP to defend, a gold purse it spends spawning creeps, and timers for
+// its spawn decisions + defensive arrows.
+export function createBase(team) {
   return {
-    side,
-    x: isPlayer ? TD.PLAYER_TOWER_X : TD.ENEMY_TOWER_X,
-    maxHp: isPlayer ? TD.TOWER_HP : TD.ENEMY_TOWER_HP,
-    hp: isPlayer ? TD.TOWER_HP : TD.ENEMY_TOWER_HP,
-    w: TD.TOWER_W,
-    h: isPlayer ? TD.TOWER_H : TD.TOWER_H + 60,
-    color: isPlayer ? '#3a86c8' : '#9b2c4a',
+    team,
+    x: team === 'L' ? -TD.BASE_X : TD.BASE_X,
+    maxHp: TD.BASE_HP, hp: TD.BASE_HP,
+    w: TD.BASE_W, h: TD.BASE_H,
+    color: team === 'L' ? '#3a6fc8' : '#9b2c4a',
+    gold: TD.ECONOMY.startGold,
+    kills: 0,
+    nextSpawnAt: 0,
+    nextFireAt: 0,
   };
 }
-
-export function towerAlive(t) { return t.hp > 0; }

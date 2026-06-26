@@ -1,204 +1,76 @@
-import { SKILL_DAMAGE } from '../config/constants.js';
+// Two-base creep battler — all tunable values live here.
+// Two AI bases (L and R) earn gold and spend it spawning creeps that march out
+// and fight. Kills pay gold; miners generate it passively. First base destroyed
+// loses. Every creep gets randomised stats + traits, so no two battles are alike.
 
-// Hero skills the player can equip. Ids/names come from the shared POWERS
-// registry (entities/powers.js) so the chips reuse real data — these entries
-// only add the tower-defense behaviour for each. Ranged skills fire a projectile
-// at the nearest cluster; `heal` restores the hero.
-export const SKILLS = {
-  fireball:  { id: 'fireball',  kind: 'projectile', type: 'fireball', damage: SKILL_DAMAGE.FIREBALL, speed: 980, radius: 95, aoe: true,  cooldownMs: 4200, range: 1500 },
-  shuriken:  { id: 'shuriken',  kind: 'projectile', type: 'shuriken', damage: SKILL_DAMAGE.SHURIKEN, speed: 1400, radius: 42, pierce: true, cooldownMs: 1500, range: 1800 },
-  iceSpikes: { id: 'iceSpikes', kind: 'projectile', type: 'ice', damage: SKILL_DAMAGE.ICE_SPIKES, speed: 900, radius: 78, aoe: true, slowMs: 1600, cooldownMs: 5200, range: 1300 },
-  heal:      { id: 'heal',      kind: 'heal', amount: 0.35, cooldownMs: 12000 },
-  // Sharingan: a 7s buff — a clean incoming hit is negated and answered with a
-  // counter-warp (brought back from the master fighting AI).
-  sharingan: { id: 'sharingan', kind: 'buff', durationMs: 7000, counterCdMs: 650, cooldownMs: 15000, range: 0 },
-};
-export const SUPPORTED_SKILL_IDS = Object.keys(SKILLS);
-
-// Tower-defense tuning. All gameplay magic numbers live here.
 export const TD = {
   GROUND_Y: 810,            // logical floor line (shared with renderer primitives)
   STAGE_HALF: 2200,         // arena spans [-STAGE_HALF, +STAGE_HALF]
-  PLAYER_TOWER_X: -1950,    // your base — defend this
-  ENEMY_TOWER_X: 1950,      // enemy spawner — destroy this to win
-  TOWER_HP: 1000,
-  ENEMY_TOWER_HP: 16000,    // the keep is a fortress — you WIN by surviving, not rushing it
-  WIN_WAVE: 20,             // survive (clear) this many waves → victory
-  TOWER_W: 150,
-  TOWER_H: 360,
-  TOWER_RANGE: 150,         // how close a monster must be to start hitting a tower
-
-  // ── Aegis Barrier ─────────────────────────────────────────────────────────
-  // A hidden, automatic last-resort the base unleashes when it's about to fall: a
-  // rising kinetic barrier that hurls EVERY enemy far down the lane on a ballistic
-  // arc (gravity does the rest) and surges the base's structure back to 70%. A
-  // scarce lifeline — only a few charges for the whole run — so a near-death base
-  // can claw back into the fight, making each collapse a dramatic recovery.
-  BASE_AEGIS: {
-    hpThreshold: 0.25,       // fires when base HP drops below this fraction…
-    healTo: 0.70,            // …and restores the base up to this fraction
-    charges: 3,              // total uses for the whole run (~20 waves)
-    cooldownMs: 3500,        // brief lockout so one trigger = one pulse
-    pushVx: 1250,            // base horizontal launch (down-lane, away from base)
-    pushVy: -720,            // upward launch → real ballistic arc under gravity
-    proximityBoost: 0.7,     // extra fling for enemies right on top of the base
-    damage: 30,              // a jolt of chip damage as they're flung
-  },
-
-  // Towers auto-fire arrows at threats in range (classic TD). Your base rains
-  // arrows on monsters; the enemy keep snipes the hero (who can dodge them).
-  TOWER_FIRE: {
-    range: 720,            // how far a tower can shoot (close defence, not a sniper)
-    cooldownMs: 1100,       // gap between shots
-    damage: 26,            // arrow damage (scales the keep's a touch via mult below)
-    enemyDamageMul: 0.7,   // keep's arrows hit the hero a bit softer
-    speed: 1150,           // arrow flight speed
-    arc: 1500,             // downward gravity on the arrow so it rains in
-  },
-
   GRAVITY: 1500,
 
-  HERO: {
-    color: '#28d6c8',
-    walk: 340,
-    run: 600,
-    accel: 4200,
-    friction: 2600,
-    jumpVy: -640,
-    attackRange: 130,
-    // Stamina pacing — the hero tires from fighting/running and must recover.
-    maxStamina: 240,         // larger pool than the duel default so fights last
-    windedRatio: 0.18,       // at/below this → break off and retreat to recover
-    recoverRatio: 0.6,       // recover until here, then re-engage (hysteresis)
-    windedRegen: 85,         // stamina/sec while catching breath (reliable recovery)
-    restSafeDist: 300,       // retreat until this far from the nearest threat, then rest
-    finishHp: 45,            // don't bail on recovery if a target is this close to death
-    skillStaminaCost: 24,    // each power skill drains this (gated on having it)
-    // Wounded → flee home. When hurt the hero gets scared and sprints to the
-    // base, where it recovers HP (a safe zone) before charging back out.
-    fleeHpRatio: 0.3,        // at/below this HP fraction → run home, scared
-    fleeRecoverHp: 0.66,     // heal at base up to here, then re-engage
-    baseHealZone: 380,       // within this distance of the base, the hero heals
-    baseHealHpPerSec: 0.085, // fraction of max HP healed per second at the base
-    baseHealStamPerSec: 70,  // bonus stamina/sec while sheltering at the base
+  BASE_X: 1950,             // bases sit at ±BASE_X; L marches right, R marches left
+  BASE_HP: 2200,
+  BASE_W: 150,
+  BASE_H: 360,
+  BASE_RANGE: 150,          // how close a creep must be to start hitting a base
+
+  // Bases auto-fire arrows at the nearest enemy creep in range (the only static
+  // defence — there is no hero).
+  BASE_FIRE: { range: 720, cooldownMs: 1000, damage: 26, speed: 1150, arc: 1500 },
+
+  // ── Economy ────────────────────────────────────────────────────────────────
+  ECONOMY: {
+    startGold: 140,
+    passivePerSec: 5,        // each base's baseline trickle
+    minerPerSec: 10,         // extra gold/sec each living miner adds to its team
+    killBountyMul: 1,        // killer team earns this × the victim's reward
+    maxAlive: 16,            // hard concurrent creep cap per team
+    decideEveryMs: 700,      // how often a base re-evaluates what to spawn
+    targetMiners: 3,         // an unpressured base invests up to this many miners
+    bankChance: 0.35,        // chance to save gold for a pricier unit this tick
+    defendDist: 900,         // an enemy creep closer than this = base under threat
   },
 
-  // ── Allied reinforcements ────────────────────────────────────────────────
-  // The base periodically musters friendly fighters who march out, intercept the
-  // enemy column, and soak the front line — buying the hero time to farm gold and
-  // invest in real upgrades instead of just band-aiding. Their kills credit the
-  // hero's purse. Tuned to RELIEVE pressure, not trivialise the run.
-  ALLY: {
-    color: '#5bd6ff',          // friendly cyan-blue — distinct from hero teal & enemies
-    capeColor: '#2f7fd0',
-    power: 5, intelligence: 9, // base levels (scale up with the wave)
-    powerPerWave: 0.5, intPerWave: 0.6,
-    hp: 150, hpPerWave: 22,    // explicit HP pool (they're meant to trade and die)
-    dmg: 15, dmgPerWave: 1.5,
-    speed: 250,
-    attackRange: 96,
-    atkCdMs: 680,
-    // The base MUSTERS power over time and only deploys a fighter once it's fully
-    // charged — a deliberate, resource-paced trickle, not a fast timer. Charging a
-    // single ally takes ~15s early on, easing a little as the battle escalates.
-    startWave: 3,              // the base can only muster allies from this wave on
-    musterCost: 100,           // power needed to deploy one ally
-    musterRate: 6.5,           // power/sec the base generates… (~15s per ally)
-    musterRatePerWave: 0.7,    // …growing slightly each wave
-    musterStart: 30,           // small head start once mustering unlocks
-    maxAlive: 3,               // hard concurrent cap — never more than this
-    lineAhead: 720,            // hold this far ahead of the base when no enemy is near
+  // ── Creep roster ─────────────────────────────────────────────────────────
+  // power drives the STR plate + trait scaling; intelligence drives attack speed
+  // and the AI feel. hp/dmg are explicit pools. `ranged` makes a caster. `role`
+  // 'miner' = economy unit. `jitter` randomises power/int per spawn for variety.
+  CREEPS: {
+    runner:  { name: 'Runner',  role: 'fighter', scale: 0.78, power: 5,  int: 11, speed: 230, hp: 120, dmg: 10, range: 84,  atkCdMs: 700,  reward: 10, cost: 45,  weight: 3 },
+    grunt:   { name: 'Grunt',   role: 'fighter', scale: 0.95, power: 9,  int: 8,  speed: 135, hp: 240, dmg: 16, range: 92,  atkCdMs: 860,  reward: 16, cost: 70,  weight: 4 },
+    brute:   { name: 'Brute',   role: 'fighter', scale: 1.6,  power: 16, int: 5,  speed: 70,  hp: 1100, dmg: 42, range: 140, atkCdMs: 1450, reward: 55, cost: 200, weight: 1.4 },
+    archer:  { name: 'Archer',  role: 'fighter', scale: 1.0,  power: 8,  int: 14, speed: 110, hp: 260, dmg: 12, range: 120, atkCdMs: 1500, reward: 34, cost: 130, weight: 2, cape: true,
+               ranged: { type: 'shuriken', damage: 30, speed: 620, radius: 46, range: 600 } },
+    warlord: { name: 'Warlord', role: 'fighter', scale: 1.3,  power: 18, int: 17, speed: 155, hp: 760, dmg: 36, range: 124, atkCdMs: 760,  reward: 90, cost: 320, weight: 1, cape: true },
+    miner:   { name: 'Miner',   role: 'miner',   scale: 0.82, power: 4,  int: 9,  speed: 200, hp: 150, dmg: 6,  range: 80,  atkCdMs: 900,  reward: 25, cost: 110, weight: 0 },
   },
 
-  // ── Enemy roster — deliberately diverse in intelligence, role and skills. ──
-  // Strength (power) drives HP/damage, intelligence drives how aggressively and
-  // smartly they hunt the hero. A `ranged` block makes that archetype a caster.
-  MONSTERS: {
-    runner: {
-      name: 'Runner', color: '#d98a2b', scale: 0.78, power: 5, intelligence: 11,
-      speed: 200, hp: 110, dmg: 9, towerDmg: 12, atkRange: 84, atkCdMs: 720, reward: 10, aggro: 360,
-    },
-    grunt: {
-      name: 'Grunt', color: '#c0563a', scale: 0.9, power: 8, intelligence: 7,
-      speed: 124, hp: 210, dmg: 14, towerDmg: 20, atkRange: 92, atkCdMs: 880, reward: 15, aggro: 320,
-    },
-    brute: {
-      name: 'Brute', color: '#7d3fb0', scale: 1.7, power: 16, intelligence: 5,
-      speed: 64, hp: 1000, dmg: 40, towerDmg: 78, atkRange: 142, atkCdMs: 1500, reward: 55, aggro: 240,
-    },
-    shaman: {
-      name: 'Shaman', color: '#2fa86b', scale: 1.02, power: 10, intelligence: 16,
-      speed: 92, hp: 300, dmg: 12, towerDmg: 18, atkRange: 120, atkCdMs: 1700, reward: 38, aggro: 600,
-      ranged: { type: 'shuriken', damage: 34, speed: 560, radius: 46, range: 560, slowMs: 0 },
-    },
-    warlord: {
-      name: 'Warlord', color: '#caa23a', cape: '#7a1f1f', scale: 1.28, power: 18, intelligence: 19,
-      speed: 150, hp: 720, dmg: 34, towerDmg: 64, atkRange: 124, atkCdMs: 760, reward: 90, aggro: 560,
-    },
-  },
-
-  // How wave N is composed (chaff early, casters/heavies/elites later).
-  WAVE: {
-    breatherMs: 4500,
-    spawnGapMs: 1050,            // gap between spawns on wave 1…
-    spawnGapDecayPerWave: 42,    // …tightening each wave so late waves arrive as a SWARM
-    spawnGapMinMs: 300,          // floor on the gap (the densest a wave can pour in)
-    // Per-wave level growth — monsters get smarter AND stronger each wave.
-    strPerWave: 0.7,
-    intPerWave: 0.95,
-    hpPerStr: 0.15,
-    rewardPerWave: 0.1,
-    // SIEGE share: the fraction of each wave that ignores the hero and marches
-    // straight for the BASE. Rising each wave, this is what actually threatens the
-    // base in the late game — the hero can't be everywhere, so the base bleeds and
-    // the Aegis barrier becomes the dramatic difference between holding and falling.
-    siegeBase: 0.10,
-    siegePerWave: 0.032,
-    siegeMax: 0.62,
-    siegeSpeedMul: 1.55,        // siege units sprint the lane so they reach the base
-    siegeHpMul: 1.35,           // …and are tougher, so interception can't clear them all
-  },
-
-  MONSTER: {
-    separation: 36,          // half-gap baseline for the marching column
-    downSpeedBoost: 1.25,    // with the hero down, monsters press the base harder
-    // Athleticism — monsters leap, lunge, and JUKE to close gaps and bait whiffs
-    // (smarter ones more so). Velocities are randomised per move so the advance
-    // never reads as a repetitive march — agile, springy, hard to pin down.
-    jumpGapMin: 110, jumpGapMax: 380, // leap when the target is this far
-    jumpVy: -560, jumpVx: 470, jumpCdMs: 1300,
-    lungeGap: 165, lungeVx: 600, lungeCdMs: 1700, // sudden dash-in
-    // JUKE: a quick hop (usually backward) right in the hero's face to bait an
-    // attack and slip it — what makes them genuinely hard to hit.
-    jukeGap: 135, jukeVx: 420, jukeVy: -360, jukeCdMs: 1300,
-    // Even the BIG brutes are agile: a heavy crashing leap that closes ground.
-    bruteLeapGapMin: 180, bruteLeapGapMax: 560, bruteLeapVy: -480, bruteLeapVx: 400, bruteLeapCdMs: 2400,
-    runnerFleeHp: 0.22,      // wounded runners briefly recoil (scared)
-  },
-
-  // Random per-wave events that change how a wave plays — keeps runs surprising.
-  EVENTS: [
-    { id: 'frenzy', name: 'FRENZY — enemies enraged!', speed: 1.3, atkCd: 0.7, jumpy: 1.6 },
-    { id: 'horde', name: 'HORDE — overwhelming numbers!', countMul: 1.6 },
-    { id: 'champion', name: 'CHAMPION approaches!', addWarlord: 1 },
-    { id: 'swift', name: 'SWIFT — a sprinting pack!', speed: 1.45, addRunner: 3 },
-    { id: 'elite', name: 'ELITE GUARD — armoured vanguard!', addWarlord: 2, atkCd: 0.85 },
-    { id: 'berserk', name: 'BERSERK — a relentless tide!', speed: 1.2, atkCd: 0.6, jumpy: 1.3 },
-    { id: 'siege', name: 'SIEGE — they rush the base!', countMul: 1.3, speed: 1.15, addWarlord: 1 },
+  // Random trait pool. Each creep rolls a few; weights make strong traits rare.
+  // 'caped' is cosmetic; the rest are wired in td/combat.js + td/ai.js.
+  TRAIT_POOL: [
+    { id: 'athletic',      weight: 5 },
+    { id: 'chill',         weight: 3 },
+    { id: 'blink',         weight: 2.5 },
+    { id: 'unbreakable',   weight: 2.5 },
+    { id: 'tireless',      weight: 2.5 },
+    { id: 'untouchable',   weight: 1.2 },
+    { id: 'perfectStrike', weight: 1.5 },
+    { id: 'seriousPunch',  weight: 1 },
   ],
-  EVENT_CHANCE: 0.55,        // chance a wave (from 2 on) rolls an event
+  TRAIT_COUNT_WEIGHTS: [3, 4, 2, 1], // P(0 traits), P(1), P(2), P(3)
 
-  // Between-wave shop — spend gold on upgrades. Costs scale with current level.
-  SHOP: {
-    powerBase: 55, powerPerLevel: 18,   // power +1 cost = base + level*per
-    intBase: 55, intPerLevel: 18,       // intelligence +1
-    repairBase: 70, repairAmount: 350,  // restore base HP
-    healHero: 45,                       // full-heal the hero
-    staminaUp: 50, staminaAmount: 30,   // +max stamina
-    learnSkill: 110,                    // unlock an unequipped power skill
-    recruitAlly: 120,                   // summon an allied fighter (base cost…
-    recruitAllyPerOwned: 70,            // …+this for each ally already fighting)
+  // Athleticism — leaps/lunges/jukes make the advance dynamic and hard to read.
+  MOVE: {
+    separation: 36,
+    jumpGapMin: 110, jumpGapMax: 380, jumpVy: -560, jumpVx: 470, jumpCdMs: 1300,
+    lungeGap: 165, lungeVx: 600, lungeCdMs: 1700,
+    jukeGap: 135, jukeVx: 420, jukeVy: -360, jukeCdMs: 1300,
+    bruteLeapGapMin: 180, bruteLeapGapMax: 560, bruteLeapVy: -480, bruteLeapVx: 400, bruteLeapCdMs: 2400,
   },
 
   CAMERA_SMOOTH: 6.5,
 };
+
+export const TEAM_COLOR = { L: '#4f9be8', R: '#e0664a' };
+export const TEAM_CAPE  = { L: '#2f6fb0', R: '#9b2c2c' };
+export const opp = (team) => (team === 'L' ? 'R' : 'L');

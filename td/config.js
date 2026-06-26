@@ -22,6 +22,7 @@ export const TD = {
   // Bases auto-fire arrows at the nearest enemy creep in range (the only static
   // defence — there is no hero).
   BASE_FIRE: { range: 980, cooldownMs: 900, damage: 28, speed: 1180, arc: 1500 },
+  BASE_LASER: { range: 2100, halfW: 120, bossDmgMul: 0.55 },
 
   // Base active skills — separate cooldown from normal arrow fire.
   BASE_SKILLS: {

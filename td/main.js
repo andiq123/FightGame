@@ -287,8 +287,8 @@ function teamCount(team) { let n = 0; for (const c of world.creeps) if (c.hp > 0
 
 const MODE_CLASS = { DEFEND: 'mode-def', BUILD: 'mode-build', PUSH: 'mode-push', GROW: 'mode-grow', BANK: 'mode-bank', BROKE: 'mode-broke', FULL: 'mode-full', DOWN: 'mode-down' };
 
-function renderBaseHud(team, prefix) {
-  refreshBaseHud(world, team, performance.now());
+function renderBaseHud(team, prefix, now) {
+  refreshBaseHud(world, team, now);
   const base = world.bases[team];
   const h = base.aiHud || {};
   const modeEl = els[`mode${prefix}`];
@@ -307,7 +307,7 @@ function renderBaseHud(team, prefix) {
   }
 }
 
-function updateHUD() {
+function updateHUD(now = performance.now()) {
   const L = world.bases.L, R = world.bases.R;
   if (els.hpL) els.hpL.style.width = `${100 * Math.max(0, L.hp) / L.maxHp}%`;
   if (els.hpR) els.hpR.style.width = `${100 * Math.max(0, R.hp) / R.maxHp}%`;
@@ -319,8 +319,8 @@ function updateHUD() {
   if (els.killsR) els.killsR.textContent = R.kills;
   if (els.countL) els.countL.textContent = teamCount('L');
   if (els.countR) els.countR.textContent = teamCount('R');
-  renderBaseHud('L', 'L');
-  renderBaseHud('R', 'R');
+  renderBaseHud('L', 'L', now);
+  renderBaseHud('R', 'R', now);
   if (els.ticker) {
     const phase = battlePhase(world.level || 0);
     const ev = world.eventLog?.length ? world.eventLog[world.eventLog.length - 1].text : '';

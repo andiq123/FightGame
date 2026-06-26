@@ -129,6 +129,19 @@ function foesInRange(world, base, range) {
   return out.map(x => x.c);
 }
 
+function foesInBeam(world, base, dir, endX, halfW = 100) {
+  const minX = Math.min(base.x, endX) - halfW;
+  const maxX = Math.max(base.x, endX) + halfW;
+  const out = [];
+  for (const o of world.creeps) {
+    if (o.hp <= 0 || o.team === base.team || o.role === 'miner') continue;
+    if (o.x < minX || o.x > maxX) continue;
+    if (dir > 0 ? o.x < base.x - 20 : o.x > base.x + 20) continue;
+    out.push(o);
+  }
+  return out;
+}
+
 const BASE_SKILL_MAP = {
   volley(base, world, now, foes) {
     for (const t of foes.slice(0, 3)) fireBaseArrow(world, base, t, now);
@@ -174,14 +187,18 @@ const BASE_SKILL_MAP = {
     return true;
   },
   laser(base, world, now, foes) {
-    if (!foes.length) return false;
-    const dir = Math.sign(foes[0].x - base.x) || (base.team === 'L' ? 1 : -1);
-    const endX = base.x + dir * TD.BASE_FIRE.range;
+    const dir = Math.sign(foes[0]?.x - base.x) || (base.team === 'L' ? 1 : -1);
+    const range = TD.BASE_LASER?.range ?? TD.STAGE_HALF;
+    const endX = base.x + dir * range;
+    const hits = foesInBeam(world, base, dir, endX, TD.BASE_LASER?.halfW ?? 100);
+    if (!hits.length) return false;
     base._laserUntil = now + 520;
     base._laser = { dir, endX, until: base._laserUntil };
     base.emotion = 'infuriated';
-    for (const o of foes) {
-      const dealt = o.takeDamage(999, true, base.x, now);
+    const bossMul = TD.BASE_LASER?.bossDmgMul ?? 0.55;
+    for (const o of hits) {
+      const dmg = o.role === 'boss' ? Math.round(o.maxHp * bossMul) : o.maxHp;
+      const dealt = o.takeDamage(dmg, true, base.x, now);
       o.pose = POSE.hit; o.poseTime = 0;
       tryTdRagdoll(world, o, base.x, dir * 420, -280, now, { heavy: true, dmg: dealt, knockdown: true, force: true });
       addHit(world, o.x, TD.GROUND_Y + o.y - 70 * (o.scale || 1), dealt, true);
@@ -194,9 +211,9 @@ const BASE_SKILL_MAP = {
   },
 };
 
-function pickBaseSkill(base, foes, rng) {
+function pickBaseSkill(base, foes, rng, beamHits = []) {
   const pool = TD.BASE_SKILLS?.skills || ['volley', 'shock'];
-  if (foes.length >= 2 && pool.includes('laser') && rng() < 0.26 + foes.length * 0.04) return 'laser';
+  if (beamHits.length && pool.includes('laser') && rng() < 0.32 + beamHits.length * 0.05) return 'laser';
   let opts = pool.filter(id => BASE_SKILL_MAP[id]);
   if (foes.length >= 5) opts = opts.filter(id => id === 'bombard' || id === 'frostBurst' || id === 'volley');
   else if (foes.length >= 3) opts = opts.filter(id => id !== 'mend');
@@ -209,12 +226,15 @@ export function tryBaseSkill(base, world, now) {
   if (base.hp <= 0 || now < (base._skillAt || 0)) return false;
   const range = TD.BASE_FIRE.range;
   const foes = foesInRange(world, base, range);
+  const dir = Math.sign(foes[0]?.x - base.x) || (base.team === 'L' ? 1 : -1);
+  const laserRange = TD.BASE_LASER?.range ?? TD.STAGE_HALF;
+  const beamHits = foesInBeam(world, base, dir, base.x + dir * laserRange, TD.BASE_LASER?.halfW ?? 100);
   const low = base.hp / base.maxHp < 0.52;
-  if (!foes.length && !low) return false;
+  if (!foes.length && !beamHits.length && !low) return false;
 
-  const id = (low && foes.length <= 1) ? 'mend' : pickBaseSkill(base, foes, world.rng);
+  const id = (low && foes.length <= 1 && !beamHits.length) ? 'mend' : pickBaseSkill(base, foes, world.rng, beamHits);
   const fn = BASE_SKILL_MAP[id];
-  if (!fn?.(base, world, now, foes)) return false;
+  if (!fn?.(base, world, now, foes.length ? foes : beamHits)) return false;
   base._skillAt = now + (TD.BASE_SKILLS?.cooldownMs ?? 6800) * (0.88 + world.rng() * 0.24);
   base._lastSkill = id;
   return true;
@@ -237,5 +257,14 @@ export function tickBaseDefense(world, now) {
 
 if (typeof process !== 'undefined' && process.argv[1]?.endsWith('skills.js')) {
   console.assert(typeof BASE_SKILL_MAP.laser === 'function', 'laser skill');
+  const base = { team: 'L', x: -1950, hp: 100, maxHp: 100 };
+  const world = {
+    creeps: [
+      { id: 1, team: 'R', hp: 200, maxHp: 200, x: -400, y: 0, role: 'fighter', takeDamage(n) { this.hp -= n; return n; }, pose: 0, poseTime: 0 },
+      { id: 2, team: 'R', hp: 200, maxHp: 200, x: 800, y: 0, role: 'fighter', takeDamage(n) { this.hp -= n; return n; }, pose: 0, poseTime: 0 },
+    ],
+  };
+  const beam = foesInBeam(world, base, 1, -1950 + 2100, 120);
+  console.assert(beam.length === 1 && beam[0].x === -400, 'beam hits in front only');
   console.log('skills ok');
 }

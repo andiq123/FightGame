@@ -159,9 +159,9 @@ function evaluateSpawn(world, base, team) {
   };
 }
 
-export function baseEmotion(base, ev) {
+export function baseEmotion(base, ev, now = 0) {
   if (base.hp <= 0) return 'dead';
-  if (base._laserUntil > performance.now()) return 'infuriated';
+  if (base._laserUntil > now) return 'infuriated';
   if (ev.winning) return 'happy';
   if (ev.losing) return 'angry';
   if (ev.underThreat) return 'scared';
@@ -177,7 +177,7 @@ export function refreshBaseHud(world, team, now) {
     ...ev,
     nextIn: ms > 0 ? `${(ms / 1000).toFixed(1)}s` : 'now',
   };
-  base.emotion = baseEmotion(base, ev);
+  base.emotion = baseEmotion(base, ev, now);
 }
 
 function teamOrder(world) {
@@ -216,15 +216,15 @@ export function runEconomy(world, dt, now) {
     base.gold += TD.ECONOMY.passivePerSec * dt;
     if (now >= (base.nextSpawnAt || 0)) {
       base.nextSpawnAt = now + TD.ECONOMY.decideEveryMs;
-      maybeSpawn(world, base, team);
+      maybeSpawn(world, base, team, now);
     }
   }
 }
 
-function maybeSpawn(world, base, team) {
+function maybeSpawn(world, base, team, now = performance.now()) {
   const ev = evaluateSpawn(world, base, team);
   base.aiHud = { ...ev, nextIn: base.aiHud?.nextIn || '—' };
-  base.emotion = baseEmotion(base, ev);
+  base.emotion = baseEmotion(base, ev, now);
 
   if (!ev.opts?.length || ev.mode === 'FULL' || ev.mode === 'DOWN') return;
 

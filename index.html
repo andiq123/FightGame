@@ -69,27 +69,7 @@
     .stat .n { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
     .stat .l { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #8b9ab0; margin-top: 4px; }
 
-    /* Equipped-skill bar (bottom center) */
-    #skills { position: fixed; bottom: calc(18px + var(--sab)); left: 50%; transform: translateX(-50%);
-      display: flex; gap: 10px; z-index: 5; pointer-events: none; max-width: 96vw; flex-wrap: wrap;
-      justify-content: center; }
-    .skill { position: relative; min-width: 74px; height: 46px; border-radius: 11px; overflow: hidden;
-      background: rgba(14,18,26,.82); border: 1px solid rgba(255,255,255,.12);
-      display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px);
-      transition: border-color .15s ease, box-shadow .15s ease; }
-    .skill .sk-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
-      background: rgba(8,10,16,.78); transition: height .08s linear; }
-    .skill .sk-name { position: relative; font-size: 12px; font-weight: 700; letter-spacing: .02em;
-      color: #cdd8e6; padding: 0 10px; transition: opacity .1s ease; }
-    .skill .sk-timer { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      font-size: 16px; font-weight: 800; color: #ffd66b; font-variant-numeric: tabular-nums;
-      text-shadow: 0 1px 3px rgba(0,0,0,.6); pointer-events: none; }
-    .skill.on-cd .sk-name { opacity: .25; }
-    .skill.ready { border-color: rgba(40,214,200,.7); box-shadow: 0 0 16px rgba(40,214,200,.28); }
-    .skill.ready .sk-name { color: #6ff0e2; }
-    .skill.charging { opacity: .9; }
-
-    /* Center wave announcer */
+    /* Center announcer */
     #announce { position: fixed; top: 30%; left: 50%; transform: translate(-50%,-50%) scale(.9);
       font-size: 64px; font-weight: 900; letter-spacing: .04em; color: #fff;
       text-shadow: 0 4px 30px rgba(40,214,200,.5); opacity: 0; transition: all .35s ease;
@@ -112,93 +92,19 @@
       box-shadow: 0 8px 30px rgba(40,214,200,.35); }
     .ov-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(40,214,200,.5); }
 
-    /* Loadout chooser */
-    .ov-card { max-width: 720px; }
-    .loadout { text-align: left; margin: 8px 0 30px;
-      background: rgba(10,14,20,.55); border: 1px solid rgba(255,255,255,.07);
-      border-radius: 16px; padding: 22px 26px; }
-    .ld-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 20px; }
-    .ld-stat { display: flex; flex-direction: column; gap: 7px; }
-    .ld-lbl { font-size: 14px; font-weight: 700; color: #d6e0ee; letter-spacing: .02em; }
-    .ld-lbl em { color: #28d6c8; font-style: normal; font-size: 17px; margin-left: 4px; }
-    .ld-hint { font-size: 11px; color: #76859a; }
-    .ld-stat input[type=range] { width: 100%; accent-color: #28d6c8; cursor: pointer; height: 4px; }
-    .ld-group { margin-top: 16px; }
-    .ld-group h4 { margin: 0 0 9px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: #93a4ba; font-weight: 700; }
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .chip { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-      color: #aeb9c8; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.12);
-      border-radius: 999px; padding: 7px 14px; transition: all .12s ease; }
-    .chip:hover { border-color: rgba(40,214,200,.5); color: #dfe7f0; }
-    .chip.on { color: #06120f; background: linear-gradient(90deg,#28d6c8,#5cf0e0);
-      border-color: transparent; box-shadow: 0 4px 14px rgba(40,214,200,.35); }
+    .ov-card { max-width: 560px; }
 
-    /* Between-wave shop */
-    /* Optional, non-pausing panel: floats on the right, game stays visible &
-       playable behind it (no full-screen backdrop, no pointer capture). */
-    #shop { position: fixed; top: 0; right: 0; bottom: 0; display: none;
-      align-items: center; justify-content: flex-end; z-index: 11; pointer-events: none;
-      padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) 16px; }
-    #shop.visible { display: flex; }
-    .shop-card { pointer-events: auto; width: 380px; max-width: 92vw; max-height: 100%;
-      overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
-      overscroll-behavior: contain; background: rgba(14,18,26,.92); backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 22px 24px;
-      box-shadow: 0 18px 50px rgba(0,0,0,.5); }
-    .shop-actions { display: flex; gap: 10px; }
-    .shop-actions .ov-btn { flex: 1; }
-    .ov-btn.ghost { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); color: #e7edf5; }
-    .ov-btn.ghost:hover { border-color: rgba(40,214,200,.55); }
-    .ov-btn.ghost.active { background: rgba(40,214,200,.16); border-color: rgba(40,214,200,.6); color: #bdf6ef; }
-    .shop-hint { margin: 10px 2px 0; font-size: 11.5px; color: #8b9ab0; text-align: center; }
-
-    /* Top control row — Upgrades + game speed, sitting in the HUD row (centred
-       between the keep panel and the stats), so it never overlaps them. */
+    /* Top control row — game speed button in the HUD row. */
     #topControls { display: flex; gap: 8px; align-items: center; pointer-events: auto; }
-    .shop-fab, .speed-fab { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    .speed-fab { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
       white-space: nowrap; background: rgba(14,18,26,.82); color: #e7edf5; border: 1px solid rgba(255,255,255,.12);
-      border-radius: 12px; padding: 10px 15px; font: inherit; font-weight: 700; font-size: 14px;
-      cursor: pointer; transition: all .15s ease; }
-    .speed-fab { min-width: 60px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .shop-fab:hover, .speed-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
+      border-radius: 12px; padding: 10px 15px; font: inherit; font-weight: 800; font-size: 14px;
+      cursor: pointer; transition: all .15s ease; min-width: 60px; font-variant-numeric: tabular-nums; }
+    .speed-fab:hover { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); }
     .speed-fab.boosted { border-color: #ffd66b; color: #ffe39a; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
-    .shop-dot { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
-    .shop-fab.has-deals { border-color: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.22); }
-    .shop-fab.has-deals .shop-dot { background: #ffd66b; box-shadow: 0 0 8px #ffd66b; }
-    .shop-toast { position: fixed; top: calc(56px + var(--sat)); left: 50%; transform: translateX(-50%);
-      z-index: 10; max-width: 280px; text-align: center; padding: 8px 14px; border-radius: 10px; font-size: 12.5px;
-      color: #ffe39a; background: rgba(255,214,107,.12); border: 1px solid rgba(255,214,107,.4);
-      opacity: 0; pointer-events: none; transition: opacity .3s ease; }
-    .shop-toast.show { opacity: 1; }
-    .shop-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
-    .shop-title { margin: 0; font-size: 26px; font-weight: 800; }
-    .shop-title span { color: #28d6c8; }
-    .shop-sub { margin: 4px 0 0; font-size: 13px; color: #93a4ba; }
-    .shop-gold { font-size: 30px; font-weight: 900; color: #ffd66b; text-align: right; white-space: nowrap;
-      font-variant-numeric: tabular-nums; }
-    .shop-gold em { display: block; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: #8b9ab0; font-style: normal; font-weight: 700; }
-    .shop-items { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; max-height: 50vh;
-      overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; }
-    .shop-item { display: flex; align-items: center; justify-content: space-between; gap: 14px;
-      text-align: left; font: inherit; cursor: pointer; color: #e7edf5;
-      background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
-      padding: 12px 16px; transition: all .12s ease; }
-    .shop-item:hover:not(.disabled) { border-color: rgba(40,214,200,.55); background: rgba(40,214,200,.08); transform: translateY(-1px); }
-    .shop-item.disabled { opacity: .4; cursor: not-allowed; }
-    .si-name { font-size: 15px; font-weight: 700; }
-    .si-desc { font-size: 12px; color: #93a4ba; margin-top: 2px; }
-    .si-cost { font-size: 18px; font-weight: 800; color: #ffd66b; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .si-cost span { font-size: 12px; color: #b89a4d; margin-left: 1px; }
-    /* Aegis barrier charge pips beside the base title (subtle, in-the-know). */
-    .aegis-pips { float: right; letter-spacing: 1px; font-size: 11px; line-height: 1; }
-    .aegis-pips .pip { color: #78e1ff; text-shadow: 0 0 6px rgba(120,225,255,.6); }
-    .aegis-pips .pip.spent { color: rgba(255,255,255,.18); text-shadow: none; }
 
-    /* Hide scrollbars everywhere (still scrollable by drag/wheel/touch). */
-    .shop-items, .shop-card, .ov-card, #overlay { scrollbar-width: none; -ms-overflow-style: none; }
-    .shop-items::-webkit-scrollbar, .shop-card::-webkit-scrollbar,
+    /* Hide scrollbars (still scrollable by drag/wheel/touch). */
+    .ov-card, #overlay { scrollbar-width: none; -ms-overflow-style: none; }
     .ov-card::-webkit-scrollbar, #overlay::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
     /* ── Touch devices: don't let :hover states stick after a tap ────────────── */

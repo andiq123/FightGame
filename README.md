@@ -1,14 +1,14 @@
-# Stick Defense
+# Stick Wars
 
-A browser-based stickman survival game. **[▶ Play it here](https://andiq123.github.io/FightGame/)**
+A browser-based auto-battler. **[▶ Play it here](https://andiq123.github.io/FightGame/)**
 
 ## Gameplay
 
-Set your hero's **Power** and **Intelligence**, then watch it fight off endless
-waves of monsters on its own. Between waves, spend the gold you earn in the shop
-to upgrade. Survive as long as you can.
-
-That's it — pick stats, hit start, and see how far your fighter gets.
+Two AI bases — Blue and Red — earn gold and spend it spawning stickman creeps
+that march out and fight. Kills pay gold; **miner** creeps generate it passively
+so a base can out-economy its rival. Every creep rolls random stats and traits,
+so no two battles play the same. First base destroyed loses. You just watch
+(drag to pan, `Space`/`1`/`2`/`3` for speed, `M` to mute).
 
 ## Run locally
 

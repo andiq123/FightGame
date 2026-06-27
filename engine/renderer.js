@@ -24,6 +24,8 @@ import {
   getGrabPose,
   getAntiAirPose,
   getJumpAirPose,
+  gaitPhaseSpeed,
+  getRangedShootPose,
 } from './fightAnimations.js';
 
 // Tint the swipe arc + anticipation glow by attack "weight" (its base damage).
@@ -348,6 +350,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
 
   const prof = fighter.animProfile;
   const poseT = fighter.poseTime || 0;
+  const atkPoseT = poseT * (prof?.attack?.speed ?? 1);
   const rest = mergeRest(REST_STANCE, prof?.rest);
   const atkMul = prof?.attack?.mult ?? 1;
   const limbScale = prof?.limb ?? 1;
@@ -402,16 +405,14 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lLegAng = f.lLegAng; rLegAng = f.rLegAng; lKneeOff = f.lKneeOff; rKneeOff = f.rKneeOff;
     lFootAng = f.lFootAng; rFootAng = f.rFootAng;
   } else if (pose === POSE.walk || pose === POSE.run) {
-    const baseSpeed = pose === POSE.run ? 11.5 : 7.2;
-    const expectedSpeed = pose === POSE.run ? 540 : 280;
-    const speedRatio = Math.min(1.25, Math.max(0.55, Math.abs(velX) / expectedSpeed));
-    const cycleSpeed = baseSpeed * speedRatio * (prof?.walk?.cycleMul ?? 1);
+    const isRun = pose === POSE.run;
+    const cycleSpeed = gaitPhaseSpeed(velX, fighter.moveSpeed, fighter.scale, isRun, prof?.walk?.cycleMul ?? 1);
     const phase = (poseT * cycleSpeed) % (2 * Math.PI);
-    let cycle = pose === POSE.run ? getRunCycle(phase, face) : getWalkCycle(phase, face);
+    let cycle = isRun ? getRunCycle(phase, face) : getWalkCycle(phase, face);
     cycle = scaleWalkCycle(cycle, prof?.walk);
 
     bob = cycle.bob;
-    lean = cycle.lean;
+    lean = cycle.lean + (velX / Math.max(40, fighter.moveSpeed || 200)) * 0.08 * face;
     torsoTwist = cycle.torsoTwist;
     headTilt = cycle.headTilt ?? headTilt;
     lArmAng = cycle.lArm;
@@ -424,6 +425,22 @@ export function drawStickman(ctx, fighter, groundY, now) {
     rKneeOff = cycle.rKnee;
     lFootAng = cycle.lFoot ?? lFootAng;
     rFootAng = cycle.rFoot ?? rFootAng;
+  } else if (pose === POSE.punch && fighter.ranged && !fighter.currentAttack) {
+    const shot = getRangedShootPose(poseT, face, rest, fighter.flying);
+    bob = shot.bob;
+    lean = shot.lean;
+    torsoTwist = shot.torsoTwist;
+    headTilt = shot.headTilt ?? headTilt;
+    lArmAng = shot.lShoulderAng;
+    rArmAng = shot.rShoulderAng;
+    lForeArmAng = shot.lElbowAng;
+    rForeArmAng = shot.rElbowAng;
+    lLegAng = shot.lHipAng;
+    rLegAng = shot.rHipAng;
+    lKneeOff = shot.lKneeAng;
+    rKneeOff = shot.rKneeAng;
+    lFootAng = shot.lFootAng ?? lFootAng;
+    rFootAng = shot.rFootAng ?? rFootAng;
   } else if (pose === POSE.idle) {
     const idle = getProfileIdle(prof?.idleKind, poseT, rest, fighter.traits?.chill, prof?.air);
     bob = idle.bob;
@@ -560,7 +577,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     const isPunch = pose === POSE.punch;
     const isKick = pose === POSE.kick;
     const a = fighter.currentAttack;
-    const { phase, localT } = isPunch ? getPunchPhase(poseT, a.data.duration, a.type) : getKickPhase(poseT, a.data.duration, a.type);
+    const { phase, localT } = isPunch ? getPunchPhase(atkPoseT, a.data.duration, a.type) : getKickPhase(atkPoseT, a.data.duration, a.type);
 
     const WINDUP = 0, STRIKE = 1;
     if (phase === STRIKE) {
@@ -577,7 +594,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
 
     // Active window for the swipe is 30%–75% of the whole attack (matches the
     // melee hitbox). Compute a global progress fraction to gate it.
-    const progress = poseT / (a.data.duration / 1000);
+    const progress = atkPoseT / (a.data.duration / 1000);
     const inActive = progress >= 0.3 && progress <= 0.75;
     // Fade the swipe in/out smoothly at the window edges so it never pops.
     const edge = Math.min(1, (progress - 0.3) / 0.12, (0.75 - progress) / 0.12);
@@ -591,7 +608,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
   // Combat Override
   if (pose === POSE.punch && fighter.currentAttack) {
     const a = fighter.currentAttack;
-    const { phase, localT } = getPunchPhase(poseT, a.data.duration, a.type);
+    const { phase, localT } = getPunchPhase(atkPoseT, a.data.duration, a.type);
     const ext = punchExtension(phase, localT, face, a.type);
     lean = ext.lean;
     torsoTwist = ext.torsoTwist;
@@ -611,7 +628,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     if (atkMul !== 1) { pelvisX += face * (atkMul - 1) * 6; limbBulge *= atkMul; }
   } else if (pose === POSE.kick && fighter.currentAttack) {
     const a = fighter.currentAttack;
-    const { phase, localT } = getKickPhase(poseT, a.data.duration, a.type);
+    const { phase, localT } = getKickPhase(atkPoseT, a.data.duration, a.type);
     const ext = kickExtension(phase, localT, face, a.type);
     lean = ext.lean;
     torsoTwist = ext.torsoTwist;
@@ -642,7 +659,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
     const isKick = pose === POSE.kick;
     if (isPunch || isKick) {
       const a = fighter.currentAttack;
-      const { phase, localT } = isPunch ? getPunchPhase(poseT, a.data.duration, a.type) : getKickPhase(poseT, a.data.duration, a.type);
+      const { phase, localT } = isPunch ? getPunchPhase(atkPoseT, a.data.duration, a.type) : getKickPhase(atkPoseT, a.data.duration, a.type);
 
       const WINDUP = 0, STRIKE = 1;
       if (phase === WINDUP) {

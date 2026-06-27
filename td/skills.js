@@ -225,9 +225,10 @@ const BASE_SKILL_MAP = {
 
 function pickBaseSkill(base, foes, rng, beamHits = []) {
   const pool = TD.BASE_SKILLS?.skills || ['volley', 'shock'];
-  const lowHp = base.hp / base.maxHp < 0.42;
+  const hpR = base.hp / base.maxHp;
   if (beamHits.length && pool.includes('laser')) {
-    const chance = lowHp ? (TD.BASE_LASER?.lowHpPick ?? 0.2) : (TD.BASE_LASER?.pick ?? 0.045);
+    const L = TD.BASE_LASER ?? {};
+    const chance = hpR < 0.2 ? (L.criticalHpPick ?? 0.34) : hpR < 0.42 ? (L.lowHpPick ?? 0.2) : (L.pick ?? 0.045);
     if (rng() < chance) return 'laser';
   }
   let opts = pool.filter(id => BASE_SKILL_MAP[id] && id !== 'laser');

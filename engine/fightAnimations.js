@@ -106,11 +106,13 @@ function gaitLeg(phase, cfg) {
   const swingLift = Math.sin(swingT * Math.PI);
   const toeOff = clamp01((strideCos + 0.15) / 1.15);
   const trailing = clamp01((-stride + 0.05) / 1.05);
+  const planted = strideCos > -0.2;
+  const plant = planted ? 1 - swingLift * 0.42 : 1;
 
   return {
     hip: stride * cfg.hipAmp + cfg.hipBias - swingLift * cfg.swingHipBack,
-    knee: cfg.stanceKnee + swingLift * cfg.swingKnee + trailing * cfg.trailKnee,
-    foot: -0.08 + toeOff * cfg.toeOff + swingLift * cfg.footLift - Math.max(0, stride) * cfg.heelStrike
+    knee: (cfg.stanceKnee + trailing * cfg.trailKnee) * plant + swingLift * cfg.swingKnee,
+    foot: -0.05 + toeOff * cfg.toeOff * plant + swingLift * cfg.footLift - Math.max(0, stride) * cfg.heelStrike,
   };
 }
 
@@ -118,73 +120,75 @@ function gaitLeg(phase, cfg) {
 // UP in a bladed guard (they don't swing casually), the knees stay bent to keep
 // a low centre of gravity, and the hips/shoulders rotate continuously for flow.
 const WALK_GAIT = {
-  hipAmp: 0.34,        // shorter, controlled steps
-  swingHipBack: 0.06,
-  stanceKnee: 0.22,    // deeper bend → rooted, low stance
-  swingKnee: 0.5,
-  trailKnee: 0.18,
-  toeOff: 0.18,
-  footLift: 0.2,
-  heelStrike: 0.1
+  hipAmp: 0.38,
+  swingHipBack: 0.08,
+  stanceKnee: 0.28,
+  swingKnee: 0.58,
+  trailKnee: 0.22,
+  toeOff: 0.22,
+  footLift: 0.28,
+  heelStrike: 0.14,
 };
 
 export function getWalkCycle(phase, face) {
   const s = Math.sin(phase);
+  const c = Math.cos(phase);
   const rightLeg = gaitLeg(phase, { ...WALK_GAIT, hipBias: 0.02 });
   const leftLeg = gaitLeg(phase + Math.PI, { ...WALK_GAIT, hipBias: -0.02 });
+  const contact = Math.pow(Math.max(0, c), 2);
 
   return {
-    lHip: leftLeg.hip,
-    rHip: rightLeg.hip,
+    lHip: leftLeg.hip - s * 0.05,
+    rHip: rightLeg.hip + s * 0.05,
     lKnee: leftLeg.knee,
     rKnee: rightLeg.knee,
     lFoot: leftLeg.foot,
     rFoot: rightLeg.foot,
-    // Bladed guard: lead hand high, rear hand chambered — sway subtly, never drop.
-    lArm: 0.5 - s * 0.14,
-    rArm: 0.82 + s * 0.14,
-    lElbow: -1.5 - Math.abs(s) * 0.1,
-    rElbow: -1.62 - Math.abs(s) * 0.1,
-    bob: 0.9 + (1 - Math.cos(phase * 2)) * 0.85, // low, grounded carriage
-    torsoTwist: -s * 0.16 * face,                // continuous shoulder/hip rotation
-    lean: 0.07 * face,
-    headTilt: 0.02 * face
+    lArm: 0.46 - s * 0.24,
+    rArm: 0.86 + s * 0.24,
+    lElbow: -1.52 + Math.max(0, s) * 0.32,
+    rElbow: -1.64 - Math.max(0, -s) * 0.32,
+    bob: 0.7 + contact * 0.9 + (1 - Math.abs(s)) * 0.32,
+    torsoTwist: -s * 0.18 * face,
+    lean: (0.06 + contact * 0.03) * face,
+    headTilt: 0.02 * face - s * 0.015,
   };
 }
 
 const RUN_GAIT = {
-  hipAmp: 0.7,
-  swingHipBack: 0.16,
-  stanceKnee: 0.2,
-  swingKnee: 1.0,
-  trailKnee: 0.46,
-  toeOff: 0.28,
-  footLift: 0.34,
-  heelStrike: 0.18
+  hipAmp: 0.74,
+  swingHipBack: 0.18,
+  stanceKnee: 0.22,
+  swingKnee: 1.05,
+  trailKnee: 0.5,
+  toeOff: 0.32,
+  footLift: 0.4,
+  heelStrike: 0.22,
 };
 
 export function getRunCycle(phase, face) {
   const s = Math.sin(phase);
+  const c = Math.cos(phase);
   const rightLeg = gaitLeg(phase, { ...RUN_GAIT, hipBias: 0.03 });
   const leftLeg = gaitLeg(phase + Math.PI, { ...RUN_GAIT, hipBias: -0.03 });
   const drive = Math.abs(s);
+  const strike = Math.pow(Math.max(0, c), 2);
 
   return {
-    lHip: leftLeg.hip,
-    rHip: rightLeg.hip,
+    lHip: leftLeg.hip - s * 0.08,
+    rHip: rightLeg.hip + s * 0.08,
     lKnee: leftLeg.knee,
     rKnee: rightLeg.knee,
     lFoot: leftLeg.foot,
     rFoot: rightLeg.foot,
-    // Committed advance — fists pump but stay up to cover, never wide-arm jogging.
-    lArm: 0.66 - s * 0.42,
-    rArm: 0.98 + s * 0.42,
-    lElbow: -1.34 - drive * 0.22,
-    rElbow: -1.5 - drive * 0.22,
-    bob: 2.6 + Math.sin(phase * 2 + Math.PI * 0.15) * 1.8,
-    torsoTwist: -s * 0.22 * face,
-    lean: 0.22 * face,                  // drive the centre of mass forward
-    headTilt: 0.05 * face
+    lArm: 0.6 - s * 0.5,
+    rArm: 1.04 + s * 0.5,
+    lElbow: -1.18 - drive * 0.38,
+    rElbow: -1.34 - drive * 0.38,
+    bob: 1.2 + strike * 2.6 + drive * 0.55,
+    torsoTwist: -s * 0.24 * face,
+    lean: (0.18 + strike * 0.08) * face,
+    headTilt: 0.04 * face - s * 0.025,
   };
 }
 
@@ -538,6 +542,34 @@ export function mergeRest(base, patch) {
   return patch ? { ...base, ...patch } : base;
 }
 
+// Foot cadence tied to actual creep speed + scale (longer legs = slower cycle at same px/s).
+export function gaitPhaseSpeed(velX, moveSpeed, scale, isRun, cycleMul = 1) {
+  const target = moveSpeed || (isRun ? 420 : 220);
+  const ratio = Math.min(1.45, Math.max(0.32, Math.abs(velX) / Math.max(28, target)));
+  const base = isRun ? 12 : 7.4;
+  return base * ratio * cycleMul / Math.sqrt(scale || 1);
+}
+
+export function getRangedShootPose(poseT, face, rest, flying = false) {
+  const draw = easeOutCubic(Math.min(1, poseT * 7));
+  const recoil = poseT > 0.1 ? Math.sin(Math.min(1, (poseT - 0.1) * 5.5) * Math.PI) * 0.38 : 0;
+  return {
+    lean: -face * (0.06 + draw * 0.06 + recoil * 0.05),
+    torsoTwist: face * (0.1 * draw + recoil * 0.08),
+    headTilt: face * 0.035,
+    bob: (flying ? -5 : -1) * draw + recoil * (flying ? 4 : 2),
+    lShoulderAng: lerp(rest.lShoulderAng, 0.78, draw),
+    rShoulderAng: lerp(rest.rShoulderAng, -0.22 - recoil * 0.35, draw),
+    lElbowAng: lerp(rest.lElbowAng, -1.75, draw),
+    rElbowAng: lerp(rest.rElbowAng, -0.42 + recoil * 0.55, draw),
+    lHipAng: rest.lHipAng + draw * 0.06,
+    rHipAng: rest.rHipAng - recoil * 0.08,
+    lKneeAng: rest.lKneeAng + draw * 0.1,
+    rKneeAng: rest.rKneeAng + draw * 0.08 + recoil * 0.12,
+    lFootAng: rest.lFootAng, rFootAng: rest.rFootAng,
+  };
+}
+
 export function scaleWalkCycle(cycle, w = {}) {
   if (!w || !Object.keys(w).length) return cycle;
   const m = (v, k, d = 1) => (v ?? 0) * (w[k] ?? d);
@@ -610,15 +642,19 @@ function minerIdle(poseT, rest) {
 
 function hoverIdle(poseT, rest, air = {}) {
   const phase = (poseT * 1.6) % (2 * Math.PI);
+  const flap = Math.sin(poseT * (air.flapSpeed ?? 4.8));
+  const up = Math.max(0, flap);
+  const down = Math.max(0, -flap);
   const bob = Math.sin(phase) * (air.bob ?? 4);
+  const wing = air.flapAmp ?? 0.45;
   return {
-    lShoulderAng: 0.62 + Math.sin(phase * 0.5) * 0.08,
-    rShoulderAng: 0.48,
-    lElbowAng: -1.25, rElbowAng: -1.4,
-    lHipAng: -0.35, rHipAng: 0.25,
-    lKneeAng: 0.72, rKneeAng: 0.55,
+    lShoulderAng: 0.55 + flap * wing,
+    rShoulderAng: 0.48 - flap * wing,
+    lElbowAng: -1.05 - up * 0.35, rElbowAng: -1.15 - up * 0.35,
+    lHipAng: -0.35 - up * 0.12, rHipAng: 0.25 + up * 0.1,
+    lKneeAng: 0.72 + up * 0.15, rKneeAng: 0.55 + up * 0.12,
     lFootAng: -0.15, rFootAng: 0.1,
-    bob: (air.lift ?? -18) + bob,
+    bob: (air.lift ?? -18) + bob + down * (air.flapLift ?? 4),
     torsoTwist: Math.sin(phase * 0.7) * 0.05,
     lean: 0.04,
     headTilt: Math.sin(phase * 0.4) * 0.03,
@@ -689,24 +725,29 @@ export function getProfileIdle(kind, poseT, rest, chill, air) {
 
 export function getFlyPose(poseT, face, prof, velX = 0, shooting = false) {
   const air = prof?.air || {};
-  const flap = Math.sin(poseT * 2.6) * (air.bob ?? 6);
+  const flap = Math.sin(poseT * (air.flapSpeed ?? 5.4));
+  const up = Math.max(0, flap);
+  const down = Math.max(0, -flap);
+  const hover = Math.sin(poseT * 1.6) * (air.bob ?? 3);
   const spd = Math.min(0.28, Math.abs(velX) / 700);
   const snap = shooting ? Math.sin(Math.min(1, poseT * 5) * Math.PI) : 0;
   const cruise = velX !== 0 ? Math.sign(velX) : face;
+  const flapMul = shooting ? 0.22 : 1;
+  const wing = (air.flapAmp ?? 0.62) * flapMul;
   return {
     lean: cruise * (0.04 + spd) + face * 0.02,
-    torsoTwist: Math.sin(poseT * 2.1) * 0.07 * face,
-    headTilt: Math.sin(poseT * 1.4) * 0.05 - snap * 0.04,
-    bob: flap,
-    lArmAng: 0.28 + flap * 0.015 + snap * 0.35,
-    rArmAng: 0.62 + snap * 0.85,
-    lForeArmAng: -1.05 - snap * 0.15,
-    rForeArmAng: -0.65 - snap * 0.75,
-    lLegAng: -0.48 - spd * 0.35,
-    rLegAng: 0.22 + spd * 0.25,
-    lKneeOff: 0.68 + Math.abs(flap) * 0.04,
-    rKneeOff: 0.52 + Math.abs(flap) * 0.03,
-    lFootAng: -0.14, rFootAng: 0.1,
+    torsoTwist: Math.sin(poseT * 2.1) * 0.06 * face + down * 0.05 * flapMul,
+    headTilt: Math.sin(poseT * 1.4) * 0.05 - snap * 0.04 - up * 0.03,
+    bob: hover + down * (air.flapLift ?? 6) * flapMul - up * 2,
+    lArmAng: shooting ? (0.28 + snap * 0.35) : (-0.15 + flap * wing),
+    rArmAng: shooting ? (0.62 + snap * 0.85) : (-0.15 - flap * wing),
+    lForeArmAng: shooting ? (-1.05 - snap * 0.15) : (-0.72 - up * 0.58 * flapMul),
+    rForeArmAng: shooting ? (-0.65 - snap * 0.75) : (-0.72 - up * 0.58 * flapMul),
+    lLegAng: -0.48 - up * 0.4 * flapMul - spd * 0.35,
+    rLegAng: 0.2 + up * 0.3 * flapMul + spd * 0.25,
+    lKneeOff: 0.6 + up * 0.24 * flapMul,
+    rKneeOff: 0.46 + up * 0.2 * flapMul,
+    lFootAng: -0.12 - up * 0.08, rFootAng: 0.08,
   };
 }
 
@@ -778,5 +819,16 @@ if (typeof process !== 'undefined' && process.argv[1]?.endsWith('fightAnimations
   const shot = getFlyPose(0.15, 1, {}, 0, true);
   console.assert(cruise.lean < 0, 'fly lean follows velocity');
   console.assert(shot.rArmAng > 0.9, 'fly shoot raises bow arm');
+  const f0 = getFlyPose(0, 1, { air: { flapAmp: 0.62 } }, 0, false);
+  const f1 = getFlyPose(0.22, 1, { air: { flapAmp: 0.62 } }, 0, false);
+  console.assert(Math.abs(f0.lArmAng - f1.lArmAng) > 0.12, 'fly arms flap');
+  const walk = getWalkCycle(0, 1);
+  const walkMid = getWalkCycle(Math.PI * 0.5, 1);
+  console.assert(walk.bob > walkMid.bob, 'walk dips mid-stride');
+  const slow = gaitPhaseSpeed(58, 58, 1.92, false, 0.52);
+  const fast = gaitPhaseSpeed(280, 280, 0.78, true, 1.2);
+  console.assert(slow < fast, 'giant gait slower than sprinter run');
+  const bow = getRangedShootPose(0.12, 1, REST_STANCE, false);
+  console.assert(bow.rShoulderAng < REST_STANCE.rShoulderAng, 'ranged draw pulls bow arm back');
   console.log('fightAnimations ok');
 }

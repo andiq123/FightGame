@@ -22,7 +22,7 @@ export const TD = {
   // Bases auto-fire arrows at the nearest enemy creep in range (the only static
   // defence — there is no hero).
   BASE_FIRE: { range: 980, cooldownMs: 1550, damage: 28, speed: 1180, arc: 1500 },
-  BASE_LASER: { range: 2100, halfW: 120, dmg: 22, pushVx: 780, lowHpPick: 0.2, pick: 0.045 },
+  BASE_LASER: { range: 2100, halfW: 120, dmg: 22, pushVx: 780, pick: 0.045, lowHpPick: 0.2, criticalHpPick: 0.34 },
   ATTACK_CD_MUL: 1.38,
   RANGED_CD_MUL: 1.85,
   FLY_RANGED_CD_MUL: 1.35,

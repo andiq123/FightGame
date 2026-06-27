@@ -3,6 +3,7 @@ import { ATTACK } from '../entities/attacks.js';
 import { TD, opp } from './config.js';
 import { castCreepBolt, fireBaseArrow } from './projectiles.js';
 import { killCreep, tryTdRagdoll } from './combat.js';
+import { skillChanceMul } from './emote.js';
 import { inRadiusX } from '../core/hitbox.js';
 import { spawnHitParticles, spawnFrost } from '../services/particleSystem.js';
 
@@ -22,7 +23,9 @@ function aoeCreeps(world, cx, radius, team, dmg, now, from) {
     const dealt = o.takeDamage(dmg, true, cx, now);
     o.vx += Math.sign(o.x - cx) * 260;
     o.pose = POSE.hit; o.poseTime = 0;
-    tryTdRagdoll(world, o, cx, Math.sign(o.x - cx) * 360, -240, now, { heavy: true, dmg: dealt, knockdown: true });
+    tryTdRagdoll(world, o, cx, Math.sign(o.x - cx) * 360, -240, now, {
+      heavy: true, dmg: dealt, knockdown: true, attackerScale: from?.scale ?? 1,
+    });
     addHit(world, o.x, TD.GROUND_Y + o.y - 70, dealt, true);
     if (o.hp <= 0) killCreep(world, o, team, now);
   }
@@ -33,10 +36,12 @@ const SKILLS = {
     if (!foe || !c.ranged) return false;
     c.pose = POSE.punch; c.poseTime = 0;
     if (c.flying) c._flyShootT = 0.32;
-    for (let i = -1; i <= 1; i++) {
+    for (let i = -1; i <= 1; i += 2) {
       const t = { ...foe, x: foe.x + i * 90 };
       castCreepBolt(world, c, t, now);
     }
+    c.nextAtkAt = now + c.atkCdMs * (TD.ATTACK_CD_MUL ?? 1.35) * (TD.RANGED_CD_MUL ?? 1.85)
+      * (c.flying ? (TD.FLY_RANGED_CD_MUL ?? 1.35) : 1);
     spawnHitParticles(world.particles, c.x, TD.GROUND_Y - 80, true, world.rng);
     return true;
   },
@@ -108,6 +113,7 @@ export function tryCreepSkill(c, world, foe, now) {
     if (id === 'dashStrike' && dist > 100 && dist < 420) chance += 0.18;
     if (id === 'iceLance' && dist > 180 && dist < 620) chance += 0.14;
     if (id === 'fireBurst' && dist > 200 && dist < 550) chance += 0.12;
+    chance *= skillChanceMul(c, world.rng);
     if (world.rng() > chance) continue;
     if (fn(c, world, foe, now)) {
       c._skillAt = now + cd * (0.75 + world.rng() * 0.5);
@@ -160,7 +166,7 @@ const BASE_SKILL_MAP = {
       o.takeDamage(18, true, base.x, now);
       o.status.set('frozen', now + 1200);
       o.pose = POSE.hit; o.poseTime = 0;
-      tryTdRagdoll(world, o, base.x, Math.sign(o.x - base.x || 1) * 200, -90, now, { dmg: 18 });
+      tryTdRagdoll(world, o, base.x, Math.sign(o.x - base.x || 1) * 200, -90, now, { dmg: 18, attackerScale: 2.2 });
     }
     spawnFrost(world.particles, base.x, TD.GROUND_Y, world.rng);
     return true;
@@ -172,7 +178,9 @@ const BASE_SKILL_MAP = {
       const dealt = o.takeDamage(34, true, v.x, now);
       o.vx += Math.sign(o.x - v.x) * 260;
       o.pose = POSE.hit; o.poseTime = 0;
-      tryTdRagdoll(world, o, v.x, Math.sign(o.x - v.x) * 300, -200, now, { heavy: true, dmg: dealt, knockdown: true });
+      tryTdRagdoll(world, o, v.x, Math.sign(o.x - v.x) * 300, -200, now, {
+        heavy: true, dmg: dealt, knockdown: true, attackerScale: 2.2,
+      });
       addHit(world, o.x, TD.GROUND_Y + o.y - 70, dealt, true);
       if (o.hp <= 0) killCreep(world, o, base.team, now);
     }
@@ -202,7 +210,9 @@ const BASE_SKILL_MAP = {
       o.pose = POSE.hit; o.poseTime = 0;
       o.vx = dir * push + Math.sign(o.x - base.x || dir) * 90;
       o.vy = Math.min(o.vy, o.flying ? -80 : -140);
-      tryTdRagdoll(world, o, base.x, dir * 320, -180, now, { heavy: true, dmg: dealt, knockdown: true });
+      tryTdRagdoll(world, o, base.x, dir * 320, -180, now, {
+        heavy: true, dmg: dealt, knockdown: true, attackerScale: 2.2,
+      });
       addHit(world, o.x, TD.GROUND_Y + o.y - 70 * (o.scale || 1), dealt, true);
       if (o.hp <= 0) killCreep(world, o, base.team, now);
     }

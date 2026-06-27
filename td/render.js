@@ -8,6 +8,8 @@ import { TD, TEAM_COLOR } from './config.js';
 export const LOGICAL_WIDTH = 1920;
 const LOGICAL_HEIGHT = 1080;
 const GROUND_Y = TD.GROUND_Y;
+// ponytail: head top ≈ groundY + y - 126×scale — bar sits above, not on the face
+const unitHpBarY = (u) => GROUND_Y + u.y - (138 * (u.scale || 1) + 10);
 
 export class TDViewport {
   constructor(canvas) {
@@ -77,7 +79,7 @@ export class TDViewport {
       if (u.flying && !u._hoverOff) drawFlyGlow(ctx, u, now);
       drawStickman(ctx, u, GROUND_Y, now);
       if (u.role === 'boss' || (u.scale || 1) >= 1.85) drawStatPlate(ctx, u, TEAM_COLOR[u.team]);
-      else drawHpBar(ctx, u.x, GROUND_Y + u.y - 120 * (u.scale || 1), Math.max(0, u.hp) / u.maxHp, Math.max(48, 46 * (u.scale || 1)), TEAM_COLOR[u.team]);
+      else drawHpBar(ctx, u.x, unitHpBarY(u), Math.max(0, u.hp) / u.maxHp, Math.max(48, 46 * (u.scale || 1)), TEAM_COLOR[u.team]);
     };
 
     const cull = viewW * 0.55 + 60;
@@ -94,6 +96,7 @@ export class TDViewport {
     drawTDProjectiles(ctx, world.projectiles, now);
     drawParticles(ctx, world.particles);
     world.hitEffects.forEach(h => {
+      if (h.death) { drawDeathRing(ctx, h); return; }
       drawHitEffect(ctx, h);
       if (h.dmg > 0) drawDamageNumber(ctx, h.x, h.y - 25, h.dmg, Math.max(0, 1 - h.t * 2.2), h.counter, h.crit);
     });
@@ -528,7 +531,7 @@ function drawStatPlate(ctx, m, hpColor) {
   const scale = m.scale || 1;
   const cx = m.x;
   const w = Math.max(48, 46 * scale);
-  const top = GROUND_Y + m.y - 120 * scale - 30;
+  const top = unitHpBarY(m);
 
   const str = m.power ?? 1;
   const intel = m.intelligence ?? 1;
@@ -586,6 +589,20 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+function drawDeathRing(ctx, h) {
+  const a = 1 - h.t * 2.2;
+  if (a <= 0) return;
+  const r = 6 + h.t * 32;
+  ctx.save();
+  ctx.globalAlpha = a * 0.7;
+  ctx.strokeStyle = h.color || '#b8c0cc';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawHpBar(ctx, cx, y, ratio, w, color, big = false) {

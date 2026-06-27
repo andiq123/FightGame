@@ -55,7 +55,7 @@ export function castCreepBolt(world, c, target, now) {
     team: c.team, x: x0, y: y0, vx, vy, arc,
     type: r.type, dmg: c.rangedDmg ?? r.damage, radius: r.radius,
     slowMs: r.slowMs || 0, stunMs: r.stunMs || 0, perfectStrike: !!c.traits?.perfectStrike,
-    flyBolt: !!c.flying,
+    flyBolt: !!c.flying, srcScale: c.scale || 1,
   });
   spawnHitParticles(world.particles, c.x + dir * 30, TD.GROUND_Y + (c.flying ? c.y : -60), false, world.rng);
 }
@@ -141,7 +141,10 @@ function damageCreep(world, o, p, now) {
   if (o.flying) knockFlyerDown(o, now, kbX * 0.55, p.type === 'fireball' ? 220 : 160);
   const R = TD.RAGDOLL ?? {};
   const ragdolled = (world.rng() < (R.projChance ?? 0.55) || p.type === 'fireball' || p.dmg >= 36 || o.flying)
-    && tryTdRagdoll(world, o, p.x, kbX, kbY, now, { heavy: true, dmg: dealt, force: p.type === 'fireball' || o.flying });
+    && tryTdRagdoll(world, o, p.x, kbX, kbY, now, {
+      heavy: true, dmg: dealt, force: p.type === 'fireball' || o.flying,
+      attackerScale: p.srcScale ?? 1,
+    });
   if (!ragdolled) {
     o.vx += Math.sign(p.vx) * (240 + p.dmg * 0.6) * push;
     o.impactFrictionUntil = Math.max(o.impactFrictionUntil || 0, now + (PHYSICS.IMPACT_FRICTION_MS ?? 360));

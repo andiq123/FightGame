@@ -156,6 +156,22 @@ export function spawnDashDust(particles, x, y, dir, rng) {
   }
 }
 
+// TD unit death — tiny puff, capped count, reuses smoke/hit draw paths.
+export function spawnDeathPoof(particles, x, y, scale, rng) {
+  trimBeforeSpawn(particles, 5);
+  const cy = y - 38 * (scale || 1);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rng() * 0.35;
+    const sp = 28 + rng() * 38;
+    particles.push(createParticle(
+      x + (rng() - 0.5) * 8, cy,
+      Math.cos(a) * sp, Math.sin(a) * sp * 0.55 - 18,
+      'smoke', 3.5, 0.2
+    ));
+  }
+  particles.push(createParticle(x, cy, (rng() - 0.5) * 16, -70 - rng() * 35, 'hit', 2.5, -0.08));
+}
+
 
 
 
@@ -172,4 +188,14 @@ export function tickParticles(particles, dt) {
   particles.length = n;
   if (n > MAX_PARTICLES) particles.splice(0, n - MAX_PARTICLES);
   return particles;
+}
+
+if (typeof process !== 'undefined' && process.argv[1]?.endsWith('particleSystem.js')) {
+  const ps = [];
+  const rng = () => Math.random();
+  spawnDeathPoof(ps, 100, 800, 1, rng);
+  console.assert(ps.length === 5, 'death poof stays tiny');
+  tickParticles(ps, 0.05);
+  console.assert(ps.length === 5, 'death poof survives one tick');
+  console.log('particleSystem ok');
 }

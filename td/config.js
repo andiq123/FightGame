@@ -24,6 +24,8 @@ export const TD = {
   BASE_FIRE: { range: 980, cooldownMs: 1550, damage: 28, speed: 1180, arc: 1500 },
   BASE_LASER: { range: 2100, halfW: 120, dmg: 22, pushVx: 780, lowHpPick: 0.2, pick: 0.045 },
   ATTACK_CD_MUL: 1.38,
+  RANGED_CD_MUL: 1.85,
+  FLY_RANGED_CD_MUL: 1.35,
 
   // Base active skills — separate cooldown from normal arrow fire.
   BASE_SKILLS: {
@@ -93,15 +95,15 @@ export const TD = {
                ranged: { type: 'kunai', damage: 22, speed: 920, radius: 30, range: 500 } },
     brute:   { name: 'Brute',   role: 'fighter', scale: 1.55, power: 14, int: 6,  speed: 82,  hp: 820,  dmg: 36, range: 132, atkCdMs: 1320, reward: 48, cost: 155, weight: 2.2 },
     giant:   { name: 'Giant',   role: 'fighter', scale: 1.92, power: 17, int: 4,  speed: 58,  hp: 1350, dmg: 46, range: 148, atkCdMs: 1480, reward: 62, cost: 185, weight: 2.8, cape: true },
-    archer:  { name: 'Archer',  role: 'fighter', scale: 1.0,  power: 8,  int: 14, speed: 110, hp: 260, dmg: 12, range: 120, atkCdMs: 1500, reward: 34, cost: 130, weight: 2, cape: true,
+    archer:  { name: 'Archer',  role: 'fighter', scale: 1.0,  power: 8,  int: 14, speed: 110, hp: 260, dmg: 12, range: 120, atkCdMs: 1850, reward: 34, cost: 130, weight: 2, cape: true,
                ranged: { type: 'shuriken', damage: 30, speed: 620, radius: 46, range: 600 } },
-    bowman:  { name: 'Bowman',  role: 'fighter', scale: 1.02, power: 9,  int: 12, speed: 98,  hp: 230, dmg: 11, range: 110, atkCdMs: 1350, reward: 32, cost: 115, weight: 2.2,
+    bowman:  { name: 'Bowman',  role: 'fighter', scale: 1.02, power: 9,  int: 12, speed: 98,  hp: 230, dmg: 11, range: 110, atkCdMs: 1700, reward: 32, cost: 115, weight: 2.2,
                ranged: { type: 'arrow', damage: 36, speed: 980, radius: 36, range: 720 } },
-    skyrider:{ name: 'Skyrider',role: 'fighter', scale: 0.92, power: 8,  int: 15, speed: 145, hp: 175, dmg: 10, range: 100, atkCdMs: 1200, reward: 40, cost: 120, weight: 4.5, flying: true, hoverY: -240,
+    skyrider:{ name: 'Skyrider',role: 'fighter', scale: 0.92, power: 8,  int: 15, speed: 145, hp: 175, dmg: 10, range: 100, atkCdMs: 1500, reward: 40, cost: 120, weight: 4.5, flying: true, hoverY: -240,
                ranged: { type: 'bolt', damage: 24, speed: 800, radius: 38, range: 640, stunMs: 160 } },
-    hawk:    { name: 'Hawk',    role: 'fighter', scale: 0.74, power: 5,  int: 10, speed: 190, hp: 90,  dmg: 8,  range: 86,  atkCdMs: 1050, reward: 14, cost: 72,  weight: 3.6, flying: true, hoverY: -215,
+    hawk:    { name: 'Hawk',    role: 'fighter', scale: 0.74, power: 5,  int: 10, speed: 190, hp: 90,  dmg: 8,  range: 86,  atkCdMs: 1350, reward: 14, cost: 72,  weight: 3.6, flying: true, hoverY: -215,
                ranged: { type: 'bolt', damage: 14, speed: 760, radius: 26, range: 460 } },
-    pyro:    { name: 'Pyro',    role: 'fighter', scale: 1.05, power: 10, int: 13, speed: 88,  hp: 210, dmg: 10, range: 105, atkCdMs: 1400, reward: 36, cost: 145, weight: 1.6,
+    pyro:    { name: 'Pyro',    role: 'fighter', scale: 1.05, power: 10, int: 13, speed: 88,  hp: 210, dmg: 10, range: 105, atkCdMs: 1750, reward: 36, cost: 145, weight: 1.6,
                ranged: { type: 'fireball', damage: 40, speed: 460, radius: 52, range: 540 } },
     warlord: { name: 'Warlord', role: 'fighter', scale: 1.3,  power: 18, int: 17, speed: 155, hp: 760, dmg: 36, range: 124, atkCdMs: 760,  reward: 90, cost: 320, weight: 1, cape: true },
     bowler:  { name: 'Bowler',  role: 'bowler',  scale: 1.12, power: 12, int: 9,  speed: 118, hp: 340, dmg: 22, range: 86,  atkCdMs: 2200, reward: 40, cost: 118, weight: 1.5 },
@@ -144,6 +146,7 @@ export const TD = {
     jukeGap: 135, jukeVx: 420, jukeVy: -360, jukeCdMs: 1300,
     bruteLeapGapMin: 180, bruteLeapGapMax: 560, bruteLeapVy: -480, bruteLeapVx: 400, bruteLeapCdMs: 2400,
     antiAirVyBase: 720, antiAirVyScale: 1.35, antiAirMs: 920,
+    blinkHop: 130, blinkMinGap: 100, blinkMaxGap: 320, blinkCdMs: 1600,
     airWobbleY: -95, airWobbleChance: 0.042,
   },
 
@@ -153,11 +156,13 @@ export const TD = {
     graceMs: 480, launchMs: 160, blendMs: 280, pushMul: 1.22,
     scaleMin: 1.1, dmgMin: 34, heavyChance: 0.78, lightChance: 0.2,
     projChance: 0.55, throwAlways: true,
+    giantAtkRatio: 0.72, giantStackHits: 4, giantStackMs: 850,
   },
 
   FLY: {
     staminaMax: 100, hideDrain: 34, cruiseRegen: 12, hideMul: 1.52, hideMinMs: 1400,
     groundMs: 3200, knockVy: 130, landRagdollVy: 90, landRagdollChance: 0.62, reclimbHideMs: 900,
+    landDmgVy: 140, landDmgScale: 0.22,
   },
 
   // Cannonball leap — long arc, landing slam, ragdoll bowling.

@@ -913,6 +913,12 @@ export function drawStickman(ctx, fighter, groundY, now) {
       ctx.beginPath(); ctx.moveTo(headX - 5 * face, headY - 9); ctx.lineTo(headX - 1 * face, headY - 6);
       ctx.moveTo(headX + 5 * face, headY - 9); ctx.lineTo(headX + 1 * face, headY - 6); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(headX + face * 3, headY + 5); ctx.lineTo(headX + face * 8, headY + 5); ctx.stroke();
+    } else if (em === 'confused') {
+      ctx.beginPath(); ctx.moveTo(headX - 5 * face, headY - 8); ctx.lineTo(headX - 1 * face, headY - 11);
+      ctx.moveTo(headX + 1 * face, headY - 11); ctx.lineTo(headX + 5 * face, headY - 8); ctx.stroke();
+      ctx.font = '700 9px system-ui,sans-serif'; ctx.fillStyle = '#101012';
+      ctx.fillText('?', headX + face * 10, headY - 8);
+      ctx.beginPath(); ctx.moveTo(headX + face * 3, headY + 5); ctx.quadraticCurveTo(headX + face * 5.5, headY + 2, headX + face * 8, headY + 6); ctx.stroke();
     } else if (em === 'happy') {
       ctx.beginPath(); ctx.arc(headX + face * 5.5, headY + 3, 3, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
     } else if (em === 'hurt') {

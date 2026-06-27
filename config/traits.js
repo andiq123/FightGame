@@ -28,7 +28,7 @@ export const TRAITS = {
   tireless:      { name: 'Tireless', tip: 'Infinite stamina; never rests or retreats' },
   // ── Movement ──
   athletic:      { name: 'Athletic', tip: 'Instant acceleration and dead stops — never slides' },
-  blink:         { name: 'Blink', tip: 'Teleports to close the distance when the enemy is far' },
+  blink:         { name: 'Blink', tip: 'Short hop to close a gap in a fight' },
   // ── Style / look ──
   chill:         { name: 'Chill', tip: 'Relaxed, bored stance; strikes only now and then' },
   caped:         { name: 'Caped Look', tip: 'Cosmetic: flowing cape + bald deadpan look' },

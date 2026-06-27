@@ -1,7 +1,7 @@
 import { POSE } from '../entities/fighter.js';
 import { GRAB } from '../entities/attacks.js';
 import { TD, opp } from './config.js';
-import { spawnHitParticles } from '../services/particleSystem.js';
+import { spawnDeathPoof, spawnHitParticles } from '../services/particleSystem.js';
 import { updateRagdoll, beginRagdollLaunch, commitRagdollLaunch } from '../engine/ragdoll.js';
 import { meleeOverlapX } from '../core/hitbox.js';
 import { COMBAT, PHYSICS } from '../config/constants.js';
@@ -11,6 +11,8 @@ import { dmgMulFor } from './events.js';
 
 const perSecDamp = (factor, dt) => Math.pow(factor, dt * 60);
 const slideCarry = (f) => f._ragdollLaunch || (f.pose === POSE.hit && (f.poseTime || 0) < 0.22);
+// ponytail: scale threshold, not role string — giant creep is scale 1.92
+const isGiant = (c) => (c?.scale || 1) >= 1.85;
 
 // Stamina-gated evasion: a gassed creep can't weave. Tireless = always fresh.
 export function evasion(f) {
@@ -42,6 +44,14 @@ export function tickFlyerLandings(world, now) {
     if (!c._pendingLandRagdoll) continue;
     const vy = c._pendingLandRagdoll;
     c._pendingLandRagdoll = 0;
+    const credit = c._crashCredit || opp(c.team);
+    c._crashCredit = null;
+    if (vy >= (F.landDmgVy ?? 140)) {
+      const dmg = Math.round((vy - 100) * (F.landDmgScale ?? 0.22));
+      const dealt = c.takeDamage(dmg, true, c.x, now);
+      addHit(world, c.x, TD.GROUND_Y + c.y - 70 * (c.scale || 1), dealt, { heavy: true });
+      if (c.hp <= 0) killCreep(world, c, credit, now);
+    }
     if (vy < (F.landRagdollVy ?? 90) || world.rng() > (F.landRagdollChance ?? 0.62)) continue;
     ragdollKnockback(world, c, c.x - c.facing * 40, c.vx * 0.75, Math.max(vy * 0.5, 60), now);
   }
@@ -57,15 +67,41 @@ export function ragdollKnockback(world, unit, fromX, vx, vy, now, upward = false
   return beginRagdollLaunch(unit, fromX, vx, vy, now, TD.RAGDOLL?.launchMs ?? 160, upward);
 }
 
+// Small hits on a giant only ragdoll after a burst in a short window.
+function giantStackBlocks(unit, atkScale, now) {
+  if (!isGiant(unit)) return false;
+  const R = TD.RAGDOLL ?? {};
+  if (atkScale >= (unit.scale || 1) * (R.giantAtkRatio ?? 0.72)) return false;
+  const window = R.giantStackMs ?? 850;
+  const need = R.giantStackHits ?? 4;
+  let s = unit._ragdollStack;
+  if (!s || now - s.t > window) s = unit._ragdollStack = { n: 0, t: now };
+  s.n++;
+  s.t = now;
+  return s.n < need;
+}
+
+function finishRagdoll(unit, ok) {
+  if (ok) unit._ragdollStack = null;
+  return ok;
+}
+
 // Shared TD ragdoll gate — one place for melee, bolts, throws, slams.
 export function tryTdRagdoll(world, unit, fromX, vx, vy, now, opts = {}) {
-  if (opts.knockdown || opts.kickLaunch || opts.force) return ragdollKnockback(world, unit, fromX, vx, vy, now);
+  if (giantStackBlocks(unit, opts.attackerScale ?? 1, now)) return false;
   const R = TD.RAGDOLL ?? {};
-  if ((unit.scale || 1) >= (R.scaleMin ?? 1.1) || (opts.dmg ?? 0) >= (R.dmgMin ?? 34)) {
-    return ragdollKnockback(world, unit, fromX, vx, vy, now);
+  if (opts.knockdown || opts.kickLaunch || opts.force) {
+    return finishRagdoll(unit, ragdollKnockback(world, unit, fromX, vx, vy, now));
   }
-  if (opts.heavy && world.rng() < (R.heavyChance ?? 0.78)) return ragdollKnockback(world, unit, fromX, vx, vy, now);
-  if (world.rng() < (R.lightChance ?? 0.2)) return ragdollKnockback(world, unit, fromX, vx, vy * 0.9, now);
+  if ((unit.scale || 1) >= (R.scaleMin ?? 1.1) || (opts.dmg ?? 0) >= (R.dmgMin ?? 34)) {
+    return finishRagdoll(unit, ragdollKnockback(world, unit, fromX, vx, vy, now));
+  }
+  if (opts.heavy && world.rng() < (R.heavyChance ?? 0.78)) {
+    return finishRagdoll(unit, ragdollKnockback(world, unit, fromX, vx, vy, now));
+  }
+  if (world.rng() < (R.lightChance ?? 0.2)) {
+    return finishRagdoll(unit, ragdollKnockback(world, unit, fromX, vx, vy * 0.9, now));
+  }
   return false;
 }
 
@@ -88,7 +124,8 @@ export function meleeVerticalOk(c, o, now = 0) {
   if (!c.onGround()) reach += 150 + Math.min(90, Math.abs(c.y || 0) * 0.45);
   if ((c._antiAirUntil || 0) > now) reach += 110;
   if (c.flying) reach += 50;
-  if (o.flying && c.onGround() && (c._antiAirUntil || 0) <= now) reach = 75;
+  if (o.flying && c.onGround() && (c._antiAirUntil || 0) <= now && !isGiant(c)) reach = 75;
+  if (isGiant(c) && o.flying) reach = Math.max(reach, 120 + Math.abs(o.y || 0) * 0.55);
   return dy <= reach;
 }
 
@@ -124,10 +161,12 @@ function throwHeld(world, c, v, now) {
     v._suppressedUntil = now + 2600;
     v._hoverOff = true;
   }
-  v.vx = dir * (420 + pow * 35 + r() * 140);
-  v.vy = -(150 + r() * 200 + pow * 16);
+  const giant = isGiant(c);
+  v.vx = dir * ((giant ? 560 : 420) + pow * (giant ? 48 : 35) + r() * (giant ? 200 : 140));
+  v.vy = -((giant ? 240 : 150) + r() * (giant ? 260 : 200) + pow * (giant ? 22 : 16));
+  v._crashCredit = c.team;
   if (TD.RAGDOLL?.throwAlways !== false) {
-    tryTdRagdoll(world, v, c.x, v.vx, v.vy, now, { force: true });
+    tryTdRagdoll(world, v, c.x, v.vx, v.vy, now, { force: true, attackerScale: c.scale });
   }
   const dmg = Math.round(c.dmg * 0.9 * dmgMulFor(world, c.team));
   const dealt = v.takeDamage(dmg, true, c.x, now);
@@ -356,12 +395,14 @@ export function resolveCreepAttacks(world, now) {
       o.currentAttack = null;
       o.status.set('stun', now + (heavy ? 320 : 130));
       const push = TD.RAGDOLL?.pushMul ?? 1.22;
-      const antiAir = o.flying && ((c._antiAirUntil || 0) > now || !c.onGround());
+      const antiAir = o.flying && ((c._antiAirUntil || 0) > now || !c.onGround() || isGiant(c));
+      if (antiAir && isGiant(c)) o._crashCredit = c.team;
       const kbX = c.facing * (540 + 220 * (c.scale || 1) + hb.knockback * 3) * push;
       const kbY = o.flying ? Math.max(140, 90 + hb.knockback * 1.2) : ((!o.flying && (hb.kickLaunch || hb.knockdown)) ? -320 : -240);
       const ragdolled = tryTdRagdoll(world, o, c.x, kbX, kbY, now, {
         heavy, dmg: dealt, knockdown: hb.knockdown || antiAir,
         kickLaunch: (hb.kickLaunch && !o.flying) || antiAir,
+        attackerScale: c.scale,
       });
       if (ragdolled) world.screenShake = Math.min(40, world.screenShake + 12);
       else {
@@ -410,7 +451,11 @@ export function killCreep(world, c, killerTeam, now) {
   const b = world.bases[killerTeam];
   b.gold += Math.round((c.reward || 0) * TD.ECONOMY.killBountyMul);
   b.kills = (b.kills || 0) + 1;
-  spawnHitParticles(world.particles, c.x, TD.GROUND_Y + c.y - 60, true, world.rng);
+  const y = TD.GROUND_Y + c.y - 55 * (c.scale || 1);
+  spawnDeathPoof(world.particles, c.x, y, c.scale || 1, world.rng);
+  if (world.hitEffects.length < 48) {
+    world.hitEffects.push({ x: c.x, y, t: 0, death: true, color: c.color, dmg: 0, _sfx: true });
+  }
 }
 
 export function reapCreeps(world, now) {
@@ -445,6 +490,15 @@ if (typeof process !== 'undefined' && process.argv[1]?.endsWith('combat.js')) {
   console.assert(f.y === 0 && f.vy === 0, 'gravity lands on ground');
   console.assert(f.vx < 400, 'ground friction slows slide');
   console.assert(meleeVerticalOk({ y: -180, onGround() { return false; }, scale: 1, _antiAirUntil: 9999 }, { y: -240, flying: true }, 1000), 'anti-air reaches flyer');
+  console.assert(meleeVerticalOk({ y: 0, onGround() { return true; }, scale: 1.92 }, { y: -220, flying: true }, 0), 'giant swats nearby flyer');
+  const giant = { scale: 1.92, _ragdollStack: null };
+  const R = TD.RAGDOLL ?? {};
+  const now = 1000;
+  console.assert(giantStackBlocks(giant, 0.88, now), 'one small hit does not ragdoll giant');
+  console.assert(giantStackBlocks(giant, 0.88, now + 10), 'two');
+  console.assert(giantStackBlocks(giant, 0.88, now + 20), 'three');
+  console.assert(!giantStackBlocks(giant, 0.88, now + 30), 'fourth hit in window opens ragdoll');
+  console.assert(!giantStackBlocks(giant, 1.55, now + 40), 'heavy attacker skips stack');
   console.assert((TD.RAGDOLL?.lightChance ?? 0) > 0.1, 'ragdoll light chance tuned');
   const fly = { flying: true, _hoverOff: true, y: -120, vy: 200, vx: 0, groundY: 0, onGround() { return this.y >= (this.groundY || 0) - 3; } };
   for (let i = 0; i < 80; i++) integrate(fly, 1 / 60, i * 16);

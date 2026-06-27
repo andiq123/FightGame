@@ -893,6 +893,35 @@ export function drawStickman(ctx, fighter, groundY, now) {
     ctx.globalAlpha = 1;
   }
 
+  if (fighter.tdCreep && fighter.emotion && fighter.emotion !== 'neutral' && fighter.emotion !== 'dead') {
+    const em = fighter.emotion;
+    ctx.save();
+    ctx.strokeStyle = '#101012';
+    ctx.lineWidth = 1.3;
+    ctx.lineCap = 'round';
+    if (em === 'scared' || em === 'worried') {
+      ctx.beginPath();
+      ctx.moveTo(headX - 4 * face, headY - 10); ctx.quadraticCurveTo(headX - 1 * face, headY - 13, headX + 1 * face, headY - 10);
+      ctx.moveTo(headX + 1 * face, headY - 10); ctx.quadraticCurveTo(headX + 4 * face, headY - 13, headX + 7 * face, headY - 10);
+      ctx.stroke();
+      if (em === 'scared') {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(headX + face * 3, headY - 1, 2, 0, Math.PI * 2); ctx.arc(headX + face * 8, headY - 1, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.ellipse(headX + face * 5.5, headY + 4, 2, 2.8, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (em === 'angry') {
+      ctx.beginPath(); ctx.moveTo(headX - 5 * face, headY - 9); ctx.lineTo(headX - 1 * face, headY - 6);
+      ctx.moveTo(headX + 5 * face, headY - 9); ctx.lineTo(headX + 1 * face, headY - 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(headX + face * 3, headY + 5); ctx.lineTo(headX + face * 8, headY + 5); ctx.stroke();
+    } else if (em === 'happy') {
+      ctx.beginPath(); ctx.arc(headX + face * 5.5, headY + 3, 3, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    } else if (em === 'hurt') {
+      ctx.fillStyle = 'rgba(255,70,70,0.55)';
+      ctx.beginPath(); ctx.arc(headX - 3 * face, headY - 11, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // Sharingan: a glowing red eye while the buff is active.
   if (fighter.status?.active?.('sharingan', now)) {
     ctx.save();

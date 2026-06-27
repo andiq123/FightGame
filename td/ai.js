@@ -9,7 +9,10 @@ import { tryCreepSkill } from './skills.js';
 import { nearestGoldNode, collectGold, depositMiner } from './gold.js';
 
 // Fighters hunt enemies; miners haul gold (gold.js). Traits flavour behaviour.
+import { scaredMoveMul } from './emote.js';
+
 const HEAVY = (c) => ((c.scale || 1) > 1.2 ? ATTACK.axeKick : ATTACK.cross);
+const atkCd = (c) => c.atkCdMs * (TD.ATTACK_CD_MUL ?? 1.35);
 
 function pickFoe(world, c) {
   const mul = aggroMul(world);
@@ -88,7 +91,7 @@ function updateFlying(c, world, dt, now) {
       c.pose = POSE.air;
     }
     if (now >= c.nextAtkAt && !(c.traits?.chill && !c.traits?.tireless && world.rng() > 0.55)) {
-      c.nextAtkAt = now + c.atkCdMs;
+      c.nextAtkAt = now + atkCd(c);
       c._flyShootT = 0.32; c.poseTime = 0;
       castCreepBolt(world, c, tgt, now);
     }
@@ -130,7 +133,7 @@ function maybeGrab(c, foe, world, now, reason) {
   else chance += 0.06;
   if (world.rng() > chance) return false;
   c._grabAt = now + (G.cdMs ?? 1200);
-  c.nextAtkAt = now + c.atkCdMs;
+  c.nextAtkAt = now + atkCd(c);
   c.startAttack(GRAB, now);
   return true;
 }
@@ -214,6 +217,9 @@ export function updateCreep(c, world, dt, now) {
   const foeDist = foe ? Math.abs(foe.x - c.x) : Infinity;
   const useRanged = !!c.ranged;
 
+  const mood = scaredMoveMul(c);
+  const hpR = c.hp / c.maxHp;
+
   if (foe && foeDist <= aggro && tryCreepSkill(c, world, foe, now)) return;
   const cantReachSky = foe?.flying && !c.flying && !useRanged && Math.abs((foe.y || 0) - (c.y || 0)) > 100;
 
@@ -234,6 +240,10 @@ export function updateCreep(c, world, dt, now) {
     goalX = baseEdge - c.dir * (useRanged ? c.ranged.range * 0.5 : range * 0.5);
     stopDist = useRanged ? c.ranged.range : range;
   }
+  if (c.emotion === 'scared' && hpR < 0.38 && foe && foeDist < aggro) {
+    goalX = c.x - c.dir * Math.min(200, foeDist * 0.55);
+    mode = mode === 'melee' ? 'melee' : mode;
+  }
 
   c.facing = Math.sign(targetX - c.x) || c.dir;
   const dist = Math.abs(c.x - targetX);
@@ -248,7 +258,7 @@ export function updateCreep(c, world, dt, now) {
   if ((!arrived || tooClose) && c.canAct(now)) {
     if (cantReachSky) maybeAntiAirJump(c, foe, world, now);
     if (mode === 'melee' && foe && dist < 100) maybeGrab(c, foe, world, now, cantReachSky ? 'antiAir' : 'random');
-    const sp = Math.sign(goalX - c.x) * c.moveSpeed;
+    const sp = Math.sign(goalX - c.x) * c.moveSpeed * mood;
     const accel = c.traits?.athletic ? 9000 : 3600;
     c.vx += Math.sign(sp - c.vx) * accel * dt;
     if (Math.sign(sp) === Math.sign(c.vx) && Math.abs(c.vx) > Math.abs(sp)) c.vx = sp;
@@ -263,7 +273,7 @@ export function updateCreep(c, world, dt, now) {
     if (now >= c.nextAtkAt) {
       const lazy = !c.traits?.tireless && c.traits?.chill && world.rng() > 0.45;
       if (!lazy) {
-        c.nextAtkAt = now + c.atkCdMs;
+        c.nextAtkAt = now + atkCd(c);
         if (mode === 'shoot') { c.pose = POSE.punch; c.poseTime = 0; castCreepBolt(world, c, rangedTarget, now); }
         else if (mode === 'melee') {
           const grabReason = cantReachSky ? 'antiAir' : 'random';

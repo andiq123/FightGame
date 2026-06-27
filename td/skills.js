@@ -102,7 +102,7 @@ export function tryCreepSkill(c, world, foe, now) {
   for (const id of c.skills) {
     const fn = SKILLS[id];
     if (!fn) continue;
-    let chance = 0.08 + smart * 0.12;
+    let chance = 0.05 + smart * 0.08;
     if (id === 'healPulse' && low) chance += 0.25;
     if (id === 'slam' && dist < 220) chance += 0.15;
     if (id === 'dashStrike' && dist > 100 && dist < 420) chance += 0.18;
@@ -195,12 +195,14 @@ const BASE_SKILL_MAP = {
     base._laserUntil = now + 520;
     base._laser = { dir, endX, until: base._laserUntil };
     base.emotion = 'infuriated';
-    const bossMul = TD.BASE_LASER?.bossDmgMul ?? 0.55;
+    const dmg = TD.BASE_LASER?.dmg ?? 22;
+    const push = TD.BASE_LASER?.pushVx ?? 780;
     for (const o of hits) {
-      const dmg = o.role === 'boss' ? Math.round(o.maxHp * bossMul) : o.maxHp;
-      const dealt = o.takeDamage(dmg, true, base.x, now);
+      const dealt = o.takeDamage(o.role === 'boss' ? Math.round(dmg * 1.35) : dmg, true, base.x, now);
       o.pose = POSE.hit; o.poseTime = 0;
-      tryTdRagdoll(world, o, base.x, dir * 420, -280, now, { heavy: true, dmg: dealt, knockdown: true, force: true });
+      o.vx = dir * push + Math.sign(o.x - base.x || dir) * 90;
+      o.vy = Math.min(o.vy, o.flying ? -80 : -140);
+      tryTdRagdoll(world, o, base.x, dir * 320, -180, now, { heavy: true, dmg: dealt, knockdown: true });
       addHit(world, o.x, TD.GROUND_Y + o.y - 70 * (o.scale || 1), dealt, true);
       if (o.hp <= 0) killCreep(world, o, base.team, now);
     }
@@ -213,8 +215,12 @@ const BASE_SKILL_MAP = {
 
 function pickBaseSkill(base, foes, rng, beamHits = []) {
   const pool = TD.BASE_SKILLS?.skills || ['volley', 'shock'];
-  if (beamHits.length && pool.includes('laser') && rng() < 0.32 + beamHits.length * 0.05) return 'laser';
-  let opts = pool.filter(id => BASE_SKILL_MAP[id]);
+  const lowHp = base.hp / base.maxHp < 0.42;
+  if (beamHits.length && pool.includes('laser')) {
+    const chance = lowHp ? (TD.BASE_LASER?.lowHpPick ?? 0.2) : (TD.BASE_LASER?.pick ?? 0.045);
+    if (rng() < chance) return 'laser';
+  }
+  let opts = pool.filter(id => BASE_SKILL_MAP[id] && id !== 'laser');
   if (foes.length >= 5) opts = opts.filter(id => id === 'bombard' || id === 'frostBurst' || id === 'volley');
   else if (foes.length >= 3) opts = opts.filter(id => id !== 'mend');
   else if (foes.length <= 1) opts = opts.filter(id => id === 'shock' || id === 'volley' || id === 'mend');

@@ -1,3 +1,4 @@
+import { refreshCreepEmotion } from './emote.js';
 import { TD, battlePhase } from './config.js';
 import { aliveByX } from './spatial.js';
 import { createBase } from './towers.js';
@@ -97,6 +98,7 @@ function update(dt, now) {
 
   for (const c of world.creeps) {
     if (c.hp <= 0) continue;
+    refreshCreepEmotion(c, world, now);
     const wasAir = c.y < -6;
     updateCreep(c, world, sdt, now);
     c.update(sdt, now);

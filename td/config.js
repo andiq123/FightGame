@@ -21,12 +21,13 @@ export const TD = {
 
   // Bases auto-fire arrows at the nearest enemy creep in range (the only static
   // defence — there is no hero).
-  BASE_FIRE: { range: 980, cooldownMs: 900, damage: 28, speed: 1180, arc: 1500 },
-  BASE_LASER: { range: 2100, halfW: 120, bossDmgMul: 0.55 },
+  BASE_FIRE: { range: 980, cooldownMs: 1550, damage: 28, speed: 1180, arc: 1500 },
+  BASE_LASER: { range: 2100, halfW: 120, dmg: 22, pushVx: 780, lowHpPick: 0.2, pick: 0.045 },
+  ATTACK_CD_MUL: 1.38,
 
   // Base active skills — separate cooldown from normal arrow fire.
   BASE_SKILLS: {
-    cooldownMs: 6800,
+    cooldownMs: 11200,
     skills: ['volley', 'bombard', 'frostBurst', 'shock', 'mend', 'laser'],
   },
 
@@ -63,7 +64,7 @@ export const TD = {
     ],
   },
 
-  SKILLS: { cooldownMs: 4200 },
+  SKILLS: { cooldownMs: 7200 },
 
   // Which creep types can roll which skills (subset per spawn).
   SKILL_BY_TYPE: {

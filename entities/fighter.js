@@ -15,6 +15,7 @@ import {
   isRunAffordable,
   spendStamina
 } from './components/StaminaModel.js';
+import { gaitPhaseSpeed } from '../engine/fightAnimations.js';
 
 export const POSE = { idle: 'idle', punch: 'punch', kick: 'kick', block: 'block', dodge: 'dodge', grab: 'grab', hit: 'hit', jump: 'jump', air: 'air', slide: 'slide', stagger: 'stagger', getUp: 'getUp', walk: 'walk', run: 'run', recover: 'recover' };
 
@@ -325,6 +326,20 @@ class Fighter {
 
   update(dt, now) {
     this.poseTime += dt;
+
+    // ponytail: TD march uses a stable gait clock — not re-derived from jittery vx each draw.
+    if (this.tdCreep && this.onGround() && (this.pose === POSE.walk || this.pose === POSE.run)) {
+      const isRun = this.pose === POSE.run;
+      const prof = this.animProfile;
+      const spd = gaitPhaseSpeed(
+        Math.max(Math.abs(this.vx), this.moveSpeed * 0.72),
+        this.moveSpeed,
+        this.scale,
+        isRun,
+        prof?.walk?.cycleMul ?? 1,
+      );
+      this._gaitPhase = ((this._gaitPhase || 0) + dt * spd * (isRun ? 1.28 : 1)) % (Math.PI * 2);
+    }
 
     if (!this.tdCreep) {
       this.poseHistory.unshift({ x: this.x, y: this.y, pose: this.pose, time: now });

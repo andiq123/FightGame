@@ -150,7 +150,11 @@ export const TD = {
     airWobbleY: -95, airWobbleChance: 0.042,
   },
 
-  GRAB: { range: 94, cdMs: 1200, base: 0.032, smart: 0.05, antiAir: 0.32, big: 0.14, maxScaleRatio: 1.55 },
+  GRAB: {
+    range: 94, cdMs: 1200, base: 0.032, smart: 0.05, antiAir: 0.32, big: 0.14, maxScaleRatio: 1.55,
+    ragdollRange: 118, ragdollGrabChance: 0.84, giantRagHoldMs: 460,
+    giantRagThrowVx: 1020, giantRagThrowVy: 360,
+  },
 
   RAGDOLL: {
     graceMs: 480, launchMs: 160, blendMs: 280, pushMul: 1.22,

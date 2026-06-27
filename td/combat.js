@@ -129,10 +129,27 @@ export function meleeVerticalOk(c, o, now = 0) {
   return dy <= reach;
 }
 
+function releaseRagdoll(unit) {
+  unit.staggerRagdoll = null;
+  unit._ragdollLaunch = null;
+  unit.status.clear('stagger');
+}
+
 function startGrapple(world, c, o, now) {
   if (o._heldBy || c._grabbing || o.traits?.unbreakable) return false;
+  const rag = !!(o.staggerRagdoll || o._ragdollLaunch);
+  if (rag && !isGiant(c)) return false;
   if ((o.scale || 1) > (c.scale || 1) * (TD.GRAB?.maxScaleRatio ?? 1.55)) return false;
-  if (Math.abs((o.y || 0) - (c.y || 0)) > 200 && !(c.onGround() && o.flying)) return false;
+  if (Math.abs((o.y || 0) - (c.y || 0)) > 200 && !(c.onGround() && o.flying) && !rag) return false;
+  if (rag) {
+    if (o.staggerRagdoll?.points?.[2]) {
+      const pelvis = o.staggerRagdoll.points[2];
+      o.x = pelvis.x;
+      o.y = pelvis.y - 810;
+    }
+    releaseRagdoll(o);
+    o._grabbedFromRagdoll = true;
+  }
   c._grabbing = o.id;
   c._grabStarted = now;
   c.currentAttack = null;
@@ -145,6 +162,10 @@ function startGrapple(world, c, o, now) {
   o.poseTime = 0;
   o.status.set('stun', now + 900);
   if (o.flying) o._hoverOff = true;
+  if (o._grabbedFromRagdoll) {
+    world.screenShake = Math.min(38, world.screenShake + 13);
+    addHit(world, o.x, TD.GROUND_Y + o.y - 65 * (o.scale || 1), 0, { heavy: true });
+  }
   return true;
 }
 
@@ -162,18 +183,51 @@ function throwHeld(world, c, v, now) {
     v._hoverOff = true;
   }
   const giant = isGiant(c);
-  v.vx = dir * ((giant ? 560 : 420) + pow * (giant ? 48 : 35) + r() * (giant ? 200 : 140));
-  v.vy = -((giant ? 240 : 150) + r() * (giant ? 260 : 200) + pow * (giant ? 22 : 16));
+  const ragThrow = giant && v._grabbedFromRagdoll;
+  const G = TD.GRAB ?? {};
+  if (ragThrow) {
+    v.vx = dir * ((G.giantRagThrowVx ?? 1020) + pow * 55 + r() * 280);
+    v.vy = -((G.giantRagThrowVy ?? 360) + r() * 190 + pow * 30);
+  } else {
+    v.vx = dir * ((giant ? 560 : 420) + pow * (giant ? 48 : 35) + r() * (giant ? 200 : 140));
+    v.vy = -((giant ? 240 : 150) + r() * (giant ? 260 : 200) + pow * (giant ? 22 : 16));
+  }
+  v._grabbedFromRagdoll = false;
   v._crashCredit = c.team;
   if (TD.RAGDOLL?.throwAlways !== false) {
     tryTdRagdoll(world, v, c.x, v.vx, v.vy, now, { force: true, attackerScale: c.scale });
   }
-  const dmg = Math.round(c.dmg * 0.9 * dmgMulFor(world, c.team));
+  const dmg = Math.round(c.dmg * (ragThrow ? 1.05 : 0.9) * dmgMulFor(world, c.team));
   const dealt = v.takeDamage(dmg, true, c.x, now);
-  v.status.set('stun', now + 440);
+  v.status.set('stun', now + (ragThrow ? 620 : 440));
   addHit(world, v.x, TD.GROUND_Y + v.y - 70 * (v.scale || 1), dealt, { heavy: true });
-  world.screenShake = Math.min(32, world.screenShake + 11);
+  world.screenShake = Math.min(ragThrow ? 48 : 32, world.screenShake + (ragThrow ? 22 : 11));
   if (v.hp <= 0) killCreep(world, v, c.team, now);
+}
+
+// Giants scoop nearby ragdolled foes — pickup then mega-throw.
+export function tryGiantRagdollGrab(world, c, now) {
+  if (!isGiant(c) || c._grabbing || c._heldBy || c.ranged || c.role === 'miner') return false;
+  if (now < (c._grabAt || 0) || !c.canAct(now)) return false;
+  const G = TD.GRAB ?? {};
+  const range = (G.ragdollRange ?? 118) + 24 * Math.max(0, (c.scale || 1) - 1);
+  let best = null, bestD = range;
+  for (const o of world.creeps) {
+    if (o.team === c.team || o.hp <= 0 || o._heldBy || o.traits?.unbreakable) continue;
+    if (!o.staggerRagdoll && !o._ragdollLaunch) continue;
+    if ((o.scale || 1) > (c.scale || 1) * (G.maxScaleRatio ?? 1.55)) continue;
+    const dx = Math.abs(o.x - c.x);
+    const dy = Math.abs((o.y || 0) - (c.y || 0));
+    if (dx > range + 28 * (o.scale || 1)) continue;
+    if (dy > 150 + 36 * (c.scale || 1)) continue;
+    const d = dx + dy * 0.42;
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  if (!best || world.rng() > (G.ragdollGrabChance ?? 0.84)) return false;
+  c._grabAt = now + (G.cdMs ?? 1200);
+  c.nextAtkAt = now + 520;
+  c.facing = Math.sign(best.x - c.x) || c.facing;
+  return startGrapple(world, c, best, now);
 }
 
 export function tickGrapples(world, now) {
@@ -181,13 +235,19 @@ export function tickGrapples(world, now) {
     if (!c._grabbing) continue;
     const v = creepById(world, c._grabbing);
     if (!v || v.hp <= 0 || v._heldBy !== c.id) { c._grabbing = null; continue; }
-    const pinY = c.flying ? c.y - 30 : (v.flying ? Math.max(v.y, c.y - 90) : c.y - 10);
-    v.x = c.x + c.facing * (32 + 16 * (v.scale || 1));
-    v.y += (pinY - v.y) * 0.38;
+    if (v._grabbedFromRagdoll) {
+      v.x = c.x + c.facing * (36 + 14 * (v.scale || 1));
+      v.y = c.y - (52 + 28 * (c.scale || 1));
+    } else {
+      const pinY = c.flying ? c.y - 30 : (v.flying ? Math.max(v.y, c.y - 90) : c.y - 10);
+      v.x = c.x + c.facing * (32 + 16 * (v.scale || 1));
+      v.y += (pinY - v.y) * 0.38;
+    }
     v.vx = v.vy = 0;
     c.vx *= 0.65;
     c.pose = POSE.grab;
-    if (now - (c._grabStarted || now) >= 340) throwHeld(world, c, v, now);
+    const holdMs = v._grabbedFromRagdoll ? (TD.GRAB?.giantRagHoldMs ?? 460) : 340;
+    if (now - (c._grabStarted || now) >= holdMs) throwHeld(world, c, v, now);
   }
 }
 
@@ -500,6 +560,9 @@ if (typeof process !== 'undefined' && process.argv[1]?.endsWith('combat.js')) {
   console.assert(!giantStackBlocks(giant, 0.88, now + 30), 'fourth hit in window opens ragdoll');
   console.assert(!giantStackBlocks(giant, 1.55, now + 40), 'heavy attacker skips stack');
   console.assert((TD.RAGDOLL?.lightChance ?? 0) > 0.1, 'ragdoll light chance tuned');
+  const G = TD.GRAB ?? {};
+  const ragVx = (G.giantRagThrowVx ?? 1020) + 1.92 * (46 / 18) * 55;
+  console.assert(ragVx > 1100, 'giant rag throw reaches far');
   const fly = { flying: true, _hoverOff: true, y: -120, vy: 200, vx: 0, groundY: 0, onGround() { return this.y >= (this.groundY || 0) - 3; } };
   for (let i = 0; i < 80; i++) integrate(fly, 1 / 60, i * 16);
   console.assert(fly.onGround() && (fly._groundFightUntil || 0) > 0, 'knocked flyer lands and ground-fights');

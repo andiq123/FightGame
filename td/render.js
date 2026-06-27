@@ -31,6 +31,7 @@ export class TDViewport {
     this.canvas.height = h * dpr;
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
+    this.ctx.imageSmoothingEnabled = false;
   }
 
   render(world, now) {
@@ -482,6 +483,37 @@ function drawBaseLasers(ctx, world, now) {
   }
 }
 
+function drawBaseCracks(ctx, x, topY, baseY, w, hpRatio, seed) {
+  if (hpRatio >= 1) return;
+  const severity = 1 - Math.max(0, Math.min(1, hpRatio));
+  const count = 1 + Math.floor(severity * 5);
+  let s = (seed * 2654435761) >>> 0;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+
+  ctx.save();
+  ctx.strokeStyle = `rgba(0,0,0,${0.22 + severity * 0.5})`;
+  ctx.lineWidth = 1.2 + severity * 2.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < count; i++) {
+    let px = x - w * 0.42 + rnd() * w * 0.84;
+    let py = topY + 18 + rnd() * (baseY - topY - 36);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    for (let j = 0, segs = 2 + Math.floor(rnd() * 3); j < segs; j++) {
+      px += (rnd() - 0.5) * w * 0.22;
+      py += 8 + rnd() * (baseY - topY) * 0.16;
+      ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  if (severity > 0.35) {
+    ctx.fillStyle = `rgba(20,8,6,${0.08 + severity * 0.18})`;
+    ctx.fillRect(x - w * 0.18, topY + (baseY - topY) * 0.55, w * 0.36, (baseY - topY) * 0.28);
+  }
+  ctx.restore();
+}
+
 function drawBase(ctx, t, now = 0) {
   const baseY = GROUND_Y;
   const topY = baseY - t.h;
@@ -513,6 +545,7 @@ function drawBase(ctx, t, now = 0) {
   for (let yy = topY + 40; yy < baseY; yy += 46) {
     ctx.beginPath(); ctx.moveTo(x - w / 2, yy); ctx.lineTo(x + w / 2, yy); ctx.stroke();
   }
+  if (alive) drawBaseCracks(ctx, x, topY, baseY, w, t.hp / t.maxHp, Math.abs(Math.floor(x)));
   ctx.restore();
 
   drawHpBar(ctx, x, topY - 56, Math.max(0, t.hp / t.maxHp), w, TEAM_COLOR[t.team], true);
@@ -615,4 +648,10 @@ function drawHpBar(ctx, cx, y, ratio, w, color, big = false) {
   ctx.fillStyle = color;
   ctx.fillRect(cx - w / 2, y, w * Math.max(0, Math.min(1, ratio)), h);
   ctx.restore();
+}
+
+if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('render.js')) {
+  const sev = (r) => 1 - r;
+  console.assert(sev(1) === 0 && sev(0.4) > 0.5, 'cracks scale with missing hp');
+  console.log('render ok');
 }

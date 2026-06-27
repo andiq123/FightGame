@@ -197,6 +197,12 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const lite = !!fighter.tdCreep;
 
   ctx.save();
+  if (lite) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+  }
   // Global Scale for Bosses
   if (scale !== 1) {
     const cy = groundY + fighter.y;
@@ -406,13 +412,15 @@ export function drawStickman(ctx, fighter, groundY, now) {
     lFootAng = f.lFootAng; rFootAng = f.rFootAng;
   } else if (pose === POSE.walk || pose === POSE.run) {
     const isRun = pose === POSE.run;
-    const cycleSpeed = gaitPhaseSpeed(velX, fighter.moveSpeed, fighter.scale, isRun, prof?.walk?.cycleMul ?? 1);
-    const phase = (poseT * cycleSpeed) % (2 * Math.PI);
-    let cycle = isRun ? getRunCycle(phase, face) : getWalkCycle(phase, face);
+    const phase = lite && fighter._gaitPhase != null
+      ? fighter._gaitPhase
+      : (poseT * gaitPhaseSpeed(velX, fighter.moveSpeed, fighter.scale, isRun, prof?.walk?.cycleMul ?? 1)) % (Math.PI * 2);
+    // ponytail: TD run reuses walk cycle — run gait knee folds read as ghost limbs at scale.
+    let cycle = (lite || !isRun) ? getWalkCycle(phase, face) : getRunCycle(phase, face);
     cycle = scaleWalkCycle(cycle, prof?.walk);
 
     bob = cycle.bob;
-    lean = cycle.lean + (velX / Math.max(40, fighter.moveSpeed || 200)) * 0.08 * face;
+    lean = cycle.lean;
     torsoTwist = cycle.torsoTwist;
     headTilt = cycle.headTilt ?? headTilt;
     lArmAng = cycle.lArm;
@@ -604,6 +612,7 @@ export function drawStickman(ctx, fighter, groundY, now) {
       swipeIntensity: inActive ? Math.max(0, edge) : 0
     };
   }
+  if (lite && (pose === POSE.walk || pose === POSE.run)) { limbBulge = 0; limbStretch = 0; }
 
   // Combat Override
   if (pose === POSE.punch && fighter.currentAttack) {
@@ -783,10 +792,17 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rAnkleX = rKneeX + Math.sin(rLegAng + rKneeOff) * calfLen * face;
   const rAnkleY = rKneeY + Math.cos(rLegAng + rKneeOff) * calfLen;
 
-  drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
-  drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
-  drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
-  drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
+  if (lite) {
+    drawCapsule(ctx, lHipX, pelvisY, lKneeX, lKneeY, 5.5 * limbScale, baseColor, strokeColor);
+    drawCapsule(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 4.5 * limbScale, baseColor, strokeColor);
+    drawCapsule(ctx, rHipX, pelvisY, rKneeX, rKneeY, 5.5 * limbScale, baseColor, strokeColor);
+    drawCapsule(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 4.5 * limbScale, baseColor, strokeColor);
+  } else {
+    drawAdvancedLimb(ctx, lHipX, pelvisY, lKneeX, lKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+    drawAdvancedLimb(ctx, lKneeX, lKneeY, lAnkleX, lAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
+    drawAdvancedLimb(ctx, rHipX, pelvisY, rKneeX, rKneeY, 6 * limbScale, 5 * limbScale, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.3);
+    drawAdvancedLimb(ctx, rKneeX, rKneeY, rAnkleX, rAnkleY, 5 * limbScale, 4 * limbScale, baseColor, strokeColor, limbBulge, limbStretch);
+  }
 
   // Feet
   const footLen = 14;
@@ -794,8 +810,13 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const lToeY = lAnkleY + Math.sin(lFootAng) * footLen;
   const rToeX = rAnkleX + Math.cos(rFootAng) * footLen * face;
   const rToeY = rAnkleY + Math.sin(rFootAng) * footLen;
-  drawAdvancedLimb(ctx, lAnkleX, lAnkleY, lToeX, lToeY, 4, 3, baseColor, strokeColor);
-  drawAdvancedLimb(ctx, rAnkleX, rAnkleY, rToeX, rToeY, 4, 3, baseColor, strokeColor);
+  if (lite) {
+    drawCapsule(ctx, lAnkleX, lAnkleY, lToeX, lToeY, 3.5, baseColor, strokeColor);
+    drawCapsule(ctx, rAnkleX, rAnkleY, rToeX, rToeY, 3.5, baseColor, strokeColor);
+  } else {
+    drawAdvancedLimb(ctx, lAnkleX, lAnkleY, lToeX, lToeY, 4, 3, baseColor, strokeColor);
+    drawAdvancedLimb(ctx, rAnkleX, rAnkleY, rToeX, rToeY, 4, 3, baseColor, strokeColor);
+  }
 
   // Torso
   drawCapsule(ctx, pelvisX, pelvisY, ribsX, ribsY, 11, baseColor, strokeColor);
@@ -820,10 +841,17 @@ export function drawStickman(ctx, fighter, groundY, now) {
   const rWristX = rElbowX + Math.cos(rArmAng + rForeArmAng) * forearmLen * face;
   const rWristY = rElbowY + Math.sin(rArmAng + rForeArmAng) * forearmLen;
 
-  drawAdvancedLimb(ctx, lShX, lShY, lElbowX, lElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
-  drawAdvancedLimb(ctx, lElbowX, lElbowY, lWristX, lWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
-  drawAdvancedLimb(ctx, rShX, rShY, rElbowX, rElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
-  drawAdvancedLimb(ctx, rElbowX, rElbowY, rWristX, rWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
+  if (lite) {
+    drawCapsule(ctx, lShX, lShY, lElbowX, lElbowY, 4.5, baseColor, strokeColor);
+    drawCapsule(ctx, lElbowX, lElbowY, lWristX, lWristY, 3.8, baseColor, strokeColor);
+    drawCapsule(ctx, rShX, rShY, rElbowX, rElbowY, 4.5, baseColor, strokeColor);
+    drawCapsule(ctx, rElbowX, rElbowY, rWristX, rWristY, 3.8, baseColor, strokeColor);
+  } else {
+    drawAdvancedLimb(ctx, lShX, lShY, lElbowX, lElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
+    drawAdvancedLimb(ctx, lElbowX, lElbowY, lWristX, lWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
+    drawAdvancedLimb(ctx, rShX, rShY, rElbowX, rElbowY, 5, 4.2, baseColor, strokeColor, limbBulge * 0.5, limbStretch * 0.4);
+    drawAdvancedLimb(ctx, rElbowX, rElbowY, rWristX, rWristY, 4.2, 3.5, baseColor, strokeColor, limbBulge, limbStretch);
+  }
 
   // ── MOTION SWIPE ARC + ANTICIPATION GLOW ──────────────────────────────────
   // Telegraph the strike: trace the striking limb's tip path with a bright

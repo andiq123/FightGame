@@ -106,13 +106,11 @@ function gaitLeg(phase, cfg) {
   const swingLift = Math.sin(swingT * Math.PI);
   const toeOff = clamp01((strideCos + 0.15) / 1.15);
   const trailing = clamp01((-stride + 0.05) / 1.05);
-  const planted = strideCos > -0.2;
-  const plant = planted ? 1 - swingLift * 0.42 : 1;
 
   return {
     hip: stride * cfg.hipAmp + cfg.hipBias - swingLift * cfg.swingHipBack,
-    knee: (cfg.stanceKnee + trailing * cfg.trailKnee) * plant + swingLift * cfg.swingKnee,
-    foot: -0.05 + toeOff * cfg.toeOff * plant + swingLift * cfg.footLift - Math.max(0, stride) * cfg.heelStrike,
+    knee: cfg.stanceKnee + swingLift * cfg.swingKnee + trailing * cfg.trailKnee,
+    foot: -0.08 + toeOff * cfg.toeOff + swingLift * cfg.footLift - Math.max(0, stride) * cfg.heelStrike,
   };
 }
 
@@ -132,26 +130,24 @@ const WALK_GAIT = {
 
 export function getWalkCycle(phase, face) {
   const s = Math.sin(phase);
-  const c = Math.cos(phase);
   const rightLeg = gaitLeg(phase, { ...WALK_GAIT, hipBias: 0.02 });
   const leftLeg = gaitLeg(phase + Math.PI, { ...WALK_GAIT, hipBias: -0.02 });
-  const contact = Math.pow(Math.max(0, c), 2);
 
   return {
-    lHip: leftLeg.hip - s * 0.05,
-    rHip: rightLeg.hip + s * 0.05,
+    lHip: leftLeg.hip,
+    rHip: rightLeg.hip,
     lKnee: leftLeg.knee,
     rKnee: rightLeg.knee,
     lFoot: leftLeg.foot,
     rFoot: rightLeg.foot,
-    lArm: 0.46 - s * 0.24,
-    rArm: 0.86 + s * 0.24,
-    lElbow: -1.52 + Math.max(0, s) * 0.32,
-    rElbow: -1.64 - Math.max(0, -s) * 0.32,
-    bob: 0.7 + contact * 0.9 + (1 - Math.abs(s)) * 0.32,
-    torsoTwist: -s * 0.18 * face,
-    lean: (0.06 + contact * 0.03) * face,
-    headTilt: 0.02 * face - s * 0.015,
+    lArm: 0.5 - s * 0.18,
+    rArm: 0.82 + s * 0.18,
+    lElbow: -1.5 - Math.abs(s) * 0.12,
+    rElbow: -1.62 - Math.abs(s) * 0.12,
+    bob: 0.85 + (1 - Math.cos(phase * 2)) * 0.72,
+    torsoTwist: -s * 0.14 * face,
+    lean: 0.06 * face,
+    headTilt: 0.02 * face,
   };
 }
 
@@ -168,27 +164,25 @@ const RUN_GAIT = {
 
 export function getRunCycle(phase, face) {
   const s = Math.sin(phase);
-  const c = Math.cos(phase);
   const rightLeg = gaitLeg(phase, { ...RUN_GAIT, hipBias: 0.03 });
   const leftLeg = gaitLeg(phase + Math.PI, { ...RUN_GAIT, hipBias: -0.03 });
   const drive = Math.abs(s);
-  const strike = Math.pow(Math.max(0, c), 2);
 
   return {
-    lHip: leftLeg.hip - s * 0.08,
-    rHip: rightLeg.hip + s * 0.08,
+    lHip: leftLeg.hip,
+    rHip: rightLeg.hip,
     lKnee: leftLeg.knee,
     rKnee: rightLeg.knee,
     lFoot: leftLeg.foot,
     rFoot: rightLeg.foot,
-    lArm: 0.6 - s * 0.5,
-    rArm: 1.04 + s * 0.5,
-    lElbow: -1.18 - drive * 0.38,
-    rElbow: -1.34 - drive * 0.38,
-    bob: 1.2 + strike * 2.6 + drive * 0.55,
-    torsoTwist: -s * 0.24 * face,
-    lean: (0.18 + strike * 0.08) * face,
-    headTilt: 0.04 * face - s * 0.025,
+    lArm: 0.66 - s * 0.44,
+    rArm: 0.98 + s * 0.44,
+    lElbow: -1.32 - drive * 0.28,
+    rElbow: -1.48 - drive * 0.28,
+    bob: 2.2 + Math.sin(phase * 2 + Math.PI * 0.15) * 1.5,
+    torsoTwist: -s * 0.2 * face,
+    lean: 0.2 * face,
+    headTilt: 0.04 * face,
   };
 }
 
@@ -544,9 +538,9 @@ export function mergeRest(base, patch) {
 
 // Foot cadence tied to actual creep speed + scale (longer legs = slower cycle at same px/s).
 export function gaitPhaseSpeed(velX, moveSpeed, scale, isRun, cycleMul = 1) {
-  const target = moveSpeed || (isRun ? 420 : 220);
-  const ratio = Math.min(1.45, Math.max(0.32, Math.abs(velX) / Math.max(28, target)));
-  const base = isRun ? 12 : 7.4;
+  const target = Math.max(60, moveSpeed || (isRun ? 420 : 220));
+  const ratio = Math.min(1.25, Math.max(0.58, Math.abs(velX) / target));
+  const base = isRun ? 11.5 : 7.2;
   return base * ratio * cycleMul / Math.sqrt(scale || 1);
 }
 
@@ -823,8 +817,8 @@ if (typeof process !== 'undefined' && process.argv[1]?.endsWith('fightAnimations
   const f1 = getFlyPose(0.22, 1, { air: { flapAmp: 0.62 } }, 0, false);
   console.assert(Math.abs(f0.lArmAng - f1.lArmAng) > 0.12, 'fly arms flap');
   const walk = getWalkCycle(0, 1);
-  const walkMid = getWalkCycle(Math.PI * 0.5, 1);
-  console.assert(walk.bob > walkMid.bob, 'walk dips mid-stride');
+  const walkQuarter = getWalkCycle(Math.PI * 0.5, 1);
+  console.assert(walkQuarter.bob > walk.bob, 'walk bobs mid-stride');
   const slow = gaitPhaseSpeed(58, 58, 1.92, false, 0.52);
   const fast = gaitPhaseSpeed(280, 280, 0.78, true, 1.2);
   console.assert(slow < fast, 'giant gait slower than sprinter run');

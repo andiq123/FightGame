@@ -6,12 +6,14 @@ import { TD, opp } from './config.js';
 import { eachNear } from './spatial.js';
 import { aggroMul } from './events.js';
 import { tryCreepSkill } from './skills.js';
+import { tryGiantRagdollGrab } from './combat.js';
 import { nearestGoldNode, collectGold, depositMiner } from './gold.js';
 
 // Fighters hunt enemies; miners haul gold (gold.js). Traits flavour behaviour.
 import { moodMoveMul, moodAggroMul, moodAtkMul, confusedTactics } from './emote.js';
 
 const HEAVY = (c) => ((c.scale || 1) > 1.2 ? ATTACK.axeKick : ATTACK.cross);
+const isGiant = (c) => (c?.scale || 1) >= 1.85;
 const atkCd = (c) => {
   let ms = c.atkCdMs * (TD.ATTACK_CD_MUL ?? 1.35);
   if (c.ranged) {
@@ -216,6 +218,7 @@ function finishFlyerGround(c, world, now) {
 export function updateCreep(c, world, dt, now) {
   if (c.hp <= 0 || c.staggerRagdoll || c._ragdollLaunch || c._heldBy) return;
   if (c.role === 'miner') return updateMiner(c, world, dt, now);
+  if (isGiant(c) && tryGiantRagdollGrab(world, c, now)) return;
   if (c.role === 'bowler') { updateBowler(c, world, dt, now); return; }
   if (c.flying && c._hoverOff && !c.onGround()) return;
   if (c.flying && c.ranged && !c._hoverOff) { updateFlying(c, world, dt, now); return; }
@@ -232,7 +235,7 @@ export function updateCreep(c, world, dt, now) {
   const hpR = c.hp / c.maxHp;
 
   if (foe && foeDist <= aggro && tryCreepSkill(c, world, foe, now)) return;
-  const giant = (c.scale || 1) >= 1.85;
+  const giant = isGiant(c);
   const skyDy = giant ? 340 : 100;
   const cantReachSky = foe?.flying && !c.flying && !useRanged && Math.abs((foe.y || 0) - (c.y || 0)) > skyDy;
 
